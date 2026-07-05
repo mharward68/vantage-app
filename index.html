@@ -1,0 +1,1894 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vantage PRM - Prospect Relationship Manager</title>
+
+  <!-- SEO Meta Tags -->
+  <meta name="description"
+    content="Vantage Prospect Relationship Manager - Next-generation CRM solution designed to organize prospects, manage content media, and launch hyper-targeted outreach campaigns.">
+  <meta name="theme-color" content="#4f46e5">
+
+  <!-- Progressive Web App Setup -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Vantage PRM">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <!-- Modern Fonts (Google Fonts Outfit & Inter) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet">
+
+  <!-- Premium Stylings -->
+  <link rel="stylesheet" href="style.css">
+
+  <!-- JSZip for Browser-side ZIP file extraction -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- xlsx-js-style for Excel (.xlsx/.xls) parsing and styled templates -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+</head>
+
+<body class="module-dashboard">
+
+  <!-- Main Grid App Layout -->
+  <div id="app-layout">
+
+    <!-- Left Sidebar Navigator -->
+    <aside id="sidebar" class="sidebar-visible">
+
+      <!-- Sidebar Header -->
+      <div id="sidebar-brand">
+        <div class="brand-logo-container">V</div>
+        <span id="brand-name">Vantage PRM</span>
+      </div>
+
+      <!-- Sidebar Navigation Links -->
+      <nav id="sidebar-nav">
+        <!-- Dashboard View Tab -->
+        <button id="nav-dashboard" class="nav-tab active-tab" data-view="dashboard">
+          <span class="tab-icon">📊</span>
+          <span class="tab-label">Dashboard</span>
+        </button>
+
+        <!-- Prospect Database View Tab -->
+        <button id="nav-prospects" class="nav-tab" data-view="prospects">
+          <span class="tab-icon">👥</span>
+          <span class="tab-label">Prospect Hub</span>
+        </button>
+
+        <!-- Media Manager View Tab -->
+        <button id="nav-media" class="nav-tab" data-view="media">
+          <span class="tab-icon">📁</span>
+          <span class="tab-label">Media Hub</span>
+        </button>
+
+        <!-- Campaign Manager View Tab -->
+        <button id="nav-campaigns" class="nav-tab" data-view="campaigns">
+          <span class="tab-icon">🎯</span>
+          <span class="tab-label">Campaign Hub</span>
+        </button>
+
+        <!-- Data Management View Tab -->
+        <button id="nav-data-management" class="nav-tab" data-view="data-management">
+          <span class="tab-icon">🗄️</span>
+          <span class="tab-label">Data Management</span>
+        </button>
+      </nav>
+
+      <!-- Sidebar Settings & Actions -->
+      <div id="sidebar-settings">
+        <button id="sandbox-reset-btn" class="sidebar-action-btn"
+          style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444; font-weight: 600; width: 100%; margin: 0 0 4px 0;"
+          title="Reset Sandbox">
+          <span class="btn-icon">🔄</span> <span class="btn-label">Reset Sandbox</span>
+        </button>
+        <button id="sandbox-make-btn" class="sidebar-action-btn"
+          style="border-color: rgba(79, 70, 229, 0.4); color: var(--color-primary); font-weight: 600; width: 100%; margin: 0 0 4px 0;"
+          title="Make New Sandbox">
+          <span class="btn-icon">💾</span> <span class="btn-label">Make New Sandbox</span>
+        </button>
+        <button id="sandbox-wipe-btn" class="sidebar-action-btn"
+          style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444; font-weight: 600; width: 100%; margin: 0; background: rgba(239, 68, 68, 0.05);"
+          title="Wipe Data">
+          <span class="btn-icon">🧹</span> <span class="btn-label">Wipe Data</span>
+        </button>
+
+        <!-- Toggle Switch to Keep Open -->
+        <div class="sidebar-pin-container"
+          style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <span class="pin-label" style="font-size: 12px; color: var(--color-text-muted); font-weight: 600;">Keep
+            Sidebar Open</span>
+          <label class="switch-toggle"
+            style="position: relative; display: inline-block; width: 34px; height: 20px; flex-shrink: 0;">
+            <input type="checkbox" id="sidebar-pin-toggle" checked style="opacity: 0; width: 0; height: 0;">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="sidebar-credit" style="margin-top: 8px;">Vantage PRM v1.0.0</div>
+      </div>
+
+    </aside>
+
+    <!-- Main Content Work Canvas -->
+    <main id="main-canvas">
+
+      <!-- Header Bar -->
+      <header id="canvas-header" style="padding: 12px 24px; align-items: center; min-height: 80px;">
+        <div class="header-left"
+          style="display: flex; flex-direction: column; gap: 2px; align-items: flex-start; justify-content: center;">
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <button id="sidebar-toggle-btn" aria-label="Toggle Sidebar">☰</button>
+            <h1 id="view-title" style="margin: 0; line-height: 1.2;">Vantage Hub</h1>
+          </div>
+          <span id="view-subtitle"
+            style="font-size: 12px; color: var(--color-text-muted); display: none; line-height: 1.4; margin-top: 4px; font-weight: 500;"></span>
+        </div>
+        <div class="header-right">
+          <button id="theme-toggle-btn" class="header-icon-btn" title="Toggle Theme">🌓</button>
+        </div>
+      </header>
+
+      <!-- Content Area Panels (SPA container) -->
+      <div id="canvas-body">
+
+        <!-- 1. DASHBOARD VIEW PANEL -->
+        <section id="view-dashboard" class="view-panel active-panel">
+          <!-- Welcome Hero Banner -->
+          <div class="welcome-banner">
+            <h2>Welcome back to <span class="brand-text-inject">Vantage PRM</span></h2>
+            <p>Accelerating your media reach, outreach campaigns, and prospect pipelines from one unified desk.</p>
+          </div>
+
+          <!-- Statistics Grid -->
+          <div class="stats-grid">
+            <div class="stat-card clickable-stat-card" id="shortcut-prospects">
+              <div class="stat-title">Total Prospects</div>
+              <div id="stat-prospects-count" class="stat-value">0</div>
+              <p class="stat-desc">Active contacts in database</p>
+            </div>
+            <div class="stat-card clickable-stat-card" id="shortcut-campaigns">
+              <div class="stat-title">Active Campaigns</div>
+              <div id="stat-campaigns-count" class="stat-value">0</div>
+              <p class="stat-desc">Ongoing sequence programs</p>
+            </div>
+            <div class="stat-card clickable-stat-card" id="shortcut-media">
+              <div class="stat-title">Media Items</div>
+              <div id="stat-media-count" class="stat-value">0</div>
+              <p class="stat-desc">Articles & videos stored</p>
+            </div>
+            <div class="stat-card">
+              <div class="stat-title">Total Reachouts</div>
+              <div id="stat-reachouts-count" class="stat-value">0</div>
+              <p class="stat-desc">Calls, emails & campaign touches</p>
+            </div>
+          </div>
+
+          <!-- Dashboard Split Panel -->
+          <div class="dashboard-split-grid">
+            <!-- Left Side: Recent Interaction Feed -->
+            <div class="dashboard-list-card">
+              <h3>Recent Reachout Interactions</h3>
+              <div id="dashboard-recent-reachouts" class="recent-feed">
+                <!-- Dynamically populated list of reachouts -->
+              </div>
+            </div>
+
+            <!-- Right Side: Top Media engagement -->
+            <div class="dashboard-list-card">
+              <h3>High Performing Media Content</h3>
+              <div id="dashboard-top-media" class="media-ranking-list">
+                <!-- Dynamically populated media rankings -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. PROSPECT DATABASE VIEW PANEL -->
+        <section id="view-prospects" class="view-panel">
+          <div class="prospects-layout-container">
+
+            <!-- Left Panel: Prospect Directory & Filters -->
+            <div class="prospects-directory-card">
+              <div class="card-header-actions" style="flex-wrap: wrap;">
+                <div class="search-box-wrapper" style="flex: 1; min-width: 250px; margin-right: 8px;">
+                  <input type="text" id="prospect-search" placeholder="Search name, company, title...">
+                </div>
+                <div class="search-box-wrapper" style="flex: 1; min-width: 200px; margin-right: 8px;">
+                  <select id="prospect-tag-chooser" class="premium-select" multiple size="1" onfocus="this.size=5;"
+                    onblur="this.size=1;" onchange="this.size=1; this.blur();"
+                    title="Hold Ctrl/Cmd to select multiple tags" style="width:100%; font-size:13px;"></select>
+                </div>
+                <div class="search-box-wrapper" style="flex: 1; min-width: 200px; margin-right: 8px;">
+                  <input type="text" id="prospect-geo-search" placeholder="Geography (e.g. VA, MD, DC)...">
+                </div>
+                <div class="action-btn-group">
+                  <button id="add-prospect-btn" class="header-action-btn primary-btn">+ Add Prospect</button>
+                  <button id="btn-show-all-contacts" class="header-action-btn secondary-btn">👀 See All
+                    Contacts</button>
+                  <button id="btn-show-all-companies" class="header-action-btn secondary-btn">🏢 See All
+                    Companies</button>
+                  <button id="btn-clear-prospects-filters" class="header-action-btn secondary-btn">🧹 Clear
+                    Filters</button>
+                  <button id="btn-prospects-settings" class="header-action-btn secondary-btn">⚙️ Settings</button>
+                  <button id="download-csv-template" class="header-action-btn secondary-btn"
+                    title="Download Import CSV Template">⬇️ Template</button>
+
+                  <label for="upload-csv-input" class="header-action-btn secondary-btn cursor-pointer"
+                    title="Import Contacts CSV/Excel">
+                    📤 Import CSV/Excel
+                  </label>
+                  <input type="file" id="upload-csv-input" accept=".csv,.zip,.xlsx,.xls" multiple class="hidden">
+                </div>
+              </div>
+
+              <!-- Split Tables Container -->
+              <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 16px;">
+                <!-- Contacts List Table -->
+                <div class="table-section">
+                  <h4 style="margin-bottom: 8px; color: var(--color-primary);">Contacts (<span
+                      id="contacts-count">0</span>)</h4>
+                  <div class="table-scroll-container" style="max-height: 35vh;">
+                    <table class="premium-table" id="prospects-table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Title</th>
+                          <th>Company</th>
+                          <th>City</th>
+                          <th>State</th>
+                          <th>Metro</th>
+                          <th>Tags</th>
+                        </tr>
+                      </thead>
+                      <tbody id="prospects-table-body">
+                        <!-- Dynamic rows -->
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- Companies List Table -->
+                <div class="table-section">
+                  <h4 style="margin-bottom: 8px; color: var(--color-primary);">Companies (<span
+                      id="companies-count">0</span>)</h4>
+                  <div class="table-scroll-container" style="max-height: 35vh;">
+                    <table class="premium-table" id="companies-table">
+                      <thead>
+                        <tr>
+                          <th>Company Name</th>
+                          <th>Industry</th>
+                          <th>Location</th>
+                          <th>Website</th>
+                          <th>Tags</th>
+                        </tr>
+                      </thead>
+                      <tbody id="companies-table-body">
+                        <!-- Dynamic rows -->
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Panel: Contact Inspector & Reachout History Table -->
+            <div class="prospect-inspector-card hidden" id="prospect-inspector">
+              <div class="inspector-header">
+                <h3 id="inspector-name">Select a Prospect</h3>
+                <p id="inspector-title-company">Head of Platform at Company</p>
+                <div class="inspector-meta" style="flex-wrap: wrap;">
+                  <span id="inspector-email">email@domain.com</span>
+                  <span id="inspector-phone">+1 555-0000</span>
+                  <span id="inspector-location" title="Metro Area">Metro Area</span>
+                  <span id="inspector-linkedin" title="LinkedIn">LinkedIn</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                  <span
+                    style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700;">Prospect
+                    Tags</span>
+                  <button id="btn-edit-inspector-tags" class="text-btn"
+                    style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Edit Tags</button>
+                </div>
+                <div class="inspector-tags" id="inspector-tags-list" style="margin-top: 4px;">
+                  <!-- Tag chips -->
+                </div>
+                <div style="margin-top: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 6px;">
+                  <textarea id="inspector-notes" placeholder="No notes added..." rows="3"
+                    style="font-size: 13px; color: var(--color-text-main); background: rgba(0,0,0,0.2); padding: 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--color-border); white-space: pre-wrap; width: 100%; resize: vertical; outline: none; font-family: inherit; transition: border-color 0.2s;"></textarea>
+                  <button id="btn-save-pros-notes" class="header-action-btn primary-btn hidden"
+                    style="align-self: flex-end; padding: 4px 12px; font-size: 11px;">Save Notes</button>
+                </div>
+                <div class="inspector-quick-actions">
+                  <button id="btn-edit-prospect" class="header-action-btn secondary-btn">✏️ Edit Details</button>
+                  <button id="btn-delete-prospect" class="header-action-btn danger-btn">🗑️ Delete Contact</button>
+                </div>
+              </div>
+
+              <!-- Reachout Interactions Section -->
+              <div class="inspector-history-section">
+                <div class="section-title-bar">
+                  <h4>Interaction Reachout Table</h4>
+                  <button id="btn-add-interaction" class="header-action-btn primary-btn">+ Add Interaction</button>
+                </div>
+
+                <div class="table-scroll-container">
+                  <table class="premium-table history-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Outreach Content / Notes</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="inspector-history-body">
+                      <!-- History Rows -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Audience Lists & Campaigns Membership Section -->
+              <div class="inspector-history-section"
+                style="margin-top: 16px; border-top: 1px solid var(--color-border); padding-top: 16px;">
+                <div class="section-title-bar">
+                  <h4>Audience Lists & Campaigns</h4>
+                </div>
+                <div id="inspector-memberships"
+                  style="font-size: 13px; display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+                  <!-- Dynamically populated audience lists and campaigns -->
+                </div>
+              </div>
+            </div>
+            <!-- Right Panel: Company Inspector -->
+            <div class="prospect-inspector-card hidden" id="company-inspector">
+              <div class="inspector-header">
+                <h3 id="inspector-comp-name">Company Name</h3>
+                <p id="inspector-comp-industry">Industry</p>
+                <div class="inspector-meta" style="flex-wrap: wrap;">
+                  <span id="inspector-comp-address" title="Address">Location</span>
+                  <span id="inspector-comp-hq" title="Headquarters">HQ: —</span>
+                  <span id="inspector-comp-employees" title="# of Employees">Employees: —</span>
+                  <span id="inspector-comp-phone" title="Phone">Phone</span>
+                  <span id="inspector-comp-website" title="Website">Website</span>
+                  <span id="inspector-comp-linkedin" title="LinkedIn">LinkedIn</span>
+                </div>
+                <div id="inspector-comp-details-block"
+                  style="margin-top: 10px; margin-bottom: 10px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--color-border); padding-top: 8px;">
+                  <div style="font-style: italic; color: var(--color-text-main);" id="inspector-comp-description">No
+                    description available.</div>
+                  <div style="font-size: 12px; color: var(--color-text-muted);" id="inspector-comp-specialities">
+                    Specialities: —</div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                  <span
+                    style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700;">Company
+                    Tags</span>
+                  <button id="btn-edit-inspector-comp-tags" class="text-btn"
+                    style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Edit Tags</button>
+                </div>
+                <div class="inspector-tags" id="inspector-comp-tags-list" style="margin-top: 4px;">
+                  <!-- Tag chips -->
+                </div>
+                <div style="margin-top: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 6px;">
+                  <textarea id="inspector-comp-notes" placeholder="No notes added..." rows="3"
+                    style="font-size: 13px; color: var(--color-text-main); background: rgba(0,0,0,0.2); padding: 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--color-border); white-space: pre-wrap; width: 100%; resize: vertical; outline: none; font-family: inherit; transition: border-color 0.2s;"></textarea>
+                  <button id="btn-save-comp-notes" class="header-action-btn primary-btn hidden"
+                    style="align-self: flex-end; padding: 4px 12px; font-size: 11px;">Save Notes</button>
+                </div>
+                <div class="inspector-quick-actions">
+                  <button id="btn-edit-company-inspector" class="header-action-btn secondary-btn">✏️ Edit
+                    Company</button>
+                  <button id="btn-delete-company" class="header-action-btn danger-btn">🗑️ Delete Company</button>
+                </div>
+              </div>
+
+              <!-- Associated Contacts Section -->
+              <div class="inspector-history-section">
+                <div class="section-title-bar">
+                  <h4>Associated Contacts</h4>
+                </div>
+                <div class="table-scroll-container">
+                  <table class="premium-table history-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Title</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="inspector-comp-contacts-body">
+                      <!-- Dynamic Contact Rows -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Empty State Inspector -->
+            <div class="prospect-inspector-card empty-inspector" id="prospect-inspector-empty">
+              <div class="empty-state-content">
+                <span class="empty-icon">👥</span>
+                <h3>Inspector</h3>
+                <p>Click on any contact or company in the directory to view complete details and history.</p>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- 3. MEDIA MANAGER VIEW PANEL -->
+        <section id="view-media" class="view-panel">
+          <div class="view-intro-actions">
+            <div class="search-box-wrapper" style="flex: 1; max-width: 400px; margin: 0;">
+              <input type="text" id="media-search" placeholder="Search title, summary, or content...">
+            </div>
+            <div class="action-btn-group" style="margin: 0;">
+              <button id="btn-clear-media-filters" class="header-action-btn secondary-btn"
+                title="Clear all active filters and search query">🧹 Clear Filters</button>
+              <button id="btn-media-settings" class="header-action-btn secondary-btn" title="Manage Options Settings">⚙️
+                Settings</button>
+              <button id="btn-add-media" class="header-action-btn primary-btn">+ Add Content</button>
+            </div>
+          </div>
+
+          <!-- Split Layout Grid -->
+          <div class="media-hub-layout">
+
+            <!-- Left Area: Filters & Grid -->
+            <div class="media-hub-left">
+              <!-- Status & Type Filters -->
+              <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+                <!-- Status Filters Row -->
+                <div class="media-filter-bar">
+                  <button class="media-status-filter active-filter" data-status="all">All Content</button>
+                  <button class="media-status-filter" data-status="Priority">🌟 Priority</button>
+                  <button class="media-status-filter" data-status="Idea">💡 Ideas</button>
+                  <button class="media-status-filter" data-status="Draft">📝 Drafts</button>
+                  <button class="media-status-filter" data-status="In Review">🔍 In Review</button>
+                  <button class="media-status-filter" data-status="Finished">✅ Finished</button>
+                  <button class="media-status-filter" data-status="Published">📢 Published</button>
+                  <button class="media-status-filter" data-status="Archive">📦 Archive</button>
+                </div>
+
+                <!-- Type Filters Row -->
+                <div class="media-filter-bar" id="media-type-filters-bar">
+                  <!-- Dynamically populated type filter buttons -->
+                </div>
+
+                <!-- Controls & Sorting Row -->
+                <div class="media-controls-bar"
+                  style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--color-border);">
+                  <!-- Publish Date Filter -->
+                  <div class="control-group" style="display: flex; align-items: center; gap: 8px;">
+                    <label for="media-date-filter"
+                      style="font-size: 13px; font-weight: 600; color: var(--color-text-muted);">📅 Publish
+                      Date:</label>
+                    <select id="media-date-filter" class="premium-select"
+                      style="background-color: rgba(0,0,0,0.25); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 6px 12px; border-radius: var(--border-radius-md); font-size: 13px; outline: none; transition: var(--transition-smooth); cursor: pointer;">
+                      <option value="all">All Time</option>
+                      <option value="this-week">This Week</option>
+                      <option value="last-week">Last Week</option>
+                      <option value="this-month">This Month</option>
+                      <option value="last-month">Last Month</option>
+                      <option value="custom">Custom Range...</option>
+                    </select>
+                  </div>
+
+                  <!-- Custom Date Picker Fields (Initially Hidden) -->
+                  <div id="media-custom-date-container" style="display: none; align-items: center; gap: 8px;">
+                    <input type="date" id="media-start-date" class="premium-date-input"
+                      style="background-color: rgba(0,0,0,0.25); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 4px 8px; border-radius: var(--border-radius-md); font-size: 13px; outline: none;">
+                    <span style="color: var(--color-text-muted); font-size: 13px;">to</span>
+                    <input type="date" id="media-end-date" class="premium-date-input"
+                      style="background-color: rgba(0,0,0,0.25); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 4px 8px; border-radius: var(--border-radius-md); font-size: 13px; outline: none;">
+                    <button id="btn-apply-custom-date" class="header-action-btn primary-btn"
+                      style="padding: 4px 8px; font-size: 11px; height: auto;">Apply</button>
+                  </div>
+
+                  <!-- Sort By Engagement -->
+                  <div class="control-group" style="display: flex; align-items: center; gap: 8px; margin-left: auto;">
+                    <label for="media-sort-by"
+                      style="font-size: 13px; font-weight: 600; color: var(--color-text-muted);">✨ Sort By:</label>
+                    <select id="media-sort-by" class="premium-select"
+                      style="background-color: rgba(0,0,0,0.25); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 6px 12px; border-radius: var(--border-radius-md); font-size: 13px; outline: none; transition: var(--transition-smooth); cursor: pointer;">
+                      <option value="none">Default (None)</option>
+                      <option value="custom">Custom Sort</option>
+                      <option value="title-asc">Alpha Sort (A-Z)</option>
+                      <option value="title-desc">Alpha Sort (Z-A)</option>
+                      <option value="publish-date-desc">Publish Date (Newest)</option>
+                      <option value="views-desc">Views (High to Low)</option>
+                      <option value="views-asc">Views (Low to High)</option>
+                      <option value="clicks-desc">Clicks (High to Low)</option>
+                      <option value="comments-desc">Shares & Comments (High to Low)</option>
+                      <option value="total-engagement-desc">Total Engagement (High to Low)</option>
+                    </select>
+                    <button id="btn-save-custom-sort" class="header-action-btn secondary-btn"
+                      style="padding: 6px 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 4px;"
+                      title="Save current card order as Custom sort">💾 Save Custom</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Media Deck Grid -->
+              <div class="media-card-grid" id="media-deck">
+                <!-- Dynamic Media Cards -->
+              </div>
+            </div>
+
+            <!-- Right Sidebar: Tags Global Filters -->
+            <aside class="media-hub-right">
+              <div class="sidebar-tags-card">
+                <h3>Filter by Tags</h3>
+                <div class="tags-filter-scroller" id="media-tags-filter-list">
+                  <!-- Dynamic Tag buttons populate here -->
+                </div>
+              </div>
+            </aside>
+
+          </div>
+        </section>
+
+        <!-- 4. CAMPAIGN MANAGER VIEW PANEL -->
+        <section id="view-campaigns" class="view-panel">
+          <div class="view-intro"
+            style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <h2>Outreach Campaign Manager</h2>
+              <p>Orchestrate your audience targeting and launch comprehensive outreach campaigns.</p>
+            </div>
+            <div class="action-btn-group" style="margin: 0;">
+              <button id="btn-launch-standalone-query" class="header-action-btn primary-btn">🔍 Audience Query
+                Engine</button>
+              <button id="btn-campaigns-settings" class="header-action-btn secondary-btn">⚙️ Settings</button>
+            </div>
+          </div>
+
+          <!-- Campaign Hub Navigation Sub-tabs -->
+          <div class="media-filter-bar"
+            style="border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 12px;">
+            <button id="subtab-campaigns" class="media-status-filter active-filter"
+              style="font-size: 13px; padding: 8px 16px;">🎯 Campaigns Dashboard</button>
+            <button id="subtab-audiences" class="media-status-filter" style="font-size: 13px; padding: 8px 16px;">👥
+              Audience Lists</button>
+          </div>
+
+          <!-- SUB-VIEW 1: CAMPAIGN DASHBOARD -->
+          <div id="campaign-dashboard-view">
+            <!-- Phase Filters Row -->
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+              <div class="media-filter-bar" id="campaign-phase-filters-bar">
+                <!-- Dynamically populated campaign phase filter buttons -->
+              </div>
+            </div>
+
+            <div class="media-hub-layout">
+              <!-- Left Area: Grid of Campaigns -->
+              <div class="media-hub-left">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                  <h3>Campaign Cards</h3>
+                  <button id="btn-open-create-campaign" class="header-action-btn primary-btn">+ Create Campaign</button>
+                </div>
+                <div class="media-card-grid" id="campaign-deck">
+                  <!-- Dynamic Campaign Cards -->
+                </div>
+              </div>
+
+              <!-- Right Sidebar: Tags Filters -->
+              <aside class="media-hub-right">
+                <div class="sidebar-tags-card">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h3 style="margin: 0;">Filter by Campaign Tags</h3>
+                    <button id="btn-clear-campaign-tags" class="header-action-btn secondary-btn"
+                      style="padding: 4px 8px; font-size: 11px; height: auto; margin: 0;">Clear All</button>
+                  </div>
+                  <div class="tags-filter-scroller" id="campaign-tags-filter-list">
+                    <!-- Dynamic Tag buttons populate here -->
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+
+          <!-- SUB-VIEW 2: AUDIENCE LISTS MANAGER -->
+          <div id="audience-lists-view" class="hidden">
+            <div class="prospects-layout-container" style="height: calc(100vh - 280px);">
+              <!-- Left Side: Audience Lists Directory -->
+              <div class="prospects-directory-card" style="padding: 16px;">
+                <div
+                  style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--color-border); padding-bottom:12px; margin-bottom:12px;">
+                  <h4 style="margin:0; color:var(--color-secondary);">Audience Lists Directory</h4>
+                  <button id="btn-create-empty-audience" class="header-action-btn secondary-btn"
+                    style="padding: 4px 8px; font-size:11px; height:auto;">+ Create List</button>
+                </div>
+                <div class="table-scroll-container">
+                  <table class="premium-table" id="audiences-table">
+                    <thead>
+                      <tr>
+                        <th>Audience Name</th>
+                        <th style="width: 100px;">Size</th>
+                        <th style="width: 120px; text-align: right;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="audiences-table-body">
+                      <!-- Dynamic Audience rows -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Right Side: Audience List Inspector -->
+              <div class="prospect-inspector-card" id="audience-inspector">
+                <!-- Inspector Header -->
+                <div class="inspector-header"
+                  style="background: linear-gradient(180deg, var(--color-secondary-glow) 0%, transparent 100%);">
+                  <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                    <h3 id="aud-inspect-name">Select an Audience List</h3>
+                    <div>
+                      <button id="btn-rename-audience" class="header-action-btn secondary-btn"
+                        style="padding: 4px 8px; font-size:11px; height:auto;">✏️ Rename</button>
+                      <button id="btn-delete-audience" class="header-action-btn danger-btn"
+                        style="padding: 4px 8px; font-size:11px; height:auto; background:rgba(239,68,68,0.1);">🗑️
+                        Delete</button>
+                    </div>
+                  </div>
+                  <p id="aud-inspect-size" style="font-size:12px; color:var(--color-text-muted); margin:0;">0 contacts
+                    stored</p>
+                </div>
+
+                <!-- Contacts in Audience Table -->
+                <div class="inspector-history-section"
+                  style="flex-grow:1; display:flex; flex-direction:column; overflow:hidden;">
+                  <div class="section-title-bar" style="margin-bottom:10px;">
+                    <h4>Contacts Table</h4>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                      <input type="text" id="aud-add-contact-search" placeholder="Search & add contact..."
+                        list="prospects-datalist"
+                        style="background:rgba(0,0,0,0.2); border:1px solid var(--color-border); color:var(--color-text-main); padding:6px 12px; border-radius:var(--border-radius-md); font-size:12px; outline:none; width: 180px;">
+                      <datalist id="prospects-datalist"></datalist>
+                      <button id="btn-add-contact-to-aud" class="header-action-btn primary-btn"
+                        style="padding: 6px 10px; font-size:12px; height:auto;">+ Add</button>
+                    </div>
+                  </div>
+
+                  <div class="table-scroll-container" style="flex-grow:1; overflow-y:auto;">
+                    <table class="premium-table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Title</th>
+                          <th>Company</th>
+                          <th style="text-align:center; width:60px;">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody id="aud-inspect-contacts-body">
+                        <!-- Contacts table rows -->
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUB-VIEW 3: DECOUPLED AUDIENCE QUERY BUILDER -->
+          <div id="campaign-query-view" class="hidden">
+            <div style="margin-bottom: 20px; border-bottom: 1px solid var(--color-border); padding-bottom: 16px;">
+              <button id="btn-back-to-campaign-dash" class="text-btn" style="margin-bottom: 12px;">← Back to
+                Dashboard</button>
+              <h3 style="margin:0; font-size: 24px; color: var(--color-primary);">Audience Query Engine</h3>
+              <p style="font-size:13px; color:var(--color-text-muted); margin: 4px 0;">Build target groups from your
+                database and save them as standalone lists.</p>
+            </div>
+
+            <div class="campaigns-grid-container" style="grid-template-columns: 350px 1fr;">
+              <!-- Query Engine (Left Sidebar) -->
+              <div class="campaign-creator-card" style="padding: 16px; height: auto;">
+                <div
+                  style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--color-border); padding-bottom:8px; margin-bottom:16px;">
+                  <h4 style="margin:0;">Query Parameters</h4>
+                  <button id="btn-clear-query" class="text-btn" style="font-size:11px;">Clear</button>
+                </div>
+
+                <div class="form-group">
+                  <label for="query-company">Company</label>
+                  <input type="text" id="query-company" placeholder="Search by company name...">
+                </div>
+
+                <div class="form-group">
+                  <label for="query-title">Title</label>
+                  <input type="text" id="query-title" placeholder="Search by job title (e.g. VP)...">
+                </div>
+
+                <div class="form-group">
+                  <label for="query-seniority">Seniority</label>
+                  <select id="query-seniority">
+                    <option value="any">Any Seniority</option>
+                    <option value="C-Level">C-Level / Executive</option>
+                    <option value="VP">VP</option>
+                    <option value="Director">Director</option>
+                    <option value="Manager">Manager</option>
+                    <option value="Individual Contributor">Individual Contributor</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="query-geography">Geography</label>
+                  <input type="text" id="query-geography" placeholder="State or metro area...">
+                </div>
+
+                <div class="form-group">
+                  <label for="query-prospect-tags">Prospect Tags</label>
+                  <input type="text" id="query-prospect-tags" placeholder="e.g. Decision Maker, VP...">
+                </div>
+
+                <div class="form-group">
+                  <label for="query-company-tags">Company Tags</label>
+                  <input type="text" id="query-company-tags" placeholder="e.g. AV Company, Enterprise...">
+                </div>
+
+                <div class="form-group">
+                  <label># of Employees</label>
+                  <div style="display: flex; flex-direction: column; gap: 4px; padding: 6px 0;">
+                    <label
+                      style="display:flex; align-items:center; gap:6px; font-weight:400; font-size:13px; cursor:pointer;"><input
+                        type="checkbox" class="query-employee-range" value="1-10"> 1–10</label>
+                    <label
+                      style="display:flex; align-items:center; gap:6px; font-weight:400; font-size:13px; cursor:pointer;"><input
+                        type="checkbox" class="query-employee-range" value="11-50"> 11–50</label>
+                    <label
+                      style="display:flex; align-items:center; gap:6px; font-weight:400; font-size:13px; cursor:pointer;"><input
+                        type="checkbox" class="query-employee-range" value="51-200"> 51–200</label>
+                    <label
+                      style="display:flex; align-items:center; gap:6px; font-weight:400; font-size:13px; cursor:pointer;"><input
+                        type="checkbox" class="query-employee-range" value="201-500"> 201–500</label>
+                    <label
+                      style="display:flex; align-items:center; gap:6px; font-weight:400; font-size:13px; cursor:pointer;"><input
+                        type="checkbox" class="query-employee-range" value=">500"> &gt;500</label>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="query-exclude-campaign">Exclude Previous Campaign</label>
+                  <select id="query-exclude-campaign">
+                    <option value="none">-- Don't exclude any --</option>
+                    <!-- Dynamically populated past campaigns -->
+                  </select>
+                </div>
+
+                <button id="btn-run-query" class="header-action-btn primary-btn"
+                  style="width:100%; margin-top: 12px;">🔍 Run Query</button>
+              </div>
+
+              <!-- Query Results (Right Main Area) -->
+              <div style="display: flex; flex-direction: column; gap: 16px;">
+
+                <!-- Query Results Card -->
+                <div class="campaign-creator-card" style="flex:1;">
+                  <div
+                    style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--color-border); padding-bottom:12px; margin-bottom:12px;">
+                    <h4 style="margin:0;">Query Results</h4>
+                    <span class="query-matched-badge" id="query-matched-count">0 Matches</span>
+                  </div>
+
+                  <div class="query-selection-list-wrapper">
+                    <div class="selection-actions">
+                      <button type="button" id="query-select-all-btn" class="text-btn">Select All</button>
+                      <button type="button" id="query-deselect-all-btn" class="text-btn">Deselect All</button>
+                    </div>
+                    <div id="query-contacts-checkboxes" class="checkbox-scroller" style="max-height: 350px;">
+                      <div style="text-align:center;padding:16px;font-size:12px;color:var(--color-text-muted);">Run a
+                        query to find matching contacts.</div>
+                    </div>
+                  </div>
+
+                  <div class="card-footer-actions"
+                    style="display:flex; flex-direction:column; gap:12px; border-top:1px solid var(--color-border); padding-top:16px;">
+                    <!-- Action: Add to Existing List -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; width:100%; gap:12px;">
+                      <span style="font-size:12px; font-weight:600; color:var(--color-text-muted);">Add Selected to
+                        Existing Audience:</span>
+                      <div style="display:flex; gap:6px; flex:1; max-width:300px;">
+                        <select id="query-add-existing-select"
+                          style="flex:1; font-size:12px; padding:6px; background:rgba(0,0,0,0.2); border:1px solid var(--color-border); color:#fff; border-radius:4px; outline:none;"></select>
+                        <button id="btn-query-add-existing" class="header-action-btn secondary-btn"
+                          style="font-size:12px; padding:6px 12px; height:auto;">Add</button>
+                      </div>
+                    </div>
+
+                    <!-- Action: Create New List -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; width:100%; gap:12px;">
+                      <span style="font-size:12px; font-weight:600; color:var(--color-text-muted);">Or Create New
+                        Audience List:</span>
+                      <div style="display:flex; gap:6px; flex:1; max-width:300px;">
+                        <input type="text" id="query-new-list-name" placeholder="e.g. Finance Directors"
+                          style="flex:1; font-size:12px; padding:6px 12px; background:rgba(0,0,0,0.2); border:1px solid var(--color-border); color:#fff; border-radius:4px; outline:none;">
+                        <button id="btn-query-create-list" class="header-action-btn primary-btn"
+                          style="font-size:12px; padding:6px 12px; height:auto;">Create & Add</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. DATA MANAGEMENT VIEW PANEL -->
+        <section id="view-data-management" class="view-panel">
+          <div class="welcome-banner"
+            style="background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(6, 182, 212, 0.1)); padding: 24px;">
+            <h2>🗄️ Vantage Data Management Hub</h2>
+            <p>Export database tables individually as standard CSV files, download a complete multi-table ZIP package,
+              or load backups to clear and restore tables.</p>
+          </div>
+
+          <div class="dashboard-split-grid" style="grid-template-columns: 1fr 1fr;">
+            <!-- Left Side: Backup / Export Options -->
+            <div class="dashboard-list-card" style="display: flex; flex-direction: column; gap: 16px;">
+              <h3>📦 Database Backups & Exports</h3>
+              <p style="font-size: 13px; color: var(--color-text-muted); line-height: 1.5; margin-bottom: 8px;">Download
+                a complete ZIP package containing prospects, media card outlines, campaign records, and company
+                directories, or download individual tables as CSVs.</p>
+
+              <!-- DB Stats row -->
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 8px;">
+                <div
+                  style="background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); padding: 12px; border-radius: var(--border-radius-md);">
+                  <span
+                    style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 600;">Prospects</span>
+                  <div id="db-prospects-count"
+                    style="font-size: 20px; font-weight: 800; color: var(--color-secondary);">0</div>
+                </div>
+                <div
+                  style="background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); padding: 12px; border-radius: var(--border-radius-md);">
+                  <span
+                    style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 600;">Media
+                    Outlines</span>
+                  <div id="db-media-count" style="font-size: 20px; font-weight: 800; color: var(--color-primary);">0
+                  </div>
+                </div>
+                <div
+                  style="background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); padding: 12px; border-radius: var(--border-radius-md);">
+                  <span
+                    style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 600;">Campaigns</span>
+                  <div id="db-campaigns-count" style="font-size: 20px; font-weight: 800; color: #ea580c;">0</div>
+                </div>
+                <div
+                  style="background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); padding: 12px; border-radius: var(--border-radius-md);">
+                  <span
+                    style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 600;">Companies</span>
+                  <div id="db-companies-count" style="font-size: 20px; font-weight: 800; color: #10b981;">0</div>
+                </div>
+              </div>
+
+              <!-- Button trigger opens option modal window -->
+              <button id="btn-open-backup-window" class="header-action-btn primary-btn"
+                style="justify-content: center; padding: 12px; font-size: 14px; font-weight: 700; width: 100%;">
+                📦 Run Backup / Export Options
+              </button>
+            </div>
+
+            <!-- Right Side: Restore Database -->
+            <div class="dashboard-list-card" style="display: flex; flex-direction: column; gap: 16px;">
+              <h3>📂 Complete Database Restore</h3>
+              <p style="font-size: 13px; color: var(--color-text-muted); line-height: 1.5;">Select a previously exported
+                <strong>ZIP backup package</strong> or a <strong>single table CSV</strong> (e.g.
+                <code>prm_prospects.csv</code>). This will **completely delete** existing records in the database table
+                and restore them from the backup file.</p>
+
+              <div id="data-restore-dropzone"
+                style="background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); border-radius: var(--border-radius-lg); padding: 20px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 150px; border-style: dashed; cursor: pointer; gap: 8px;"
+                onclick="document.getElementById('data-restore-input').click()">
+                <span style="font-size: 32px;">📂</span>
+                <span style="font-size: 13px; font-weight: 600;">Drag & Drop ZIP, CSV or Excel here</span>
+                <span style="font-size: 11px; color: var(--color-text-muted);">Restores prospects, media, campaigns, or
+                  companies</span>
+                <button type="button" class="header-action-btn secondary-btn" style="margin-top: 8px;"
+                  onclick="document.getElementById('data-restore-input').click(); event.stopPropagation();">Browse
+                  Files...</button>
+                <input type="file" id="data-restore-input" accept=".zip,.csv,.xlsx,.xls" class="hidden">
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Canvas Footer -->
+      <footer id="canvas-footer">
+        <div class="footer-brand">
+          <span id="footer-branding-text">Vantage PRM - Prospect Relationship Manager</span>
+        </div>
+      </footer>
+
+    </main>
+  </div>
+
+  <!-- ==========================================
+       MODALS & DIALOGS
+       ========================================== -->
+
+  <!-- Prospect Form Modal (Add / Edit) -->
+  <div id="modal-prospect" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3 id="prospect-modal-title">Add Prospect</h3>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="pros-first-name">First Name</label>
+          <input type="text" id="pros-first-name" placeholder="John">
+        </div>
+        <div class="form-group">
+          <label for="pros-last-name">Last Name</label>
+          <input type="text" id="pros-last-name" placeholder="Doe">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="pros-email">Email Address</label>
+        <input type="email" id="pros-email" placeholder="john.doe@company.com">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="pros-phone">Phone Number</label>
+          <input type="text" id="pros-phone" placeholder="+1 (555) 123-4567">
+        </div>
+        <div class="form-group">
+          <label for="pros-linkedin">LinkedIn URL</label>
+          <input type="url" id="pros-linkedin" placeholder="https://linkedin.com/in/janesmith">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="pros-title">Job Title</label>
+          <input type="text" id="pros-title" placeholder="VP of Engineering">
+        </div>
+        <div class="form-group">
+          <label for="pros-seniority">Seniority</label>
+          <select id="pros-seniority" class="premium-select"
+            style="background-color: rgba(0,0,0,0.25); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-md); font-size: 13px; outline: none; transition: var(--transition-smooth); cursor: pointer;">
+            <option value="C-Level">C-Level / Executive</option>
+            <option value="VP">VP</option>
+            <option value="Director">Director</option>
+            <option value="Manager">Manager</option>
+            <option value="Individual Contributor">Individual Contributor</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+          <label style="margin:0;">Company</label>
+          <button id="btn-pros-edit-company" type="button" class="text-btn hidden"
+            style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Edit Profile</button>
+        </div>
+        <input type="text" id="pros-company" placeholder="Stripe" list="companies-datalist">
+        <datalist id="companies-datalist"></datalist>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="pros-city">City</label>
+          <input type="text" id="pros-city" placeholder="San Francisco">
+        </div>
+        <div class="form-group">
+          <label for="pros-state">State</label>
+          <input type="text" id="pros-state" placeholder="CA">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="pros-location">Metro</label>
+          <input type="text" id="pros-location" placeholder="Bay Area">
+        </div>
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <label style="margin:0;">Associated Tags</label>
+            <button id="btn-pros-edit-tags" type="button" class="text-btn"
+              style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Choose Tags</button>
+          </div>
+          <div id="pros-display-tags" class="interactive-tags-container"
+            style="display: flex; flex-wrap: wrap; gap: 6px; cursor: pointer; padding: 6px; border-radius: var(--border-radius-sm); border: 1px dashed transparent; transition: var(--transition-smooth); background-color: rgba(0,0,0,0.15); min-height: 38px;">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="pros-notes">Notes</label>
+        <textarea id="pros-notes" rows="3" placeholder="Enter notes here..."
+          style="width: 100%; background-color: rgba(0,0,0,0.25); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-md); font-family: inherit; font-size: 13px; outline: none; transition: var(--transition-smooth); resize: vertical;"></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button id="pros-modal-cancel" class="header-action-btn secondary-btn">Cancel</button>
+        <button id="pros-modal-confirm" class="header-action-btn primary-btn">Save Contact</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Company Editor Modal -->
+  <div id="modal-company" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3 id="company-modal-title">Edit Company Profile</h3>
+
+      <div class="form-group">
+        <label for="comp-name">Company Name</label>
+        <input type="text" id="comp-name" placeholder="Acme Corp">
+      </div>
+
+      <div class="form-group">
+        <label for="comp-address">Street Address</label>
+        <input type="text" id="comp-address" placeholder="123 Main St">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="comp-city">City</label>
+          <input type="text" id="comp-city" placeholder="San Francisco">
+        </div>
+        <div class="form-group">
+          <label for="comp-state">State / Province</label>
+          <input type="text" id="comp-state" placeholder="CA">
+        </div>
+        <div class="form-group">
+          <label for="comp-postal">Postal Code</label>
+          <input type="text" id="comp-postal" placeholder="94105">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="comp-phone">Main Phone</label>
+          <input type="text" id="comp-phone" placeholder="+1 (555) 987-6543">
+        </div>
+        <div class="form-group">
+          <label for="comp-website">Website</label>
+          <input type="url" id="comp-website" placeholder="https://acme.com">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="comp-linkedin">LinkedIn Page</label>
+          <input type="url" id="comp-linkedin" placeholder="https://linkedin.com/company/acme">
+        </div>
+        <div class="form-group">
+          <label for="comp-hq">Company Headquarters</label>
+          <input type="text" id="comp-hq" placeholder="e.g. San Francisco, CA">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="comp-industry">Industry</label>
+          <input type="text" id="comp-industry" placeholder="e.g. Events, Technology">
+        </div>
+        <div class="form-group">
+          <label for="comp-employees"># of Employees</label>
+          <input type="number" id="comp-employees" placeholder="e.g. 536" min="0">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="comp-specialities">Company Specialities</label>
+          <input type="text" id="comp-specialities" placeholder="e.g. Payments, Fintech">
+        </div>
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <label style="margin:0;">Company Tags</label>
+            <button id="btn-comp-edit-tags" type="button" class="text-btn"
+              style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Choose Tags</button>
+          </div>
+          <div id="comp-display-tags" class="interactive-tags-container"
+            style="display: flex; flex-wrap: wrap; gap: 6px; cursor: pointer; padding: 6px; border-radius: var(--border-radius-sm); border: 1px dashed transparent; transition: var(--transition-smooth); background-color: rgba(0,0,0,0.15); min-height: 38px;">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="comp-description">Company Description</label>
+        <textarea id="comp-description" rows="2" placeholder="Enter company description here..."
+          style="width: 100%; background-color: rgba(0,0,0,0.25); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-md); font-family: inherit; font-size: 13px; outline: none; transition: var(--transition-smooth); resize: vertical;"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="comp-notes">Notes</label>
+        <textarea id="comp-notes" rows="3" placeholder="Enter notes here..."
+          style="width: 100%; background-color: rgba(0,0,0,0.25); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-md); font-family: inherit; font-size: 13px; outline: none; transition: var(--transition-smooth); resize: vertical;"></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button id="comp-modal-cancel" class="header-action-btn secondary-btn">Cancel</button>
+        <button id="comp-modal-confirm" class="header-action-btn primary-btn">Save Company</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create/Edit Campaign Modal -->
+  <div id="modal-create-campaign" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3 id="campaign-modal-title">Create New Campaign</h3>
+
+      <div class="form-group">
+        <label for="new-campaign-title">Campaign Name</label>
+        <input type="text" id="new-campaign-title" placeholder="e.g. Q3 Cloud Enterprise Outreach">
+      </div>
+
+      <div class="form-group">
+        <label for="new-campaign-audience">Intended Audience Description</label>
+        <input type="text" id="new-campaign-audience" placeholder="e.g. VPs of Engineering at Cloud Startups">
+      </div>
+
+      <div class="form-group">
+        <label for="new-campaign-goal">Summary / Goal</label>
+        <textarea id="new-campaign-goal" rows="3"
+          placeholder="Drive awareness for our new CI/CD pipeline feature..."></textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="new-campaign-audience-list">Audience List</label>
+          <select id="new-campaign-audience-list" class="premium-select">
+            <!-- Dynamically populated with state.audienceLists -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="new-campaign-media">Sequence Media (Link a Media Piece)</label>
+          <select id="new-campaign-media" class="premium-select">
+            <option value="">-- Choose Finished content sequence --</option>
+            <!-- Dynamically populated -->
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+          <label style="margin:0;">Campaign Tags</label>
+          <button id="btn-campaign-edit-tags" type="button" class="text-btn"
+            style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Choose Tags</button>
+        </div>
+        <div id="campaign-display-tags" class="interactive-tags-container"
+          style="display: flex; flex-wrap: wrap; gap: 6px; cursor: pointer; padding: 6px; border-radius: var(--border-radius-sm); border: 1px dashed transparent; transition: var(--transition-smooth); background-color: rgba(0,0,0,0.15); min-height: 38px;">
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="create-campaign-cancel" class="header-action-btn secondary-btn">Cancel</button>
+        <button id="create-campaign-confirm" class="header-action-btn primary-btn">Save Campaign</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Campaign Detail Modal -->
+  <div id="modal-campaign-detail" class="modal-overlay hidden">
+    <div class="modal-card"
+      style="max-width: 760px; max-height: 85vh; display: flex; flex-direction: column; gap: 0; overflow: hidden;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 16px; flex-shrink: 0;">
+        <h3 id="campaign-detail-title" style="margin: 0; font-size: 20px; color: var(--color-primary);">Campaign Details
+        </h3>
+        <button id="btn-campaign-detail-close-x"
+          style="background: none; border: none; color: var(--color-text-muted); font-size: 20px; cursor: pointer; padding: 0 4px;">✕</button>
+      </div>
+
+      <div
+        style="flex-grow: 1; overflow-y: auto; padding-right: 8px; display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <span
+              style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700;">Intended
+              Audience Description</span>
+            <p id="campaign-detail-audience" style="font-size: 13px; margin: 4px 0 0 0; font-weight: 500;"></p>
+          </div>
+          <div>
+            <span
+              style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700;">Audience
+              List Name</span>
+            <p id="campaign-detail-list-name"
+              style="font-size: 13px; margin: 4px 0 0 0; font-weight: 600; color: var(--color-secondary);"></p>
+          </div>
+        </div>
+
+        <div>
+          <span
+            style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700;">Summary
+            / Goal</span>
+          <p id="campaign-detail-goal"
+            style="font-size: 13px; margin: 4px 0 0 0; background: rgba(0,0,0,0.15); padding: 10px; border-radius: 6px; white-space: pre-wrap;">
+          </p>
+        </div>
+
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span
+              style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700;">Contacts
+              Table</span>
+            <span id="campaign-detail-contact-count" class="tag-badge" style="margin: 0; padding: 2px 6px;">0
+              contacts</span>
+          </div>
+          <div class="table-scroll-container"
+            style="border: 1px solid var(--color-border); border-radius: 6px; background: rgba(0,0,0,0.15); max-height: 250px;">
+            <table class="premium-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Title</th>
+                  <th>Email Address</th>
+                  <th>Company</th>
+                </tr>
+              </thead>
+              <tbody id="campaign-detail-contacts-body">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div
+        style="margin-top: 16px; border-top: 1px solid var(--color-border); padding-top: 16px; flex-shrink: 0; display: flex; gap: 12px;">
+        <button id="btn-campaign-detail-edit" class="header-action-btn secondary-btn"
+          style="flex: 1; justify-content: center;">✏️ Edit Details</button>
+        <button id="btn-campaign-detail-close" class="header-action-btn primary-btn"
+          style="flex: 1; justify-content: center;">Close Details</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add To Campaign Modal -->
+  <div id="modal-add-to-campaign" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3>Add Contacts to Campaign</h3>
+      <p style="font-size:13px; color:var(--color-text-muted); margin-bottom: 16px;">Select an existing pending campaign
+        to add these <span id="add-to-campaign-count" style="font-weight:bold;color:var(--color-text-main);">0</span>
+        contacts to, or create a new campaign.</p>
+
+      <div class="form-group">
+        <label for="add-to-campaign-select">Select Pending Campaign</label>
+        <select id="add-to-campaign-select">
+          <option value="">-- Choose a Campaign --</option>
+          <!-- Dynamically populated with pending campaigns -->
+        </select>
+      </div>
+
+      <div
+        style="text-align: center; margin: 16px 0; color: var(--color-text-muted); font-size: 12px; font-weight: bold;">
+        — OR —</div>
+
+      <button id="btn-add-to-campaign-create-new" class="header-action-btn secondary-btn"
+        style="width: 100%; justify-content: center; margin-bottom: 24px;">+ Create New Campaign</button>
+
+      <div class="modal-actions">
+        <button id="add-to-campaign-cancel" class="header-action-btn secondary-btn">Cancel</button>
+        <button id="add-to-campaign-confirm" class="header-action-btn primary-btn">Add to Selected Campaign</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interaction Form Modal -->
+  <div id="modal-interaction" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3>Record Reachout Interaction</h3>
+
+      <div class="form-group">
+        <label for="int-date">Interaction Date</label>
+        <input type="date" id="int-date">
+      </div>
+
+      <div class="form-group">
+        <label for="int-type">Reachout Type</label>
+        <select id="int-type">
+          <!-- dynamically populated -->
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="int-content">Interaction Summary / Description</label>
+        <textarea id="int-content" rows="4"
+          placeholder="Brief summary of what was discussed, links sent, or email subject line..."></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button id="int-modal-cancel" class="header-action-btn secondary-btn">Cancel</button>
+        <button id="int-modal-confirm" class="header-action-btn primary-btn">Record Outreach</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Media Manager Settings Modal -->
+  <div id="modal-media-settings" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 600px; max-height: 85vh; overflow-y: auto;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 20px;">
+        <h3 style="margin: 0;">⚙️ Application Settings</h3>
+        <button id="btn-settings-close-x"
+          style="background: none; border: none; color: var(--color-text-muted); font-size: 20px; cursor: pointer;">✕</button>
+      </div>
+
+      <!-- Option Configurator Sections -->
+      <div class="settings-configurator-grid">
+
+        <!-- Media Hub: Types -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #8b5cf6; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #8b5cf6;">Media Types</h4>
+          <div class="settings-item-list" id="list-settings-types"></div>
+          <div class="settings-inline-add">
+            <input type="text" id="input-add-type" placeholder="e.g. Podcast">
+            <button class="header-action-btn primary-btn" id="btn-add-type-opt">+</button>
+          </div>
+        </div>
+
+        <!-- Media Hub: Development Phases -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #8b5cf6; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #8b5cf6;">Development Phases</h4>
+          <div class="settings-item-list" id="list-settings-phases"></div>
+          <div class="settings-inline-add">
+            <input type="text" id="input-add-phase" placeholder="e.g. Scheduled">
+            <button class="header-action-btn primary-btn" id="btn-add-phase-opt">+</button>
+          </div>
+        </div>
+
+        <!-- Media Hub: Publishing Platforms -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #8b5cf6; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #8b5cf6;">Publishing Platforms</h4>
+          <div class="settings-item-list" id="list-settings-platforms"></div>
+          <div class="settings-inline-add">
+            <input type="text" id="input-add-platform" placeholder="e.g. Anchor">
+            <button class="header-action-btn primary-btn" id="btn-add-platform-opt">+</button>
+          </div>
+        </div>
+
+        <!-- Media Hub: Tags -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #8b5cf6; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #8b5cf6;">Media Hub Tags</h4>
+          <div class="settings-item-list" id="list-settings-tags"></div>
+          <div class="settings-inline-add">
+            <input type="text" id="input-add-tag" placeholder="e.g. Mobile">
+            <button class="header-action-btn primary-btn" id="btn-add-tag-opt">+</button>
+          </div>
+        </div>
+
+        <!-- Prospect Hub Tags -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #0d9488; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #0d9488;">Prospect Hub Tags</h4>
+          <div class="settings-item-list" id="list-settings-prospect-tags"></div>
+          <div class="settings-inline-add">
+            <input type="text" id="input-add-prospect-tag" placeholder="e.g. Decision Maker">
+            <button class="header-action-btn primary-btn" id="btn-add-prospect-tag-opt">+</button>
+          </div>
+        </div>
+
+        <!-- Campaign Hub Tags -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #f97316; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #f97316;">Campaign Hub Tags</h4>
+          <div class="settings-item-list" id="list-settings-campaign-tags"></div>
+          <div class="settings-inline-add">
+            <input type="text" id="input-add-campaign-tag" placeholder="e.g. Q3 Outreach">
+            <button class="header-action-btn primary-btn" id="btn-add-campaign-tag-opt">+</button>
+          </div>
+        </div>
+
+        <!-- Campaign Development Phases -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #f97316; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #f97316;">Campaign Development Phases</h4>
+          <div class="settings-item-list" id="list-settings-campaign-phases"></div>
+          <div class="settings-inline-add">
+            <input type="text" id="input-add-campaign-phase" placeholder="e.g. Pre-Launch">
+            <button class="header-action-btn primary-btn" id="btn-add-campaign-phase-opt">+</button>
+          </div>
+        </div>
+
+        <!-- Company Tags -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #10b981; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #10b981;">Company Tags</h4>
+          <div class="settings-item-list" id="list-settings-company-tags"></div>
+          <div class="settings-inline-add">
+            <input type="text" id="input-add-company-tag" placeholder="e.g. Enterprise">
+            <button class="header-action-btn primary-btn" id="btn-add-company-tag-opt">+</button>
+          </div>
+        </div>
+
+        <!-- Reachout Types -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #3b82f6; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #3b82f6;">Reachout Types</h4>
+          <div class="settings-item-list" id="list-settings-reachout-types"></div>
+          <div class="settings-inline-add">
+            <input type="text" id="input-add-reachout-type" placeholder="e.g. Email">
+            <button class="header-action-btn primary-btn" id="btn-add-reachout-type-opt">+</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-actions"
+        style="margin-top: 24px; border-top: 1px solid var(--color-border); padding-top: 16px;">
+        <button id="btn-settings-close" class="header-action-btn primary-btn" style="width: 100%;">Close
+          Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Content Dashboard Modal -->
+  <div id="modal-content-dashboard" class="modal-overlay hidden">
+    <div class="modal-card"
+      style="max-width: 840px; height: 880px; max-height: 95vh; display: flex; flex-direction: column; gap: 0; overflow: hidden;">
+
+      <!-- Top Action Bar (FROZEN HEADER) -->
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 16px; flex-shrink: 0;">
+        <span
+          style="font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; color: var(--color-primary);">Content
+          Dashboard</span>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-dashboard-close-x"
+            style="background: none; border: none; color: var(--color-text-muted); font-size: 20px; cursor: pointer; padding: 0 4px;">✕</button>
+        </div>
+      </div>
+
+      <!-- Scrollable Content -->
+      <div
+        style="flex-grow: 1; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding-right: 8px;">
+
+        <!-- Core Details Header -->
+        <div style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">
+          <div class="form-group" style="margin: 0;">
+            <label for="dash-edit-title"
+              style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700; display: block; margin-bottom: 4px;">Title</label>
+            <input type="text" id="dash-edit-title"
+              style="width: 100%; font-size: 18px; font-weight: 800; background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-md); outline: none;"
+              placeholder="Content Title">
+          </div>
+          <div style="display: flex; gap: 12px; margin-top: 4px;">
+            <div class="form-group" style="flex: 1; margin: 0;">
+              <label for="dash-edit-type"
+                style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700; display: block; margin-bottom: 4px;">Media
+                Type</label>
+              <select id="dash-edit-type" class="premium-select"
+                style="width: 100%; background-color: rgba(0,0,0,0.2); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-md); font-size: 13px; outline: none; cursor: pointer;"></select>
+            </div>
+            <div class="form-group" style="flex: 1; margin: 0;">
+              <label for="dash-edit-status"
+                style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700; display: block; margin-bottom: 4px;">Status
+                Pipeline</label>
+              <select id="dash-edit-status" class="premium-select"
+                style="width: 100%; background-color: rgba(0,0,0,0.2); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-md); font-size: 13px; outline: none; cursor: pointer;"></select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Expandable Summary/Outline Section -->
+        <details class="premium-details" open
+          style="background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); border-radius: var(--border-radius-md); margin-bottom: 4px; padding: 4px 10px; flex-shrink: 0;">
+          <summary
+            style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--color-secondary); cursor: pointer; padding: 6px 0; outline: none; display: list-item;">
+            📝 Summary / Outline (Click to expand/collapse)</summary>
+          <div style="padding-top: 8px; padding-bottom: 6px;">
+            <textarea id="dash-edit-outline"
+              style="width: 100%; min-height: 100px; background: rgba(0,0,0,0.15); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-sm); font-family: inherit; font-size: 13px; resize: vertical; outline: none;"
+              placeholder="Outline the main takeaways, summary details, script overview, or raw outline pitch..."></textarea>
+          </div>
+        </details>
+
+        <!-- Expandable Content Section -->
+        <details class="premium-details"
+          style="background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); border-radius: var(--border-radius-md); margin-bottom: 4px; padding: 4px 10px; flex-shrink: 0;">
+          <summary
+            style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--color-primary); cursor: pointer; padding: 6px 0; outline: none; display: list-item;">
+            ✍️ Content Details (Click to expand/collapse)</summary>
+          <div style="padding-top: 8px; padding-bottom: 6px;">
+            <textarea id="dash-edit-content"
+              style="width: 100%; min-height: 150px; background: rgba(0,0,0,0.15); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-sm); font-family: inherit; font-size: 13px; resize: vertical; outline: none;"
+              placeholder="Enter full draft text, script transcript, final article content, or raw notes..."></textarea>
+          </div>
+        </details>
+
+        <!-- Associated Tags -->
+        <div style="flex-shrink: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label
+              style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700; display: block; margin: 0;">Associated
+              Tags</label>
+            <button id="btn-dash-edit-tags" class="text-btn"
+              style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Choose Tags</button>
+          </div>
+          <div id="dash-display-tags" class="interactive-tags-container"
+            style="display: flex; flex-wrap: wrap; gap: 6px; cursor: pointer; padding: 6px; border-radius: var(--border-radius-sm); border: 1px dashed transparent; transition: var(--transition-smooth);"
+            title="Click to choose tags"></div>
+        </div>
+
+        <!-- Master Files Section -->
+        <div
+          style="display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--color-border); padding-top: 8px; flex-shrink: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <label
+              style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700; display: block; margin: 0;">Master
+              Files</label>
+            <button id="btn-add-master-file" class="header-action-btn primary-btn"
+              style="padding: 4px 10px; font-size: 11px; font-weight: 700; height: auto;">+ Add Master File</button>
+          </div>
+
+          <div class="table-scroll-container"
+            style="padding: 0; max-height: 100px; border: 1px solid var(--color-border); border-radius: var(--border-radius-md); background: rgba(0,0,0,0.15); overflow-y: auto;">
+            <table class="premium-table" id="master-files-table">
+              <thead>
+                <tr>
+                  <th>File Reference (Click to Open)</th>
+                  <th style="width: 110px;">Source Type</th>
+                  <th style="width: 100px;">Size/Meta</th>
+                  <th style="width: 90px; text-align: center;">Link</th>
+                  <th style="width: 90px; text-align: center;">Unlink</th>
+                </tr>
+              </thead>
+              <tbody id="master-files-list-body">
+                <!-- Dynamically populated master files -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Attachment Files Section -->
+        <div style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
+          <label
+            style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700; display: block; margin-bottom: 2px;">Attachment
+            Files (Drag & Drop or Click)</label>
+          <div id="dash-file-dropzone" class="file-dropzone" style="padding: 6px 10px;">
+            <span style="font-size: 11px;">📁 Drag & Drop files here or click to attach</span>
+            <input type="file" id="dash-file-input" class="hidden" multiple>
+          </div>
+          <div id="dash-files-container" class="files-attachment-container hidden">
+            <div id="dash-files-list" class="files-list"></div>
+          </div>
+        </div>
+
+        <!-- BOTTOM HALF: Publishing Info & Live Performance Metrics -->
+        <div
+          style="border-top: 1px solid var(--color-border); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <h3
+              style="font-family: var(--font-display); font-size: 14px; font-weight: 700; margin: 0; color: var(--color-secondary);">
+              📈 Published Information & Metrics</h3>
+            <button id="btn-add-publish-event" class="header-action-btn primary-btn"
+              style="padding: 4px 10px; font-size: 11px; font-weight: 700; height: auto;">+ Add Publish Event</button>
+          </div>
+
+          <div class="table-scroll-container"
+            style="padding: 0; max-height: 100px; border: 1px solid var(--color-border); border-radius: var(--border-radius-md); background: rgba(0,0,0,0.15); overflow-y: auto;">
+            <table class="premium-table" id="publish-events-table">
+              <thead>
+                <tr>
+                  <th style="width: 110px; white-space: nowrap;">Date (Edit)</th>
+                  <th>Expiration Date</th>
+                  <th>Platform</th>
+                  <th>Published Link</th>
+                  <th>Views</th>
+                  <th>Clicks</th>
+                  <th style="max-width: 90px; line-height: 1.2;">Shares/<br>Comments</th>
+                  <th style="text-align: center; width: 80px;">Delete</th>
+                </tr>
+              </thead>
+              <tbody id="publish-events-list-body">
+                <!-- Dynamically populated publish events -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+      <!-- End Scrollable Content -->
+
+      <!-- FROZEN FOOTER: Close Button -->
+      <div style="margin-top: 16px; border-top: 1px solid var(--color-border); padding-top: 16px; flex-shrink: 0;">
+        <button id="btn-dashboard-close" class="header-action-btn primary-btn" style="width: 100%;">Close
+          Dashboard</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Publish Event Form Modal (Add / Edit) -->
+  <div id="modal-publish-event" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 480px;">
+      <h3 id="publish-event-modal-title">Record Publish Event</h3>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="pub-date">Publish Date</label>
+          <input type="date" id="pub-date">
+        </div>
+        <div class="form-group">
+          <label for="pub-expiration-date">Expiration Date (Optional)</label>
+          <input type="date" id="pub-expiration-date">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="pub-platform">Publishing Platform</label>
+        <select id="pub-platform">
+          <!-- Populated dynamically -->
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="pub-url">Published Piece Link (URL)</label>
+        <input type="url" id="pub-url" placeholder="https://medium.com/your-article-slug">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="pub-views">Views</label>
+          <input type="number" id="pub-views" min="0" value="0">
+        </div>
+        <div class="form-group">
+          <label for="pub-clicks">Clicks / Engagement</label>
+          <input type="number" id="pub-clicks" min="0" value="0">
+        </div>
+        <div class="form-group">
+          <label for="pub-comments">Comments / Shares</label>
+          <input type="number" id="pub-comments" min="0" value="0">
+        </div>
+      </div>
+
+      <div class="modal-actions"
+        style="margin-top: 24px; border-top: 1px solid var(--color-border); padding-top: 16px;">
+        <button id="pub-modal-cancel" class="header-action-btn secondary-btn">Cancel</button>
+        <button id="pub-modal-confirm" class="header-action-btn primary-btn">Save Event</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Link Master File Modal (Add / Edit) -->
+  <div id="modal-master-file" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 480px;">
+      <h3 id="master-file-modal-title">Link Master File</h3>
+
+      <div class="form-group">
+        <label for="master-link-type">Link Source Type</label>
+        <select id="master-link-type" class="premium-select"
+          style="background-color: rgba(0,0,0,0.25); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-md); font-size: 13px; outline: none; transition: var(--transition-smooth); cursor: pointer; width: 100%;">
+          <option value="cloud">☁️ Google Drive / Cloud Link</option>
+          <option value="upload">💻 Local File Upload (Saves in Vantage DB)</option>
+          <option value="path">🗂️ Local Disk File Path Reference</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="master-file-name">File / Document Name</label>
+        <input type="text" id="master-file-name" placeholder="e.g. Q3 Sales Strategy Document">
+      </div>
+
+      <!-- Sub-form for Cloud link -->
+      <div id="master-subform-cloud" class="form-group">
+        <label for="master-cloud-url">Google Drive / Cloud Document URL</label>
+        <input type="url" id="master-cloud-url" placeholder="https://drive.google.com/open?id=...">
+      </div>
+
+      <!-- Sub-form for Local path reference -->
+      <div id="master-subform-path" class="form-group hidden">
+        <label for="master-local-path">Full Local Path on Hard Drive</label>
+        <input type="text" id="master-local-path" placeholder="e.g. C:\Users\YourName\Documents\sales_pitch.docx">
+        <p style="font-size: 11px; color: var(--color-text-muted); margin-top: 4px; line-height: 1.4;">
+          Note: Modern browsers block opening local files directly due to sandbox security. This creates a link and
+          quick "Copy" button in your dashboard so you can instantly copy the path and paste it into Windows Explorer or
+          the Run utility (Win+R).
+        </p>
+      </div>
+
+      <!-- Sub-form for Local file upload -->
+      <div id="master-subform-upload" class="form-group hidden">
+        <label
+          style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700; display: block; margin-bottom: 6px;">Select
+          Master File to Upload</label>
+        <div id="master-file-dropzone" class="file-dropzone">
+          <span>📁 Drag & Drop file here or click to choose</span>
+          <input type="file" id="master-file-input" class="hidden">
+        </div>
+        <div id="master-file-upload-preview" class="file-item-row hidden" style="margin-top: 10px;">
+          <!-- Dynamic single file preview populated in JS -->
+        </div>
+      </div>
+
+      <div class="modal-actions"
+        style="margin-top: 24px; border-top: 1px solid var(--color-border); padding-top: 16px;">
+        <button id="master-modal-cancel" class="header-action-btn secondary-btn">Cancel</button>
+        <button id="master-modal-confirm" class="header-action-btn primary-btn">Link to Vantage</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Choose Tags Modal -->
+  <div id="modal-choose-tags" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 440px; max-height: 80vh; display: flex; flex-direction: column;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 16px;">
+        <h3 style="margin: 0; font-size: 18px;">✏️ Choose Associated Tags</h3>
+        <button id="btn-tags-close-x"
+          style="background: none; border: none; color: var(--color-text-muted); font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+
+      <div style="flex-grow: 1; overflow-y: auto; margin-bottom: 16px;">
+        <p style="font-size: 12px; color: var(--color-text-muted); margin-bottom: 12px;">Toggle tags to associate with
+          this content outline.</p>
+
+        <!-- Tags checklist grid -->
+        <div id="tags-checklist-grid" class="checkbox-scroller"
+          style="display: grid; grid-template-columns: 1fr; gap: 8px; max-height: 280px; padding: 4px;">
+          <!-- Dynamic checklist checkboxes generated in JS -->
+        </div>
+      </div>
+
+      <!-- Fast Add Tag Inline -->
+      <div style="border-top: 1px solid var(--color-border); padding-top: 12px; margin-bottom: 16px;">
+        <span
+          style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700; display: block; margin-bottom: 6px;">Create
+          a New Tag</span>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="input-dash-new-tag" placeholder="e.g. Sales"
+            style="flex: 1; background-color: rgba(0,0,0,0.2); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-md); font-size: 13px; outline: none;">
+          <button id="btn-dash-add-tag" class="header-action-btn primary-btn"
+            style="padding: 8px 14px; font-size: 13px; font-weight: 700; height: auto;">+</button>
+        </div>
+      </div>
+
+      <div class="modal-actions" style="border-top: 1px solid var(--color-border); padding-top: 16px;">
+        <button id="tags-modal-cancel" class="header-action-btn secondary-btn" style="flex: 1;">Cancel</button>
+        <button id="tags-modal-confirm" class="header-action-btn primary-btn"
+          style="flex: 1; justify-content: center;">Save Tags</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backup Options Modal Window -->
+  <div id="modal-backup-options" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 480px;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 20px;">
+        <h3 style="margin: 0;">📦 Backup & Export Options</h3>
+        <button id="btn-backup-options-close-x"
+          style="background: none; border: none; color: var(--color-text-muted); font-size: 20px; cursor: pointer;">✕</button>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <button id="btn-export-all-zip" class="header-action-btn primary-btn"
+          style="justify-content: center; padding: 12px; font-size: 13px; font-weight: 700; width: 100%;">
+          📦 Export All Data (ZIP Backup Package)
+        </button>
+
+        <div style="margin: 8px 0; border-top: 1px solid var(--color-border); padding-top: 12px;">
+          <span
+            style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700; display: block; margin-bottom: 8px;">Export
+            Individual Database CSVs</span>
+
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <button id="btn-export-prospects-csv" class="header-action-btn secondary-btn"
+              style="justify-content: flex-start; padding: 10px; width: 100%;">
+              👥 Prospect Hub Database (CSV)
+            </button>
+            <button id="btn-export-media-csv" class="header-action-btn secondary-btn"
+              style="justify-content: flex-start; padding: 10px; width: 100%;">
+              📁 Media Hub Database (CSV)
+            </button>
+            <button id="btn-export-campaigns-csv" class="header-action-btn secondary-btn"
+              style="justify-content: flex-start; padding: 10px; width: 100%;">
+              🎯 Campaign Hub Database (CSV)
+            </button>
+            <button id="btn-export-audiences-csv" class="header-action-btn secondary-btn"
+              style="justify-content: flex-start; padding: 10px; width: 100%;">
+              👥 Audience Lists Database (CSV)
+            </button>
+            <button id="btn-export-companies-csv" class="header-action-btn secondary-btn"
+              style="justify-content: flex-start; padding: 10px; width: 100%;">
+              🏢 Companies Database (CSV)
+            </button>
+            <button id="btn-export-settings-csv" class="header-action-btn secondary-btn"
+              style="justify-content: flex-start; padding: 10px; width: 100%;">
+              ⚙️ Media Hub Settings (CSV)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions"
+        style="margin-top: 24px; border-top: 1px solid var(--color-border); padding-top: 16px;">
+        <button id="btn-backup-options-close" class="header-action-btn secondary-btn" style="width: 100%;">Close
+          Window</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Template Options Modal Window -->
+  <div id="modal-template-options" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 480px;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 20px;">
+        <h3 style="margin: 0;">⬇️ Download Import Template</h3>
+        <button id="btn-template-options-close-x"
+          style="background: none; border: none; color: var(--color-text-muted); font-size: 20px; cursor: pointer;">✕</button>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <p style="font-size: 13px; color: var(--color-text-muted); line-height: 1.5; margin: 0;">
+          Select a template format to download. Populate it with your contact information, then upload it using the
+          <strong>📤 Import CSV</strong> button in Prospect Hub.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <!-- Option 1: Vantage Standard Template -->
+          <button id="btn-download-vantage-template" class="header-action-btn secondary-btn"
+            style="justify-content: flex-start; padding: 12px; width: 100%; height: auto;">
+            <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+              <span style="font-weight: 700; font-size: 13px;">👥 Vantage Standard Template (CSV)</span>
+              <span style="font-size: 11px; color: var(--color-text-muted); text-align: left;">Standard fields for
+                general CRM prospects and company data. Includes standard "Mobile" field.</span>
+            </div>
+          </button>
+
+          <!-- Option 2: Apollo.io Export Template -->
+          <button id="btn-download-apollo-template" class="header-action-btn secondary-btn"
+            style="justify-content: flex-start; padding: 12px; width: 100%; height: auto;">
+            <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+              <span style="font-weight: 700; font-size: 13px;">🚀 Apollo Import Tempalate w/phone (.xls)</span>
+              <span style="font-size: 11px; color: var(--color-text-muted); text-align: left;">Matches Apollo.io native
+                export format. Highlights <span style="color: #ff6b6b; font-weight: 600;">IGNORE</span> columns and
+                automatic <span style="color: #ff6b6b; font-weight: 600;">Reachout Interactions</span> in red.</span>
+            </div>
+          </button>
+
+          <!-- Option 3: Apollo Export Template NO PHONE -->
+          <button id="btn-download-apollo-nophone-template" class="header-action-btn secondary-btn"
+            style="justify-content: flex-start; padding: 12px; width: 100%; height: auto;">
+            <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+              <span style="font-weight: 700; font-size: 13px;">🚀 Apollo Import Template-NO PHONE (.xls)</span>
+              <span style="font-size: 11px; color: var(--color-text-muted); text-align: left;">Same format but excludes
+                "Phone (Mobile)" column. Highlights <span style="color: #ff6b6b; font-weight: 600;">IGNORE</span> and
+                automatic <span style="color: #ff6b6b; font-weight: 600;">Reachout Interactions</span> in red.</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-actions"
+        style="margin-top: 24px; border-top: 1px solid var(--color-border); padding-top: 16px;">
+        <button id="btn-template-options-close" class="header-action-btn secondary-btn" style="width: 100%;">Close
+          Window</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Core Javascript Logic -->
+  <script src="app.js"></script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('[PWA] Service Worker registered:', reg.scope))
+          .catch(err => console.warn('[PWA] Service Worker registration failed:', err));
+      });
+    }
+  </script>
+</body>
+
+</html>

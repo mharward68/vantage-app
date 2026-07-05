@@ -1,0 +1,651 @@
+{
+  "companies": [
+    {
+      "id": "comp-stripe",
+      "name": "Stripe",
+      "domain": "stripe.com",
+      "location": "San Francisco, CA",
+      "industry": "Fintech",
+      "employees": "8500",
+      "employeeRange": "5000-10000",
+      "description": "Financial infrastructure for the internet. Millions of companies of all sizes use Stripe online and in person.",
+      "specialities": "Payments, Billing, Connect, Terminal, Corporate Card",
+      "headquarters": "San Francisco, CA"
+    },
+    {
+      "id": "comp-vercel",
+      "name": "Vercel",
+      "domain": "vercel.com",
+      "location": "New York, NY",
+      "industry": "Cloud Infrastructure",
+      "employees": "800",
+      "employeeRange": "500-1000",
+      "description": "Vercel provides the developer experience and infrastructure to build, deploy, and scale the web.",
+      "specialities": "Next.js, Edge Functions, Cloud Deployment, Serverless Hosting",
+      "headquarters": "New York, NY"
+    },
+    {
+      "id": "comp-figma",
+      "name": "Figma",
+      "domain": "figma.com",
+      "location": "San Francisco, CA",
+      "industry": "Design Software",
+      "employees": "1300",
+      "employeeRange": "1000-5000",
+      "description": "Figma is a leading collaborative design tool for building websites, applications, and more.",
+      "specialities": "UI/UX Design, Prototyping, Design Systems, Vector Graphics",
+      "headquarters": "San Francisco, CA"
+    },
+    {
+      "id": "comp-notion",
+      "name": "Notion",
+      "domain": "notion.so",
+      "location": "San Francisco, CA",
+      "industry": "Productivity",
+      "employees": "650",
+      "employeeRange": "500-1000",
+      "description": "A single space where you can think, write, and plan. Capture thoughts, manage projects, or run an entire company.",
+      "specialities": "Notes, Wikis, Databases, Project Management, AI Collaboration",
+      "headquarters": "San Francisco, CA"
+    },
+    {
+      "id": "comp-airbnb",
+      "name": "Airbnb",
+      "domain": "airbnb.com",
+      "location": "San Francisco, CA",
+      "industry": "Hospitality Tech",
+      "employees": "6800",
+      "employeeRange": "5000-10000",
+      "description": "Airbnb is an online marketplace that connects people who want to rent out their homes with people who are looking for accommodations.",
+      "specialities": "Peer-to-Peer Rental, Travel Tech, Lodging Platforms, Experience Hosting",
+      "headquarters": "San Francisco, CA"
+    }
+  ],
+  "prospects": [
+    {
+      "id": "pros-jane",
+      "firstName": "Jane",
+      "lastName": "Smith",
+      "email": "jane.smith@stripe.com",
+      "phone": "+1 (555) 321-4567",
+      "title": "Developer Advocate",
+      "companyId": "comp-stripe",
+      "location": "San Francisco, CA",
+      "linkedin": "https://linkedin.com/in/janesmith",
+      "tags": [
+        "Fintech",
+        "Developer"
+      ],
+      "history": []
+    },
+    {
+      "id": "pros-alex",
+      "firstName": "Alex",
+      "lastName": "Rivera",
+      "email": "alex.rivera@vercel.com",
+      "phone": "+1 (555) 987-6543",
+      "title": "Head of Creator Relations",
+      "companyId": "comp-vercel",
+      "location": "New York, NY",
+      "linkedin": "https://linkedin.com/in/alexrivera",
+      "tags": [
+        "Infrastructure",
+        "Nextjs"
+      ],
+      "history": []
+    },
+    {
+      "id": "pros-sarah",
+      "firstName": "Sarah",
+      "lastName": "Chen",
+      "email": "sarah.chen@figma.com",
+      "phone": "+1 (555) 456-7890",
+      "title": "Director of Product Design",
+      "companyId": "comp-figma",
+      "location": "San Francisco, CA",
+      "linkedin": "https://linkedin.com/in/sarahchen",
+      "tags": [
+        "UIUX",
+        "Design Systems"
+      ],
+      "history": []
+    },
+    {
+      "id": "pros-marcus",
+      "firstName": "Marcus",
+      "lastName": "Vance",
+      "email": "marcus.vance@notion.so",
+      "phone": "+1 (555) 765-4321",
+      "title": "VP of Enterprise Strategy",
+      "companyId": "comp-notion",
+      "location": "San Francisco, CA",
+      "linkedin": "https://linkedin.com/in/marcusvance",
+      "tags": [
+        "Productivity",
+        "SaaS Growth"
+      ],
+      "history": []
+    }
+  ],
+  "media": [
+    {
+      "id": "med-1",
+      "title": "10 CSS Tricks for Glassmorphism in Modern Web Design",
+      "type": "Article",
+      "status": "Finished",
+      "platform": "Medium",
+      "content": "A detailed technical guide explaining backdrop-filter, harmonious shadow layer systems, and subtle borders to achieve rich premium glassmorphic cards in HTML/CSS.",
+      "tags": [
+        "Frontend",
+        "UIUX",
+        "CSS"
+      ],
+      "views": 15420,
+      "clicks": 3480,
+      "shares": 850,
+      "publishDate": "2026-04-12",
+      "comments": 850
+    },
+    {
+      "id": "med-2",
+      "title": "React 19 Server Components: A Game Changer for Page Performance",
+      "type": "Newsletter",
+      "status": "Finished",
+      "platform": "Substack",
+      "content": "Weekly tech digest summarizing the new asynchronous data fetching paradigms, compiler integrations, and SEO advantages of react-server components.",
+      "tags": [
+        "React",
+        "Performance",
+        "SaaS Growth"
+      ],
+      "views": 8450,
+      "clicks": 2100,
+      "shares": 490,
+      "publishDate": "2026-05-01",
+      "comments": 490
+    },
+    {
+      "id": "med-3",
+      "title": "Unboxing Figma's New Auto-Layout Variables & Tokens",
+      "type": "Video",
+      "status": "In Review",
+      "platform": "YouTube",
+      "content": "A high-fidelity video outline and script recording reviewing Figma's variable tokens, dynamic wrapping bounds, and advanced component configurations.",
+      "tags": [
+        "UIUX",
+        "Design Systems"
+      ],
+      "views": 1200,
+      "clicks": 350,
+      "shares": 45,
+      "publishDate": "",
+      "comments": 45
+    },
+    {
+      "id": "med-4",
+      "title": "Why Vercel is Dominating the Edge Cloud Pipeline Landscape",
+      "type": "Article",
+      "status": "Idea",
+      "platform": "LinkedIn",
+      "content": "Raw thoughts on edge runtime execution environments, latency comparative metrics, and the enterprise scale value proposition of Vercel's global CDN network.",
+      "tags": [
+        "Infrastructure",
+        "SaaS Growth"
+      ],
+      "views": 0,
+      "clicks": 0,
+      "shares": 0,
+      "publishDate": "",
+      "comments": 0
+    },
+    {
+      "id": "med-5",
+      "title": "5 Micro-Animations to Wow Users Instantly",
+      "type": "Video",
+      "status": "Finished",
+      "platform": "YouTube",
+      "content": "Tutorial showcasing custom HSL color transitions, hover scale spring behaviors, and magnetic UI components for stunning modern web applications.",
+      "tags": [
+        "Frontend",
+        "UIUX"
+      ],
+      "views": 32100,
+      "clicks": 8900,
+      "shares": 1850,
+      "publishDate": "2026-03-20",
+      "comments": 1850
+    },
+    {
+      "id": "med-6",
+      "title": "Advanced Git Rebase: Clean History Outlines",
+      "type": "Article",
+      "status": "Draft",
+      "platform": "Medium",
+      "content": "A visual step-by-step tutorial outlining interactive git rebase, squash strategies, and conflict resolution blueprints for collaborative engineering desks.",
+      "tags": [
+        "Developer",
+        "Infrastructure"
+      ],
+      "views": 0,
+      "clicks": 0,
+      "shares": 0,
+      "publishDate": "",
+      "comments": 0
+    },
+    {
+      "id": "med-7",
+      "title": "SaaS Monetization Playbook: Moving Upmarket",
+      "type": "Newsletter",
+      "status": "In Review",
+      "platform": "Substack",
+      "content": "Deep dive newsletter exploring tiered subscriptions, multi-tenant billing integrations using Stripe billing systems, and custom contract negotiation structures.",
+      "tags": [
+        "Fintech",
+        "SaaS Growth"
+      ],
+      "views": 430,
+      "clicks": 88,
+      "shares": 12,
+      "publishDate": "",
+      "comments": 12
+    },
+    {
+      "id": "med-8",
+      "title": "Designing a Premium Mobile Navigation Dock",
+      "type": "Article",
+      "status": "Finished",
+      "platform": "Twitter",
+      "content": "A short blueprint showing visual layouts, tab transitions, tactile spring feedbacks, and HSL glow variable backdrops to optimize mobile interaction.",
+      "tags": [
+        "UIUX",
+        "CSS"
+      ],
+      "views": 22400,
+      "clicks": 4500,
+      "shares": 1200,
+      "publishDate": "2026-05-18",
+      "comments": 1200
+    },
+    {
+      "id": "med-9",
+      "title": "Optimizing Web Fonts for Stunning Speed",
+      "type": "Newsletter",
+      "status": "Idea",
+      "platform": "Substack",
+      "content": "Research outline on WOFF2 preloading, unicode-range subset optimization, CSS font-display swapping, and layout shift minimization techniques.",
+      "tags": [
+        "Performance",
+        "Developer"
+      ],
+      "views": 0,
+      "clicks": 0,
+      "shares": 0,
+      "publishDate": "",
+      "comments": 0
+    },
+    {
+      "id": "med-10",
+      "title": "Frictionless Checkout Design: Lessons from Stripe Checkout",
+      "type": "Video",
+      "status": "Draft",
+      "platform": "YouTube",
+      "content": "Script and outline inspecting one-click payment flows, inline card validation details, and international wallet conversions to boost global conversion rates.",
+      "tags": [
+        "Fintech",
+        "UIUX",
+        "SaaS Growth"
+      ],
+      "views": 0,
+      "clicks": 0,
+      "shares": 0,
+      "publishDate": "",
+      "comments": 0
+    },
+    {
+      "id": "med-11",
+      "title": "Mastering Next.js Dynamic Routing and Caching Strategies",
+      "type": "Article",
+      "status": "Finished",
+      "platform": "Medium",
+      "content": "Deep technical analysis explaining routing models, edge caching patterns, data revalidation rules, and layout optimizations.",
+      "tags": [
+        "React",
+        "Performance",
+        "Infrastructure"
+      ],
+      "views": 18900,
+      "clicks": 4310,
+      "shares": 990,
+      "publishDate": "2026-04-28",
+      "comments": 990
+    },
+    {
+      "id": "med-12",
+      "title": "Creating an Omnipresent Command Menu (CMD+K) in Vanilla JS",
+      "type": "Video",
+      "status": "Finished",
+      "platform": "YouTube",
+      "content": "Live coding video illustrating accessible keyboard listeners, search indexing, micro-animations, and full theme styling integrations.",
+      "tags": [
+        "Frontend",
+        "Developer",
+        "UIUX"
+      ],
+      "views": 45200,
+      "clicks": 11200,
+      "shares": 3400,
+      "publishDate": "2026-05-10",
+      "comments": 3400
+    },
+    {
+      "id": "med-13",
+      "title": "Is Tailwind CSS Still Worth it in 2026?",
+      "type": "Newsletter",
+      "status": "Draft",
+      "platform": "Substack",
+      "content": "Analytical newsletter weighing utility-first approaches against emerging CSS standards, CSS-in-JS solutions, and build-time optimization toolsets.",
+      "tags": [
+        "CSS",
+        "Developer"
+      ],
+      "views": 0,
+      "clicks": 0,
+      "shares": 0,
+      "publishDate": "",
+      "comments": 0
+    },
+    {
+      "id": "med-14",
+      "title": "Architecting Zero-Configuration PWA Service Workers",
+      "type": "Article",
+      "status": "In Review",
+      "platform": "Medium",
+      "content": "Technical blueprint explaining cache storage pipelines, push notification handlers, background synchronization, and network fallback strategies.",
+      "tags": [
+        "Developer",
+        "Infrastructure",
+        "Performance"
+      ],
+      "views": 850,
+      "clicks": 140,
+      "shares": 30,
+      "publishDate": "",
+      "comments": 30
+    },
+    {
+      "id": "med-15",
+      "title": "Productivity Hacks: Inside Notion's Engineering Culture",
+      "type": "Newsletter",
+      "status": "Finished",
+      "platform": "Substack",
+      "content": "An editorial reviewing workspace layouts, collaborative kanban models, asynchronous alignment templates, and agile tracking frameworks.",
+      "tags": [
+        "Productivity",
+        "SaaS Growth"
+      ],
+      "views": 7200,
+      "clicks": 1800,
+      "shares": 350,
+      "publishDate": "2026-05-05",
+      "comments": 350
+    },
+    {
+      "id": "med-16",
+      "title": "Building a Premium CSS Variable Design Token Pipeline",
+      "type": "Article",
+      "status": "Idea",
+      "platform": "LinkedIn",
+      "content": "Raw outline covering dynamic theme switching, contrast-compliant colors, CSS variables, and light/dark theme color maps.",
+      "tags": [
+        "CSS",
+        "Design Systems"
+      ],
+      "views": 0,
+      "clicks": 0,
+      "shares": 0,
+      "publishDate": "",
+      "comments": 0
+    },
+    {
+      "id": "med-17",
+      "title": "Stripe Atlas vs. Competitors: Launching a US Tech Business",
+      "type": "Article",
+      "status": "Finished",
+      "platform": "LinkedIn",
+      "content": "Comparative handbook examining incorporation overheads, tax workflows, banking, and global scaling networks.",
+      "tags": [
+        "Fintech",
+        "SaaS Growth"
+      ],
+      "views": 11300,
+      "clicks": 2800,
+      "shares": 650,
+      "publishDate": "2026-05-14",
+      "comments": 650
+    },
+    {
+      "id": "med-18",
+      "title": "TypeScript 5.x Magic: Advanced Conditional Types Explained",
+      "type": "Video",
+      "status": "In Review",
+      "platform": "YouTube",
+      "content": "Video outline explaining type inference, recursive conditional templates, template literal mapping, and robust APIs.",
+      "tags": [
+        "Developer",
+        "React"
+      ],
+      "views": 1500,
+      "clicks": 420,
+      "shares": 72,
+      "publishDate": "",
+      "comments": 72
+    },
+    {
+      "id": "med-19",
+      "title": "Dark Mode Psychology: Designing Cozy Screen Interstellar Layouts",
+      "type": "Article",
+      "status": "Draft",
+      "platform": "Medium",
+      "content": "Draft analyzing eye-strain ratios, visual hierarchy, aesthetic balance, and gray-scale balance.",
+      "tags": [
+        "UIUX",
+        "CSS"
+      ],
+      "views": 0,
+      "clicks": 0,
+      "shares": 0,
+      "publishDate": "",
+      "comments": 0
+    },
+    {
+      "id": "med-20",
+      "title": "Edge Compute Platforms: Cloudflare Workers vs. Vercel Functions",
+      "type": "Newsletter",
+      "status": "Finished",
+      "platform": "Substack",
+      "content": "Detailed performance metrics of edge cloud services, latency, cold starts, and cost factors.",
+      "tags": [
+        "Infrastructure",
+        "Performance"
+      ],
+      "views": 9600,
+      "clicks": 2400,
+      "shares": 520,
+      "publishDate": "2026-04-20",
+      "comments": 520
+    },
+    {
+      "id": "med-21",
+      "title": "Optimizing React Re-Renders with useMemo and useCallback",
+      "type": "Video",
+      "status": "Finished",
+      "platform": "YouTube",
+      "content": "Visual guide illustrating common rendering pitfalls, performance profiling, and optimization.",
+      "tags": [
+        "React",
+        "Performance"
+      ],
+      "views": 29800,
+      "clicks": 7100,
+      "shares": 1900,
+      "publishDate": "2026-03-15",
+      "comments": 1900
+    },
+    {
+      "id": "med-22",
+      "title": "Aesthetic Glassmorphic Tables in CSS Grid",
+      "type": "Article",
+      "status": "Idea",
+      "platform": "Twitter",
+      "content": "Outline for a CSS tip showing scrollable glass containers, blurred stickies, and glow variables.",
+      "tags": [
+        "CSS",
+        "UIUX",
+        "Frontend"
+      ],
+      "views": 0,
+      "clicks": 0,
+      "shares": 0,
+      "publishDate": "",
+      "comments": 0
+    },
+    {
+      "id": "med-23",
+      "title": "The Evolution of Next.js Image Component",
+      "type": "Newsletter",
+      "status": "Draft",
+      "platform": "Substack",
+      "content": "Draft explaining responsive sizing, quality factors, lazy loading, and CDN rendering.",
+      "tags": [
+        "React",
+        "Performance"
+      ],
+      "views": 0,
+      "clicks": 0,
+      "shares": 0,
+      "publishDate": "",
+      "comments": 0
+    },
+    {
+      "id": "med-24",
+      "title": "Designing Stripe-like Micro-Interactions",
+      "type": "Video",
+      "status": "In Review",
+      "platform": "YouTube",
+      "content": "Visual outline showing spring scales, card flip behaviors, and magnetic buttons.",
+      "tags": [
+        "UIUX",
+        "Frontend"
+      ],
+      "views": 1800,
+      "clicks": 490,
+      "shares": 95,
+      "publishDate": "",
+      "comments": 95
+    },
+    {
+      "id": "med-25",
+      "title": "SaaS Marketing SEO Checklist for Q3 2026",
+      "type": "Article",
+      "status": "Finished",
+      "platform": "Medium",
+      "content": "Comprehensive checklist covering schema markups, speed, core web vitals, and structured outlines.",
+      "tags": [
+        "SaaS Growth",
+        "Performance"
+      ],
+      "views": 12400,
+      "clicks": 3100,
+      "shares": 720,
+      "publishDate": "2026-05-12",
+      "comments": 720
+    },
+    {
+      "id": "med-26",
+      "title": "Global Fintech Regulations and API Integrations",
+      "type": "Newsletter",
+      "status": "Idea",
+      "platform": "Substack",
+      "content": "Outline on compliance protocols, PCI audits, multi-region database sync, and APIs.",
+      "tags": [
+        "Fintech",
+        "Infrastructure"
+      ],
+      "views": 0,
+      "clicks": 0,
+      "shares": 0,
+      "publishDate": "",
+      "comments": 0
+    },
+    {
+      "id": "med-27",
+      "title": "Tactile Haptics in Native Touch Layouts",
+      "type": "Video",
+      "status": "Draft",
+      "platform": "YouTube",
+      "content": "Video script explaining web vibration APIs, mobile design models, and action thresholds.",
+      "tags": [
+        "UIUX",
+        "Developer"
+      ],
+      "views": 0,
+      "clicks": 0,
+      "shares": 0,
+      "publishDate": "",
+      "comments": 0
+    },
+    {
+      "id": "med-28",
+      "title": "Creating a Dynamic CSS Grid Gridbuilder UI",
+      "type": "Article",
+      "status": "Finished",
+      "platform": "Medium",
+      "content": "Walkthrough outlining grid track definitions, area mappings, drag-and-drop elements, and CSS outputs.",
+      "tags": [
+        "Frontend",
+        "Developer",
+        "CSS"
+      ],
+      "views": 16500,
+      "clicks": 3900,
+      "shares": 810,
+      "publishDate": "2026-04-30",
+      "comments": 810
+    },
+    {
+      "id": "med-29",
+      "title": "Advanced Webpack to Vite Migrations for Enterprise Apps",
+      "type": "Newsletter",
+      "status": "In Review",
+      "platform": "Substack",
+      "content": "Analysis of dynamic module imports, dev speeds, plugins, bundling sizes, and hot reloading.",
+      "tags": [
+        "Performance",
+        "Developer"
+      ],
+      "views": 590,
+      "clicks": 120,
+      "shares": 25,
+      "publishDate": "",
+      "comments": 25
+    },
+    {
+      "id": "med-30",
+      "title": "Optimizing SaaS Funnels with Figma Customer Maps",
+      "type": "Video",
+      "status": "Finished",
+      "platform": "YouTube",
+      "content": "Detailed visual layout mapping exit rates, button contrast, navigation, and conversion checkpoints.",
+      "tags": [
+        "UIUX",
+        "SaaS Growth"
+      ],
+      "views": 14200,
+      "clicks": 3200,
+      "shares": 590,
+      "publishDate": "2026-05-15",
+      "comments": 590
+    }
+  ],
+  "campaigns": []
+}
