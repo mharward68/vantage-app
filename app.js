@@ -30,13 +30,28 @@ let editingMediaId = null;
 let pendingAttachedFiles = []; // Memory tracker for files during media modal session
 let editingPublishEventId = null; // Track current publish event being edited
 let editingMasterFileId = null; // Track master file being edited/linked
-let pendingMasterFile = null; // Memory tracker for local file uploaded in master file modal
 
 // Tag selection globals
 let currentProspectTags = [];
 let currentCompanyTags = [];
 let currentCampaignTags = [];
 let tagSelectionTarget = "media"; // "media", "prospect", "company", or "campaign"
+
+// Media type icon glyphs — shared between the Media Hub type filter bar and
+// the type badge on each media card. Falls back to a generic folder icon
+// for any custom type added via Settings that isn't listed here.
+const MEDIA_TYPE_ICON_GLYPHS = {
+  "Article": "📄",
+  "Video": "🎥",
+  "Newsletter": "✉️",
+  "Post": "📢",
+  "Sequence": "🔁",
+  "Graphic": "🖼️"
+};
+
+function getMediaTypeIcon(type) {
+  return MEDIA_TYPE_ICON_GLYPHS[type] || "📁";
+}
 
 /* ==========================================================================
    💾 INDEXEDDB MANAGER (VantageDB) FOR MULTI-FILE BINARY STORAGE
@@ -116,6 +131,32 @@ function ensureUrlProtocol(url) {
   return url;
 }
 
+// Used to decide whether a Master File's "Link or File Location" value is a
+// web link (should be clickable, opens in a new tab) or a local filesystem
+// path (browsers can't open those directly — gets a Copy Path button
+// instead). People often paste a link without "http(s)://" in front (e.g.
+// straight from a browser's address bar: "docs.google.com/document/d/..."),
+// so this can't just check for a URL scheme — it also recognizes bare
+// domain-looking strings, as long as they don't look like a filesystem path.
+function looksLikeLocalPath(str) {
+  if (!str) return false;
+  const s = str.trim();
+  if (/^[a-zA-Z]:[\\/]/.test(s)) return true; // Windows drive letter: C:\ or C:/
+  if (/^\\\\/.test(s)) return true;           // UNC path: \\server\share
+  if (s.includes("\\")) return true;          // backslashes never appear in URLs
+  if (/^\//.test(s) && !/^\/\//.test(s)) return true; // Unix absolute path (not a protocol-relative //url)
+  return false;
+}
+
+function looksLikeUrl(str) {
+  if (!str) return false;
+  const s = str.trim();
+  if (/^https?:\/\//i.test(s)) return true;
+  if (looksLikeLocalPath(s)) return false;
+  // Bare domain, optionally followed by a path — e.g. "docs.google.com/document/d/xyz"
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(\/.*)?$/i.test(s);
+}
+
 /* ==========================================================================
    📦 STATE MANAGEMENT & INITIALIZATION
    ========================================================================== */
@@ -154,6 +195,8 @@ function ensureStateDefaults() {
   if (!state.media) state.media = [];
   if (!state.campaigns) state.campaigns = [];
   if (!state.audienceLists) state.audienceLists = [];
+  // Migrate: ensure all audience lists have a status field
+  state.audienceLists.forEach(al => { if (!al.status) al.status = "active"; });
   if (!state.campaignPhases || state.campaignPhases.length === 0) {
     state.campaignPhases = ["Development", "Launch", "Archive"];
   }
@@ -357,7 +400,8 @@ function ensureStateDefaults() {
         state.audienceLists.push({
           id: audId,
           name: `${c.title} Audience`,
-          prospectIds: c.prospectIds || []
+          prospectIds: c.prospectIds || [],
+          status: "active"
         });
         c.audienceListId = audId;
         delete c.prospectIds;
@@ -594,8 +638,8 @@ function exportCampaignsCSV() {
 
 function exportAudienceListsCSV() {
   const csv = convertToCSV(state.audienceLists || [],
-    ["ID", "Name", "Prospect IDs"],
-    al => [al.id, al.name, (al.prospectIds || []).join(";")]
+    ["ID", "Name", "Prospect IDs", "Status"],
+    al => [al.id, al.name, (al.prospectIds || []).join(";"), al.status || "active"]
   );
   downloadCSVFile(`vantage_data_backup_audience_lists_${getBackupTimestamp()}.csv`, csv);
 }
@@ -626,6 +670,77 @@ function exportCompaniesCSV() {
     ]
   );
   downloadCSVFile(`vantage_data_backup_companies_${getBackupTimestamp()}.csv`, csv);
+}
+
+// Exports whatever contacts are currently visible in the Prospect Hub table
+// (filtered by search/geo/tags). Falls back to the entire contacts database
+// when no filters or tags are applied.
+function exportFilteredContactsCSV() {
+  const list = lastFilteredProspects;
+  if (!list || list.length === 0) {
+    alert("No contacts to export.");
+    return;
+  }
+  const csv = convertToCSV(list,
+    ["ID", "First Name", "Last Name", "Email", "Phone", "Title", "LinkedIn", "Company ID", "Location", "City", "State", "Seniority", "Notes", "Tags", "History"],
+    p => [p.id, p.firstName, p.lastName, p.email, p.phone || "", p.title || "", p.linkedin || "", p.companyId, p.location || "", p.city || "", p.state || "", p.seniority || "", p.notes || "", (p.tags || []).join(";"), p.history ? JSON.stringify(p.history) : ""]
+  );
+  downloadCSVFile(`vantage_contacts_export_${getBackupTimestamp()}.csv`, csv);
+}
+
+// Exports the contacts of one specific audience list to its own CSV file
+// (name-stamped), same column set as the Prospect Hub contact export plus
+// a resolved Company name column for convenience.
+function exportAudienceContactsCSV(audienceId) {
+  const aud = state.audienceLists.find(a => a.id === audienceId);
+  if (!aud) return;
+  const list = (aud.prospectIds || []).map(pid => state.prospects.find(p => p.id === pid)).filter(Boolean);
+  if (list.length === 0) {
+    alert(`"${aud.name}" has no contacts to export.`);
+    return;
+  }
+  const csv = convertToCSV(list,
+    ["ID", "First Name", "Last Name", "Email", "Phone", "Title", "LinkedIn", "Company ID", "Company", "Location", "City", "State", "Seniority", "Notes", "Tags", "History"],
+    p => [p.id, p.firstName, p.lastName, p.email, p.phone || "", p.title || "", p.linkedin || "", p.companyId, getCompanyName(p.companyId) || "", p.location || "", p.city || "", p.state || "", p.seniority || "", p.notes || "", (p.tags || []).join(";"), p.history ? JSON.stringify(p.history) : ""]
+  );
+  const safeName = aud.name.replace(/[^a-z0-9]+/gi, "_").toLowerCase().replace(/^_+|_+$/g, "");
+  downloadCSVFile(`vantage_audience_${safeName || "list"}_${getBackupTimestamp()}.csv`, csv);
+}
+
+// Exports whatever companies are currently visible in the Prospect Hub table
+// (filtered by search/geo/tags). Falls back to the entire companies database
+// when no filters or tags are applied.
+function exportFilteredCompaniesCSV() {
+  const list = lastFilteredCompanies;
+  if (!list || list.length === 0) {
+    alert("No companies to export.");
+    return;
+  }
+  const csv = convertToCSV(list,
+    ["ID", "Name", "Domain", "Website", "Employees", "Employee Range", "Location", "Industry", "Description", "Specialities", "Headquarters", "Address", "City", "State", "Postal", "Phone", "LinkedIn", "Notes", "Tags"],
+    co => [
+      co.id,
+      co.name,
+      co.domain,
+      co.website || "",
+      co.employees || "",
+      co.employeeRange || "",
+      co.location || "",
+      co.industry || "General",
+      co.description || "",
+      co.specialities || "",
+      co.headquarters || "",
+      co.address || "",
+      co.city || "",
+      co.state || "",
+      co.postal || "",
+      co.phone || "",
+      co.linkedin || "",
+      co.notes || "",
+      (co.tags || []).join(";")
+    ]
+  );
+  downloadCSVFile(`vantage_companies_export_${getBackupTimestamp()}.csv`, csv);
 }
 
 function generateSettingsCSV() {
@@ -687,8 +802,8 @@ async function exportZIPBackup() {
   );
   
   const audienceListsCSV = convertToCSV(state.audienceLists || [],
-    ["ID", "Name", "Prospect IDs"],
-    al => [al.id, al.name, (al.prospectIds || []).join(";")]
+    ["ID", "Name", "Prospect IDs", "Status"],
+    al => [al.id, al.name, (al.prospectIds || []).join(";"), al.status || "active"]
   );
   
   const companiesCSV = convertToCSV(state.companies,
@@ -964,7 +1079,8 @@ function restoreAudienceListsFromCSV(text) {
     state.audienceLists.push({
       id: obj["ID"] || obj["id"] || `aud-${Date.now()}-${i}`,
       name: obj["Name"] || obj["name"] || "Untitled Audience List",
-      prospectIds: prospectIds
+      prospectIds: prospectIds,
+      status: obj["Status"] || obj["status"] || "active"
     });
   }
 }
@@ -1398,15 +1514,22 @@ function renderDashboardView() {
   document.getElementById("stat-campaigns-count").textContent = state.campaigns.length;
   document.getElementById("stat-media-count").textContent = state.media.length;
   
+  // "Added to Vantage" / "Entered into Vantage" are record-creation stamps, not
+  // real outreach — exclude them from reachout counts and the reachout feed.
+  const NON_REACHOUT_TYPES = ["Added to Vantage", "Entered into Vantage"];
+  const isRealReachout = (h) => !NON_REACHOUT_TYPES.includes(h.type);
+
   let totalReach = 0;
-  state.prospects.forEach(p => totalReach += (p.history ? p.history.length : 0));
+  state.prospects.forEach(p => {
+    if (p.history) totalReach += p.history.filter(isRealReachout).length;
+  });
   document.getElementById("stat-reachouts-count").textContent = totalReach;
 
   // Recent reachouts feed (flatten and sort chronologically)
   let reachouts = [];
   state.prospects.forEach(p => {
     if (p.history) {
-      p.history.forEach(h => {
+      p.history.filter(isRealReachout).forEach(h => {
         reachouts.push({
           prospectName: `${p.firstName} ${p.lastName}`,
           companyName: getCompanyName(p.companyId),
@@ -1456,7 +1579,7 @@ function renderDashboardView() {
       item.innerHTML = `
         <div>
           <div class="rank-title" title="${escapeHTML(m.title)}">${escapeHTML(m.title)}</div>
-          <span class="rank-platform">${m.type} • ${escapeHTML(m.platform || "Not Published")}</span>
+          <span class="rank-platform">${getMediaTypeIcon(m.type)} ${escapeHTML(m.type)} • ${escapeHTML(m.platform || "Not Published")}</span>
         </div>
         <div class="rank-views">${(m.views || 0).toLocaleString()} views</div>
       `;
@@ -1470,6 +1593,8 @@ function renderDashboardView() {
    ========================================================================== */
 
 let selectedCompanyId = null;
+let lastFilteredProspects = [];
+let lastFilteredCompanies = [];
 
 function populateTagChooser() {
   const select = document.getElementById("prospect-tag-chooser");
@@ -1480,9 +1605,42 @@ function populateTagChooser() {
   
   const allCompanyTagsStr = Array.from(new Set(state.companies.flatMap(c => c.tags || []))).map(t => t.trim()).filter(Boolean);
   const allProspectTagsStr = Array.from(new Set(state.prospects.flatMap(p => p.tags || []))).map(t => t.trim()).filter(Boolean);
-  
-  const allTags = Array.from(new Set([...allCompanyTagsStr, ...allProspectTagsStr])).sort();
-  
+
+  // Include the managed Prospect Tags list too, so tags added/renamed in the
+  // Prospect Hub section of Settings show up immediately as filter options —
+  // not just tags already assigned to a prospect record.
+  // NOTE: intentionally NOT pulling in the full state.company_tags managed list
+  // here — that list gets auto-seeded with placeholder defaults ("Enterprise",
+  // "SMB", "Agency", "Startup") whenever it's empty, and those defaults would
+  // leak into this dropdown even when no company actually carries the tag.
+  // Company tags stay filter options only once a real company is tagged with them.
+  const dedupePreserveOrder = (arr) => {
+    const seen = new Set();
+    const out = [];
+    arr.forEach(item => {
+      const key = item.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(item);
+      }
+    });
+    return out;
+  };
+
+  const managedProspectTags = dedupePreserveOrder((state.prospect_tags || []).map(t => t.trim()).filter(Boolean));
+  const managedSet = new Set(managedProspectTags.map(t => t.toLowerCase()));
+
+  // Any tags actually in use (company tags on real companies, or legacy prospect
+  // tags) that aren't part of the managed Prospect Tags list — keep these, but
+  // list them after the managed ones, alphabetically, since they have no
+  // configured order in Settings.
+  const otherTags = dedupePreserveOrder([...allCompanyTagsStr, ...allProspectTagsStr])
+    .filter(t => !managedSet.has(t.toLowerCase()))
+    .sort();
+
+  // Managed Prospect Tags first, in the exact order shown in Settings.
+  const allTags = [...managedProspectTags, ...otherTags];
+
   select.innerHTML = "";
   allTags.forEach(tag => {
     const opt = document.createElement("option");
@@ -1637,6 +1795,9 @@ function renderProspectsView() {
     }
   }
 
+  // Track the effective companies list for export: full DB when no filters/tags are active, otherwise the filtered set.
+  lastFilteredCompanies = (isBlankState && !state.forceShowAllCompanies) ? state.companies : filteredCompanies;
+
   document.getElementById("companies-count").textContent = (!isBlankState || state.forceShowAllCompanies) ? filteredCompanies.length : 0;
   if (isBlankState && !state.forceShowAllCompanies) {
     compBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--color-text-muted);">Enter search criteria above or click 'See All Companies' to view.</td></tr>`;
@@ -1662,9 +1823,13 @@ function renderProspectsView() {
       `;
       
       tr.addEventListener("click", () => {
-        selectCompany(c.id);
+        if (selectedCompanyId === c.id) {
+          closeInspectorPanel();
+        } else {
+          selectCompany(c.id);
+        }
       });
-      
+
       compBody.appendChild(tr);
     });
   }
@@ -1735,16 +1900,22 @@ function renderProspectsView() {
         const tags = (p.tags || []).join(" ").toLowerCase();
         const fullName = `${p.firstName} ${p.lastName}`.toLowerCase();
         const title = (p.title || "").toLowerCase();
+        const normTitle = normalizeTitle(title);
+        const normQuery = normalizeTitle(query);
 
-        matchQuery = fullName.includes(query) || 
-               companyName.includes(query) || 
-               title.includes(query) || 
+        matchQuery = fullName.includes(query) ||
+               companyName.includes(query) ||
+               title.includes(query) ||
+               normTitle.includes(normQuery) ||
                tags.includes(query);
       }
       return matchGeo && matchProsTags && matchCompTagsForPros && matchQuery;
     });
     }
   }
+
+  // Track the effective contacts list for export: full DB when no filters/tags are active, otherwise the filtered set.
+  lastFilteredProspects = (isBlankState && !state.forceShowAllContacts) ? state.prospects : filteredContacts;
 
   document.getElementById("contacts-count").textContent = (!isBlankState || state.forceShowAllContacts) ? filteredContacts.length : 0;
   if (isBlankState && !state.forceShowAllContacts) {
@@ -1772,7 +1943,11 @@ function renderProspectsView() {
       `;
 
       tr.addEventListener("click", () => {
-        selectProspect(p.id);
+        if (state.selectedProspectId === p.id) {
+          closeInspectorPanel();
+        } else {
+          selectProspect(p.id);
+        }
       });
 
       tbody.appendChild(tr);
@@ -1796,25 +1971,44 @@ function selectCompany(id) {
   renderProspectsView();
 }
 
+// Closes the inspector slide-out and returns the directory to full width.
+function closeInspectorPanel() {
+  state.selectedProspectId = null;
+  selectedCompanyId = null;
+  saveState();
+  renderProspectsView();
+}
+
+// Note: isBlankState no longer forces the panel closed on its own — the
+// inspector is a closable slide-out now, so visibility is driven purely by
+// whether a prospect/company is selected (see hasSelection below). The
+// parameter is kept for backward compatibility with existing callers.
 function renderInspector(isBlankState = false) {
   const emptyCard = document.getElementById("prospect-inspector-empty");
   const prospectCard = document.getElementById("prospect-inspector");
   const companyCard = document.getElementById("company-inspector");
+  const layoutContainer = document.querySelector(".prospects-layout-container");
 
   // Hide all initially
   emptyCard.classList.add("hidden");
   prospectCard.classList.add("hidden");
   companyCard.classList.add("hidden");
-  
-  if (isBlankState) {
-    emptyCard.classList.remove("hidden");
+
+  const hasSelection = !!(state.selectedProspectId || selectedCompanyId);
+  layoutContainer?.classList.toggle("inspector-open", hasSelection);
+
+  if (!hasSelection) {
+    // Nothing selected — panel stays closed, directory at full width.
     return;
   }
 
   if (state.selectedProspectId) {
     const current = state.prospects.find(p => p.id === state.selectedProspectId);
     if (!current) {
-      emptyCard.classList.remove("hidden");
+      // Stale/deleted selection — close the panel instead of showing a
+      // placeholder inside it.
+      state.selectedProspectId = null;
+      layoutContainer?.classList.remove("inspector-open");
       return;
     }
 
@@ -1894,8 +2088,45 @@ function renderInspector(isBlankState = false) {
       const matchedCampaigns = state.campaigns.filter(c => {
         return matchedLists.some(al => al.id === c.audienceListId);
       });
+      // Build "Add to Audience" row — active lists only, excluding ones already joined
+      const activeAuds = state.audienceLists.filter(al =>
+        (al.status || "active") === "active" && !(al.prospectIds || []).includes(current.id)
+      );
+      const addRow = document.createElement("div");
+      addRow.style.cssText = "display:flex; gap:6px; align-items:center; margin-bottom:10px;";
+      if (activeAuds.length > 0) {
+        const sel = document.createElement("select");
+        sel.id = "inspector-aud-select";
+        sel.style.cssText = "flex:1; background:rgba(0,0,0,0.2); border:1px solid var(--color-border); color:var(--color-text-main); padding:5px 8px; border-radius:var(--border-radius-md); font-size:12px; outline:none;";
+        sel.innerHTML = `<option value="">Add to audience…</option>` +
+          activeAuds.map(al => `<option value="${al.id}">${escapeHTML(al.name)}</option>`).join("");
+        const addBtn = document.createElement("button");
+        addBtn.className = "header-action-btn primary-btn";
+        addBtn.style.cssText = "padding:5px 10px; font-size:12px; height:auto; white-space:nowrap;";
+        addBtn.textContent = "+ Add";
+        addBtn.addEventListener("click", () => {
+          const audId = sel.value;
+          if (!audId) return;
+          const aud = state.audienceLists.find(a => a.id === audId);
+          if (!aud) return;
+          if (!aud.prospectIds) aud.prospectIds = [];
+          aud.prospectIds.push(current.id);
+          addAudienceTagToProspects([current.id], aud.name);
+          saveState();
+          renderProspectsView();
+        });
+        addRow.appendChild(sel);
+        addRow.appendChild(addBtn);
+      } else {
+        addRow.innerHTML = `<span style="font-size:12px; color:var(--color-text-muted); font-style:italic;">Already in all active audiences.</span>`;
+      }
+      memEl.appendChild(addRow);
+
       if (matchedLists.length === 0 && matchedCampaigns.length === 0) {
-        memEl.innerHTML = `<div style="color:var(--color-text-muted);font-style:italic;">Not included in any audience lists or outreach campaigns.</div>`;
+        const emptyNote = document.createElement("div");
+        emptyNote.style.cssText = "color:var(--color-text-muted); font-style:italic;";
+        emptyNote.textContent = "Not included in any audience lists or outreach campaigns.";
+        memEl.appendChild(emptyNote);
       } else {
         if (matchedLists.length > 0) {
           const listTitle = document.createElement("div");
@@ -1947,7 +2178,10 @@ function renderInspector(isBlankState = false) {
   } else if (selectedCompanyId) {
     const c = state.companies.find(x => x.id === selectedCompanyId);
     if (!c) {
-      emptyCard.classList.remove("hidden");
+      // Stale/deleted selection — close the panel instead of showing a
+      // placeholder inside it.
+      selectedCompanyId = null;
+      layoutContainer?.classList.remove("inspector-open");
       return;
     }
 
@@ -2018,9 +2252,6 @@ function renderInspector(isBlankState = false) {
     const newEditBtn = editBtn.cloneNode(true);
     editBtn.parentNode.replaceChild(newEditBtn, editBtn);
     newEditBtn.addEventListener("click", () => openCompanyModal(c.id));
-    
-  } else {
-    emptyCard.classList.remove("hidden");
   }
 }
 
@@ -2185,18 +2416,11 @@ function renderMediaView() {
     });
     typeBar.appendChild(allBtn);
     
-    // Icons mapping
-    const typeIcons = {
-      "Article": "📄 Articles",
-      "Video": "🎥 Videos",
-      "Newsletter": "✉️ Newsletters"
-    };
-    
     state.mediaTypes.forEach(t => {
       const typeBtn = document.createElement("button");
       typeBtn.className = `media-type-filter ${state.activeMediaFilterType === t ? "active-filter" : ""}`;
       typeBtn.setAttribute("data-type", t);
-      typeBtn.textContent = typeIcons[t] || `📁 ${t}`;
+      typeBtn.textContent = `${getMediaTypeIcon(t)} ${t}s`;
       typeBtn.addEventListener("click", () => {
         state.activeMediaFilterType = t;
         renderMediaView();
@@ -2429,7 +2653,7 @@ function renderMediaView() {
 
       card.innerHTML = `
         <div class="media-card-header">
-          <span class="media-type-badge">${m.type}</span>
+          <span class="media-type-badge">${getMediaTypeIcon(m.type)} ${escapeHTML(m.type)}</span>
           <select class="media-status-select clickable-status-select" data-id="${m.id}">
             ${statusOptionsHtml}
           </select>
@@ -2536,6 +2760,1311 @@ function clearProspectsFilters() {
   renderProspectsView();
 }
 
+/* ==========================================================================
+   🔎 ADVANCED QUERY (Prospect Hub)
+   Query any prospect or company field (including "Added to Vantage" and
+   "Last Reachout" date ranges), select specific results across paginated
+   screens, and bulk-edit the selection (add a tag, add to an audience).
+   ========================================================================== */
+
+let aqTarget = "prospect";   // "prospect" | "company"
+let aqResults = [];          // full filtered result set for the current query run
+let aqSelectedIds = new Set();
+let aqPage = 1;
+let aqPerPage = 25;
+let aqHasRun = false;
+
+// --- Tags / Campaigns / Audiences searchable multi-select pickers ---
+// Each picker tracks two sets of selected option labels: "include" (record
+// must have ALL of these) and "exclude" (record must have NONE of these).
+let aqPickerState = {
+  tags: { include: new Set(), exclude: new Set() },
+  campaigns: { include: new Set(), exclude: new Set() },
+  audiences: { include: new Set(), exclude: new Set() },
+  industry: { include: new Set(), exclude: new Set() },
+  title: { include: new Set(), exclude: new Set() }
+};
+
+const AQ_PICKERS = [
+  {
+    key: "tags",
+    searchId: "aq-p-tags-search",
+    dropdownId: "aq-p-tags-dropdown",
+    chipsId: "aq-p-tags-chips",
+    getOptions: () => {
+      const set = new Set();
+      state.prospects.forEach(p => (p.tags || []).forEach(t => { if (t) set.add(t); }));
+      return Array.from(set).sort((a, b) => a.localeCompare(b));
+    }
+  },
+  {
+    key: "campaigns",
+    searchId: "aq-p-campaigns-search",
+    dropdownId: "aq-p-campaigns-dropdown",
+    chipsId: "aq-p-campaigns-chips",
+    getOptions: () => Array.from(new Set((state.campaigns || []).map(c => c.title).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b))
+  },
+  {
+    key: "audiences",
+    searchId: "aq-p-audiences-search",
+    dropdownId: "aq-p-audiences-dropdown",
+    chipsId: "aq-p-audiences-chips",
+    getOptions: () => Array.from(new Set((state.audienceLists || []).map(a => a.name).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b))
+  },
+  {
+    key: "industry",
+    searchId: "aq-p-industry-search",
+    dropdownId: "aq-p-industry-dropdown",
+    chipsId: "aq-p-industry-chips",
+    getOptions: () => Array.from(new Set((state.companies || []).map(c => c.industry).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b))
+  },
+  {
+    key: "title",
+    searchId: "aq-p-title-search",
+    dropdownId: "aq-p-title-dropdown",
+    chipsId: "aq-p-title-chips",
+    // Titles are mostly one-off freeform strings (unlike tags/industries), so
+    // typing a term that isn't an exact existing title (e.g. "VP") must still
+    // be addable as a chip — matching happens via smart substring/synonym
+    // comparison at query time (matchesTitleFilter), not exact equality.
+    allowFreeText: true,
+    getOptions: () => Array.from(new Set((state.prospects || []).map(p => p.title).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b))
+  }
+];
+
+// --- Date / text / tag matching helpers ---
+
+// Earliest history entry marking when a prospect was added to Vantage.
+function getAddedToVantageDate(p) {
+  const entries = (p.history || []).filter(h => h.type === "Added to Vantage" || h.type === "Entered into Vantage");
+  let earliest = "";
+  entries.forEach(h => { if (h.date && (!earliest || h.date < earliest)) earliest = h.date; });
+  return earliest;
+}
+
+// Most recent genuine reachout/interaction date (excludes the auto-logged
+// "Added to Vantage"/"Entered into Vantage" import events).
+function getLastReachoutDate(p) {
+  const entries = (p.history || []).filter(h => h.type !== "Added to Vantage" && h.type !== "Entered into Vantage");
+  let latest = "";
+  entries.forEach(h => { if (h.date && h.date > latest) latest = h.date; });
+  return latest;
+}
+
+function matchesDateFilter(dateStr, mode, filterDate) {
+  if (!mode || mode === "any" || !filterDate) return true;
+  if (!dateStr) return false;
+  if (mode === "before") return dateStr < filterDate;
+  if (mode === "after") return dateStr > filterDate;
+  if (mode === "on") return dateStr === filterDate;
+  return true;
+}
+
+// Supports simple boolean queries typed straight into any Advanced Query text
+// field, e.g. "VP OR Director", "Manager AND Sales", "VP AND Sales OR Director".
+// OR splits the query into groups; AND requires every term within a group to
+// be present (substring match). No AND/OR keywords = same plain substring
+// search as before, so existing single-term searches are unaffected.
+function splitBooleanQuery(filterVal) {
+  return (filterVal || "")
+    .split(/\s+or\s+/i)
+    .map(group => group.trim())
+    .filter(Boolean)
+    .map(group => group.split(/\s+and\s+/i).map(t => t.trim()).filter(Boolean));
+}
+
+function matchesTextFilter(fieldVal, filterVal) {
+  if (!filterVal) return true;
+  const val = (fieldVal || "").toString().toLowerCase();
+  const orGroups = splitBooleanQuery(filterVal);
+  if (orGroups.length === 0) return true;
+  return orGroups.some(andTerms => andTerms.every(term => val.includes(term.toLowerCase())));
+}
+
+// US state abbreviation <-> full name lookup, used so a 2-letter search term
+// is treated as a state abbreviation rather than a generic substring (which
+// often fails to line up with full state names, e.g. "TX" is not a substring
+// of "Texas"). Handles data stored either as abbreviations or full names.
+const US_STATE_ABBREVIATIONS = {
+  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
+  CO: "Colorado", CT: "Connecticut", DE: "Delaware", FL: "Florida", GA: "Georgia",
+  HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa",
+  KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland",
+  MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri",
+  MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey",
+  NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio",
+  OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
+  SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont",
+  VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
+  DC: "District of Columbia", PR: "Puerto Rico"
+};
+
+const US_STATE_NAME_TO_ABBR = Object.fromEntries(
+  Object.entries(US_STATE_ABBREVIATIONS).map(([abbr, name]) => [name.toLowerCase(), abbr])
+);
+
+// One state term against one stored value. A 2-letter term is resolved as an
+// abbreviation (matches the abbreviation exactly, or the corresponding full
+// name); anything else falls back to substring search plus a reverse lookup
+// (typing the full name still matches data stored as an abbreviation).
+function matchesSingleStateTerm(fieldVal, term) {
+  const val = (fieldVal || "").toString().trim();
+  const valLower = val.toLowerCase();
+  const termTrimmed = term.trim();
+  if (!termTrimmed) return true;
+  if (!val) return false;
+
+  if (termTrimmed.length === 2) {
+    const abbr = termTrimmed.toUpperCase();
+    if (val.toUpperCase() === abbr) return true;
+    const fullName = US_STATE_ABBREVIATIONS[abbr];
+    return !!fullName && valLower === fullName.toLowerCase();
+  }
+
+  if (valLower.includes(termTrimmed.toLowerCase())) return true;
+  const matchedAbbr = US_STATE_NAME_TO_ABBR[termTrimmed.toLowerCase()];
+  return !!matchedAbbr && valLower === matchedAbbr.toLowerCase();
+}
+
+// State field filter — same AND/OR boolean parsing as matchesTextFilter, but
+// each term is resolved through matchesSingleStateTerm so short codes like
+// "TX" or "NY" match correctly regardless of how the state is stored.
+function matchesStateFilter(fieldVal, filterVal) {
+  if (!filterVal) return true;
+  const orGroups = splitBooleanQuery(filterVal);
+  if (orGroups.length === 0) return true;
+  return orGroups.some(andTerms => andTerms.every(term => matchesSingleStateTerm(fieldVal, term)));
+}
+
+function matchesTagsFilter(recordTags, filterVal) {
+  if (!filterVal) return true;
+  const terms = filterVal.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
+  if (terms.length === 0) return true;
+  const tags = (recordTags || []).map(t => t.toLowerCase());
+  return terms.every(term => tags.some(t => t.includes(term)));
+}
+
+// --- Tags / Campaigns / Audiences picker rendering & interaction ---
+
+function renderAqPickerDropdown(picker) {
+  const input = document.getElementById(picker.searchId);
+  const dropdown = document.getElementById(picker.dropdownId);
+  if (!input || !dropdown) return;
+
+  const query = input.value.trim().toLowerCase();
+  const options = picker.getOptions();
+  const selected = aqPickerState[picker.key];
+  const available = options.filter(opt => !selected.include.has(opt) && !selected.exclude.has(opt));
+  const matches = query ? available.filter(opt => opt.toLowerCase().includes(query)) : available;
+
+  dropdown.innerHTML = "";
+
+  if (matches.length === 0) {
+    const emptyMsg = options.length === 0 ? "No options available yet." : "No matches.";
+    dropdown.innerHTML = `<div class="aq-picker-empty">${emptyMsg}</div>`;
+  } else {
+    matches.slice(0, 50).forEach(opt => {
+      const row = document.createElement("div");
+      row.className = "aq-picker-option";
+      row.innerHTML = `<span>${escapeHTML(opt)}</span>
+        <span class="aq-picker-option-actions">
+          <button type="button" class="aq-picker-add-btn aq-picker-include-btn" title="Include">+ Include</button>
+          <button type="button" class="aq-picker-add-btn aq-picker-exclude-btn" title="Exclude">− Exclude</button>
+        </span>`;
+      row.querySelector(".aq-picker-include-btn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        setAqPickerSelection(picker, opt, "include");
+      });
+      row.querySelector(".aq-picker-exclude-btn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        setAqPickerSelection(picker, opt, "exclude");
+      });
+      dropdown.appendChild(row);
+    });
+  }
+
+  dropdown.classList.remove("hidden");
+}
+
+function setAqPickerSelection(picker, value, mode) {
+  const selected = aqPickerState[picker.key];
+  selected.include.delete(value);
+  selected.exclude.delete(value);
+  selected[mode].add(value);
+  const input = document.getElementById(picker.searchId);
+  if (input) input.value = "";
+  renderAqPickerChips(picker);
+  renderAqPickerDropdown(picker);
+}
+
+function toggleAqPickerMode(picker, value) {
+  const selected = aqPickerState[picker.key];
+  if (selected.include.has(value)) {
+    selected.include.delete(value);
+    selected.exclude.add(value);
+  } else if (selected.exclude.has(value)) {
+    selected.exclude.delete(value);
+    selected.include.add(value);
+  }
+  renderAqPickerChips(picker);
+}
+
+function removeAqPickerSelection(picker, value) {
+  const selected = aqPickerState[picker.key];
+  selected.include.delete(value);
+  selected.exclude.delete(value);
+  renderAqPickerChips(picker);
+  renderAqPickerDropdown(picker);
+}
+
+function renderAqPickerChips(picker) {
+  const container = document.getElementById(picker.chipsId);
+  if (!container) return;
+  container.innerHTML = "";
+
+  const selected = aqPickerState[picker.key];
+  const addChip = (value, mode) => {
+    const chip = document.createElement("span");
+    chip.className = `aq-picker-chip aq-picker-chip-${mode}`;
+    chip.innerHTML = `<span class="aq-picker-chip-mode">${mode === "include" ? "+" : "−"}</span>
+      <span class="aq-picker-chip-label">${escapeHTML(value)}</span>
+      <button type="button" class="aq-picker-chip-toggle" title="Switch to ${mode === "include" ? "exclude" : "include"}">⇄</button>
+      <button type="button" class="aq-picker-chip-remove" title="Remove">✕</button>`;
+    chip.querySelector(".aq-picker-chip-toggle").addEventListener("click", () => toggleAqPickerMode(picker, value));
+    chip.querySelector(".aq-picker-chip-remove").addEventListener("click", () => removeAqPickerSelection(picker, value));
+    container.appendChild(chip);
+  };
+
+  Array.from(selected.include).sort((a, b) => a.localeCompare(b)).forEach(v => addChip(v, "include"));
+  Array.from(selected.exclude).sort((a, b) => a.localeCompare(b)).forEach(v => addChip(v, "exclude"));
+}
+
+function resetAqPicker(picker) {
+  aqPickerState[picker.key].include.clear();
+  aqPickerState[picker.key].exclude.clear();
+  const input = document.getElementById(picker.searchId);
+  if (input) input.value = "";
+  const dropdown = document.getElementById(picker.dropdownId);
+  if (dropdown) {
+    dropdown.innerHTML = "";
+    dropdown.classList.add("hidden");
+  }
+  renderAqPickerChips(picker);
+}
+
+function resetAllAqPickers() {
+  AQ_PICKERS.forEach(resetAqPicker);
+}
+
+// Splits a typed boolean expression like `"VP" AND "Director" NOT "Manager"`
+// into individual chip terms: the first term and any AND-joined term after
+// it become "include" entries; anything after a NOT becomes "exclude".
+// Quotes around a term are optional and stripped either way. A plain typed
+// term with no AND/NOT keywords (the common case) comes back as a single
+// include entry, same as before this existed.
+function parseBooleanChipInput(raw) {
+  // Pad a leading AND/NOT (e.g. "NOT Manager" with nothing before it) so the
+  // split regex's required leading whitespace still matches at position 0.
+  const padded = /^(AND|NOT)\s+/i.test(raw) ? " " + raw : raw;
+  const tokens = padded.split(/\s+(AND|NOT)\s+/i);
+  const stripQuotes = (s) => s.trim().replace(/^["']|["']$/g, "").trim();
+
+  const results = [{ term: stripQuotes(tokens[0]), mode: "include" }];
+  for (let i = 1; i < tokens.length; i += 2) {
+    const op = (tokens[i] || "").toUpperCase();
+    const term = tokens[i + 1];
+    if (term === undefined) continue;
+    results.push({ term: stripQuotes(term), mode: op === "NOT" ? "exclude" : "include" });
+  }
+  return results.filter(r => r.term);
+}
+
+function initAqPickers() {
+  AQ_PICKERS.forEach(picker => {
+    const input = document.getElementById(picker.searchId);
+    if (!input) return;
+    input.addEventListener("focus", () => renderAqPickerDropdown(picker));
+    input.addEventListener("input", () => renderAqPickerDropdown(picker));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        document.getElementById(picker.dropdownId)?.classList.add("hidden");
+        input.blur();
+      } else if (e.key === "Enter" && picker.allowFreeText) {
+        // Let a typed term (e.g. "VP") be added directly as an include chip,
+        // even if it doesn't exactly match any existing option. Also accepts
+        // a full boolean expression in one go, e.g.
+        // "VP" AND "Director" NOT "Manager" — each AND-joined term becomes
+        // its own include chip, each NOT-prefixed term becomes an exclude
+        // chip (quotes optional either way).
+        e.preventDefault();
+        const raw = input.value.trim();
+        if (!raw) return;
+        parseBooleanChipInput(raw).forEach(({ term, mode }) => setAqPickerSelection(picker, term, mode));
+      }
+    });
+    renderAqPickerChips(picker);
+  });
+
+  // Close any open dropdown when clicking outside its picker
+  document.addEventListener("click", (e) => {
+    AQ_PICKERS.forEach(picker => {
+      const wrapper = document.getElementById(picker.searchId)?.closest(".aq-picker");
+      if (wrapper && !wrapper.contains(e.target)) {
+        document.getElementById(picker.dropdownId)?.classList.add("hidden");
+      }
+    });
+  });
+}
+
+// Include/exclude matching helper shared by tags/campaigns/audiences filters.
+// `itemNames` is the array of names the record actually has (e.g. p.tags);
+// the record must have ALL "include" names and NONE of the "exclude" names.
+function matchesIncludeExclude(itemNames, includeSet, excludeSet) {
+  const names = (itemNames || []).map(n => (n || "").toLowerCase());
+  if (includeSet.size > 0) {
+    const hasAll = Array.from(includeSet).every(inc => names.includes(inc.toLowerCase()));
+    if (!hasAll) return false;
+  }
+  if (excludeSet.size > 0) {
+    const hasAny = Array.from(excludeSet).some(exc => names.includes(exc.toLowerCase()));
+    if (hasAny) return false;
+  }
+  return true;
+}
+
+// A prospect "belongs to" a campaign if they're in the audience list that
+// campaign targets (campaigns don't store prospect membership directly).
+function getProspectCampaignTitles(prospectId) {
+  return (state.campaigns || []).filter(c => {
+    if (!c.audienceListId) return false;
+    const al = (state.audienceLists || []).find(a => a.id === c.audienceListId);
+    return al && (al.prospectIds || []).includes(prospectId);
+  }).map(c => c.title).filter(Boolean);
+}
+
+function getProspectAudienceNames(prospectId) {
+  return (state.audienceLists || []).filter(al => (al.prospectIds || []).includes(prospectId)).map(al => al.name);
+}
+
+function getProspectIndustry(prospectId) {
+  const p = state.prospects.find(x => x.id === prospectId);
+  if (!p) return "";
+  const c = state.companies.find(x => x.id === p.companyId);
+  return c ? (c.industry || "") : "";
+}
+
+// Include/exclude matching where each chip term is compared against a single
+// text field using a fuzzy matcher (e.g. matchesTitleFilter) rather than
+// exact membership in an array — used for the Title picker so a chip like
+// "VP" still catches "Vice President", "Senior VP", etc.
+function matchesIncludeExcludeSmart(fieldVal, includeSet, excludeSet, matchFn) {
+  if (includeSet.size > 0) {
+    const matchesAll = Array.from(includeSet).every(term => matchFn(fieldVal, term));
+    if (!matchesAll) return false;
+  }
+  if (excludeSet.size > 0) {
+    const matchesAny = Array.from(excludeSet).some(term => matchFn(fieldVal, term));
+    if (matchesAny) return false;
+  }
+  return true;
+}
+
+// --- Modal open/close & target toggle ---
+
+function openAdvancedQueryModal() {
+  clearAdvancedQueryFilters();
+  document.getElementById("modal-advanced-query").classList.remove("hidden");
+  setAdvancedQueryTarget(aqTarget);
+}
+
+function closeAdvancedQueryModal() {
+  document.getElementById("modal-advanced-query").classList.add("hidden");
+  closeAqResultsModal();
+  clearAdvancedQueryFilters();
+}
+
+function openAqResultsModal() {
+  document.getElementById("modal-aq-results").classList.remove("hidden");
+  if (!aqResultsWinState) {
+    const saved = loadAqResultsWinState();
+    aqResultsWinState = saved ? { top: saved.top, left: saved.left, width: saved.width, height: saved.height } : defaultAqResultsRect();
+    aqResultsWinMaximized = !!(saved && saved.maximized);
+  }
+  if (aqResultsWinMaximized) {
+    applyAqResultsMaximized();
+  } else {
+    applyAqResultsRect(aqResultsWinState);
+  }
+  updateAqResultsMaximizeIcon();
+}
+
+function closeAqResultsModal() {
+  document.getElementById("modal-aq-results").classList.add("hidden");
+  closeAqInspectorDrawer();
+}
+
+// --- Query Results window: drag / resize / maximize ---
+// Position & size persist across sessions in localStorage (like the sidebar
+// pinned state) so the window reopens where the user left it.
+
+const AQ_RESULTS_WIN_STORAGE_KEY = "vantage_aq_results_window";
+let aqResultsWinState = null;   // {top,left,width,height} in px — the non-maximized rect
+let aqResultsWinMaximized = false;
+let aqResultsWinDrag = null;    // active drag gesture state, or null
+let aqResultsWinResize = null;  // active resize gesture state, or null
+
+function loadAqResultsWinState() {
+  try {
+    const raw = localStorage.getItem(AQ_RESULTS_WIN_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.width === "number" && typeof parsed.height === "number") return parsed;
+  } catch (e) { /* ignore corrupt/missing storage */ }
+  return null;
+}
+
+function saveAqResultsWinState() {
+  if (!aqResultsWinState) return;
+  try {
+    localStorage.setItem(AQ_RESULTS_WIN_STORAGE_KEY, JSON.stringify({ ...aqResultsWinState, maximized: aqResultsWinMaximized }));
+  } catch (e) { /* ignore quota/availability errors */ }
+}
+
+function defaultAqResultsRect() {
+  const width = Math.min(980, window.innerWidth - 40);
+  const height = Math.min(window.innerHeight * 0.92, window.innerHeight - 40);
+  return {
+    width, height,
+    left: Math.max(8, (window.innerWidth - width) / 2),
+    top: Math.max(8, (window.innerHeight - height) / 2)
+  };
+}
+
+function getAqResultsCard() {
+  return document.getElementById("aq-results-card");
+}
+
+function applyAqResultsRect(rect) {
+  const card = getAqResultsCard();
+  if (!card || !rect) return;
+  card.classList.add("aq-positioned");
+  card.classList.remove("aq-maximized");
+  card.style.top = `${rect.top}px`;
+  card.style.left = `${rect.left}px`;
+  card.style.width = `${rect.width}px`;
+  card.style.height = `${rect.height}px`;
+}
+
+function applyAqResultsMaximized() {
+  const card = getAqResultsCard();
+  if (!card) return;
+  card.classList.add("aq-positioned", "aq-maximized");
+  card.style.top = "16px";
+  card.style.left = "16px";
+  card.style.width = `${window.innerWidth - 32}px`;
+  card.style.height = `${window.innerHeight - 32}px`;
+}
+
+function getCurrentAqResultsRect() {
+  const card = getAqResultsCard();
+  if (!card) return null;
+  const rect = card.getBoundingClientRect();
+  return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+}
+
+function updateAqResultsMaximizeIcon() {
+  const btn = document.getElementById("btn-aq-results-maximize");
+  if (!btn) return;
+  btn.textContent = aqResultsWinMaximized ? "🗗" : "⛶";
+  btn.title = aqResultsWinMaximized ? "Restore" : "Maximize";
+}
+
+function toggleAqResultsMaximize() {
+  if (!aqResultsWinMaximized) {
+    aqResultsWinState = getCurrentAqResultsRect() || aqResultsWinState;
+    aqResultsWinMaximized = true;
+    applyAqResultsMaximized();
+  } else {
+    aqResultsWinMaximized = false;
+    applyAqResultsRect(aqResultsWinState || defaultAqResultsRect());
+  }
+  updateAqResultsMaximizeIcon();
+  saveAqResultsWinState();
+}
+
+const AQ_RESULTS_MIN_WIDTH = 480;
+const AQ_RESULTS_MIN_HEIGHT = 320;
+
+function initAqResultsWindowControls() {
+  const card = getAqResultsCard();
+  const header = document.getElementById("aq-results-header");
+  if (!card || !header) return;
+
+  header.addEventListener("mousedown", (e) => {
+    if (e.target.closest("button")) return;
+    if (aqResultsWinMaximized) return;
+    const rect = card.getBoundingClientRect();
+    aqResultsWinDrag = { startX: e.clientX, startY: e.clientY, startTop: rect.top, startLeft: rect.left, width: rect.width, height: rect.height };
+    card.classList.add("aq-dragging");
+    e.preventDefault();
+  });
+
+  header.addEventListener("dblclick", (e) => {
+    if (e.target.closest("button")) return;
+    toggleAqResultsMaximize();
+  });
+
+  // Every resize grabber (both side edges, the bottom edge, and both bottom
+  // corners) carries a data-dirs attribute like "e", "s", "e s", or "w s"
+  // telling the shared resize handler which edges it controls.
+  card.querySelectorAll("[data-dirs]").forEach(handle => {
+    const dirs = handle.getAttribute("data-dirs").split(" ").filter(Boolean);
+    handle.addEventListener("mousedown", (e) => {
+      if (aqResultsWinMaximized) return;
+      const rect = card.getBoundingClientRect();
+      aqResultsWinResize = {
+        dirs,
+        startX: e.clientX, startY: e.clientY,
+        startWidth: rect.width, startHeight: rect.height,
+        startTop: rect.top, startLeft: rect.left
+      };
+      card.classList.add("aq-resizing");
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (aqResultsWinDrag) {
+      const dx = e.clientX - aqResultsWinDrag.startX;
+      const dy = e.clientY - aqResultsWinDrag.startY;
+      const minVisible = 60;
+      let newLeft = aqResultsWinDrag.startLeft + dx;
+      let newTop = aqResultsWinDrag.startTop + dy;
+      newLeft = Math.max(minVisible - aqResultsWinDrag.width, Math.min(newLeft, window.innerWidth - minVisible));
+      newTop = Math.max(0, Math.min(newTop, window.innerHeight - minVisible));
+      card.style.left = `${newLeft}px`;
+      card.style.top = `${newTop}px`;
+    } else if (aqResultsWinResize) {
+      const r = aqResultsWinResize;
+      const dx = e.clientX - r.startX;
+      const dy = e.clientY - r.startY;
+      const rightEdge = r.startLeft + r.startWidth;
+
+      let newWidth = r.startWidth;
+      let newLeft = r.startLeft;
+      let newHeight = r.startHeight;
+
+      if (r.dirs.includes("e")) {
+        newWidth = Math.max(AQ_RESULTS_MIN_WIDTH, Math.min(r.startWidth + dx, window.innerWidth - r.startLeft - 8));
+      }
+      if (r.dirs.includes("w")) {
+        let proposedLeft = Math.max(8, r.startLeft + dx);
+        let proposedWidth = rightEdge - proposedLeft;
+        if (proposedWidth < AQ_RESULTS_MIN_WIDTH) {
+          proposedWidth = AQ_RESULTS_MIN_WIDTH;
+          proposedLeft = rightEdge - AQ_RESULTS_MIN_WIDTH;
+        }
+        newWidth = proposedWidth;
+        newLeft = proposedLeft;
+      }
+      if (r.dirs.includes("s")) {
+        newHeight = Math.max(AQ_RESULTS_MIN_HEIGHT, Math.min(r.startHeight + dy, window.innerHeight - r.startTop - 8));
+      }
+
+      card.style.width = `${newWidth}px`;
+      card.style.left = `${newLeft}px`;
+      card.style.height = `${newHeight}px`;
+    }
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (aqResultsWinDrag) {
+      card.classList.remove("aq-dragging");
+      aqResultsWinDrag = null;
+      aqResultsWinState = getCurrentAqResultsRect();
+      saveAqResultsWinState();
+    }
+    if (aqResultsWinResize) {
+      card.classList.remove("aq-resizing");
+      aqResultsWinResize = null;
+      aqResultsWinState = getCurrentAqResultsRect();
+      saveAqResultsWinState();
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if (document.getElementById("modal-aq-results")?.classList.contains("hidden")) return;
+    if (aqResultsWinMaximized) applyAqResultsMaximized();
+  });
+}
+
+function setAdvancedQueryTarget(target) {
+  aqTarget = target;
+  document.getElementById("aq-target-prospects").classList.toggle("active-filter", target === "prospect");
+  document.getElementById("aq-target-companies").classList.toggle("active-filter", target === "company");
+  document.getElementById("aq-fields-prospect").classList.toggle("hidden", target !== "prospect");
+  document.getElementById("aq-fields-company").classList.toggle("hidden", target !== "company");
+  document.getElementById("aq-bulk-audience-row").classList.toggle("hidden", target !== "prospect");
+
+  // Switching target invalidates the current result set/selection
+  aqResults = [];
+  aqSelectedIds = new Set();
+  aqPage = 1;
+  aqHasRun = false;
+  renderAdvancedQueryResults();
+}
+
+function clearAdvancedQueryFilters() {
+  [
+    "aq-p-firstname", "aq-p-lastname", "aq-p-email", "aq-p-phone", "aq-p-company", "aq-p-linkedin",
+    "aq-p-city", "aq-p-state", "aq-p-location", "aq-p-company-tags",
+    "aq-c-name", "aq-c-domain", "aq-c-industry", "aq-c-employees", "aq-c-city", "aq-c-state", "aq-c-hq",
+    "aq-c-phone", "aq-c-linkedin", "aq-c-notes", "aq-c-tags"
+  ].forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+
+  document.getElementById("aq-p-seniority").value = "any";
+  document.getElementById("aq-p-added-mode").value = "any";
+  document.getElementById("aq-p-added-date").value = "";
+  document.getElementById("aq-p-reachout-mode").value = "any";
+  document.getElementById("aq-p-reachout-date").value = "";
+
+  resetAllAqPickers();
+
+  aqResults = [];
+  aqSelectedIds = new Set();
+  aqPage = 1;
+  aqHasRun = false;
+  renderAdvancedQueryResults();
+}
+
+// --- Running the query ---
+
+function runAdvancedQuery() {
+  aqSelectedIds = new Set();
+  aqPage = 1;
+  aqHasRun = true;
+  closeAqInspectorDrawer();
+
+  if (aqTarget === "prospect") {
+    const firstName = document.getElementById("aq-p-firstname").value.trim();
+    const lastName = document.getElementById("aq-p-lastname").value.trim();
+    const email = document.getElementById("aq-p-email").value.trim();
+    const phone = document.getElementById("aq-p-phone").value.trim();
+    const seniority = document.getElementById("aq-p-seniority").value;
+    const companyName = document.getElementById("aq-p-company").value.trim();
+    const linkedin = document.getElementById("aq-p-linkedin").value.trim();
+    const city = document.getElementById("aq-p-city").value.trim();
+    const stateVal = document.getElementById("aq-p-state").value.trim();
+    const location = document.getElementById("aq-p-location").value.trim();
+    const companyTags = document.getElementById("aq-p-company-tags").value.trim();
+    const addedMode = document.getElementById("aq-p-added-mode").value;
+    const addedDate = document.getElementById("aq-p-added-date").value;
+    const reachoutMode = document.getElementById("aq-p-reachout-mode").value;
+    const reachoutDate = document.getElementById("aq-p-reachout-date").value;
+
+    aqResults = state.prospects.filter(p => {
+      if (!matchesTextFilter(p.firstName, firstName)) return false;
+      if (!matchesTextFilter(p.lastName, lastName)) return false;
+      if (!matchesTextFilter(p.email, email)) return false;
+      if (!matchesTextFilter(p.phone, phone)) return false;
+      if (!matchesIncludeExcludeSmart(p.title, aqPickerState.title.include, aqPickerState.title.exclude, matchesTitleFilter)) return false;
+      if (seniority !== "any" && (p.seniority || "") !== seniority) return false;
+      if (!matchesTextFilter(getCompanyName(p.companyId), companyName)) return false;
+      if (!matchesTextFilter(p.linkedin, linkedin)) return false;
+      if (!matchesTextFilter(p.city, city)) return false;
+      if (!matchesStateFilter(p.state, stateVal)) return false;
+      if (!matchesTextFilter(p.location, location)) return false;
+      if (!matchesIncludeExclude(p.tags, aqPickerState.tags.include, aqPickerState.tags.exclude)) return false;
+      const comp = state.companies.find(c => c.id === p.companyId);
+      if (!matchesTagsFilter(comp ? comp.tags : [], companyTags)) return false;
+      if (!matchesIncludeExclude(getProspectCampaignTitles(p.id), aqPickerState.campaigns.include, aqPickerState.campaigns.exclude)) return false;
+      if (!matchesIncludeExclude(getProspectAudienceNames(p.id), aqPickerState.audiences.include, aqPickerState.audiences.exclude)) return false;
+      if (!matchesIncludeExclude([getProspectIndustry(p.id)], aqPickerState.industry.include, aqPickerState.industry.exclude)) return false;
+      if (!matchesDateFilter(getAddedToVantageDate(p), addedMode, addedDate)) return false;
+      if (!matchesDateFilter(getLastReachoutDate(p), reachoutMode, reachoutDate)) return false;
+      return true;
+    });
+  } else {
+    const name = document.getElementById("aq-c-name").value.trim();
+    const domain = document.getElementById("aq-c-domain").value.trim();
+    const industry = document.getElementById("aq-c-industry").value.trim();
+    const employees = document.getElementById("aq-c-employees").value.trim();
+    const city = document.getElementById("aq-c-city").value.trim();
+    const stateVal = document.getElementById("aq-c-state").value.trim();
+    const hq = document.getElementById("aq-c-hq").value.trim();
+    const phone = document.getElementById("aq-c-phone").value.trim();
+    const linkedin = document.getElementById("aq-c-linkedin").value.trim();
+    const notes = document.getElementById("aq-c-notes").value.trim();
+    const tags = document.getElementById("aq-c-tags").value.trim();
+
+    aqResults = state.companies.filter(c => {
+      if (!matchesTextFilter(c.name, name)) return false;
+      if (!matchesTextFilter(c.domain, domain) && !matchesTextFilter(c.website, domain)) return false;
+      if (!matchesTextFilter(c.industry, industry)) return false;
+      if (!matchesTextFilter(c.employees, employees) && !matchesTextFilter(c.employeeRange, employees)) return false;
+      if (!matchesTextFilter(c.city, city)) return false;
+      if (!matchesStateFilter(c.state, stateVal)) return false;
+      if (!matchesTextFilter(c.headquarters, hq) && !matchesTextFilter(c.location, hq)) return false;
+      if (!matchesTextFilter(c.phone, phone)) return false;
+      if (!matchesTextFilter(c.linkedin, linkedin)) return false;
+      if (!matchesTextFilter(c.notes, notes)) return false;
+      if (!matchesTagsFilter(c.tags, tags)) return false;
+      return true;
+    });
+  }
+
+  renderAdvancedQueryResults();
+  openAqResultsModal();
+}
+
+// --- Results rendering, pagination & selection ---
+
+function renderResultsSummaryText() {
+  const summary = document.getElementById("aq-results-summary");
+  const total = aqResults.length;
+  if (total === 0) {
+    summary.textContent = aqHasRun ? "No results match those filters." : "Run a query to see results.";
+    return;
+  }
+  const startIdx = (aqPage - 1) * aqPerPage;
+  const shown = Math.min(aqPerPage, total - startIdx);
+  summary.textContent = `Showing ${startIdx + 1}–${startIdx + shown} of ${total} result${total === 1 ? "" : "s"} · ${aqSelectedIds.size} selected`;
+}
+
+function renderAdvancedQueryResults() {
+  const thead = document.getElementById("aq-results-thead");
+  const tbody = document.getElementById("aq-results-body");
+  const pageIndicator = document.getElementById("aq-page-indicator");
+
+  const total = aqResults.length;
+  const perPage = parseInt(document.getElementById("aq-per-page").value, 10) || 25;
+  aqPerPage = perPage;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  if (aqPage > totalPages) aqPage = totalPages;
+  if (aqPage < 1) aqPage = 1;
+
+  const startIdx = (aqPage - 1) * perPage;
+  const pageItems = aqResults.slice(startIdx, startIdx + perPage);
+
+  pageIndicator.textContent = `Page ${aqPage} of ${totalPages}`;
+  tbody.innerHTML = "";
+
+  if (aqTarget === "prospect") {
+    thead.innerHTML = `<tr><th style="width:36px;"></th><th>Name</th><th>Title</th><th>Company</th><th>City/State</th><th>Tags</th></tr>`;
+    pageItems.forEach(p => {
+      const tr = document.createElement("tr");
+      tr.style.cursor = "pointer";
+      tr.dataset.recordId = p.id;
+      tr.classList.toggle("active-row", aqInspectorRecordId === p.id && aqInspectorType === "prospect");
+      const tagBadges = (p.tags || []).map(t => `<span class="tag-badge">${escapeHTML(t)}</span>`).join("");
+      tr.innerHTML = `
+        <td style="text-align:center;"><input type="checkbox" class="aq-row-checkbox" ${aqSelectedIds.has(p.id) ? "checked" : ""}></td>
+        <td><strong>${escapeHTML(p.firstName)} ${escapeHTML(p.lastName)}</strong></td>
+        <td>${escapeHTML(p.title || "—")}</td>
+        <td>${escapeHTML(getCompanyName(p.companyId) || "—")}</td>
+        <td>${escapeHTML([p.city, p.state].filter(Boolean).join(", ") || "—")}</td>
+        <td>${tagBadges}</td>
+      `;
+      tr.querySelector(".aq-row-checkbox").addEventListener("change", (e) => {
+        toggleAdvancedQuerySelection(p.id, e.target.checked);
+      });
+      tr.addEventListener("click", (e) => {
+        if (e.target.closest("input")) return;
+        if (aqInspectorRecordId === p.id && aqInspectorType === "prospect") {
+          closeAqInspectorDrawer();
+        } else {
+          openAqInspectorDrawer(p.id, "prospect");
+        }
+      });
+      tbody.appendChild(tr);
+    });
+  } else {
+    thead.innerHTML = `<tr><th style="width:36px;"></th><th>Company Name</th><th>Industry</th><th>Location</th><th>Tags</th></tr>`;
+    pageItems.forEach(c => {
+      const tr = document.createElement("tr");
+      tr.style.cursor = "pointer";
+      tr.dataset.recordId = c.id;
+      tr.classList.toggle("active-row", aqInspectorRecordId === c.id && aqInspectorType === "company");
+      const tagBadges = (c.tags || []).map(t => `<span class="tag-badge">${escapeHTML(t)}</span>`).join("");
+      tr.innerHTML = `
+        <td style="text-align:center;"><input type="checkbox" class="aq-row-checkbox" ${aqSelectedIds.has(c.id) ? "checked" : ""}></td>
+        <td><strong>${escapeHTML(c.name)}</strong></td>
+        <td>${escapeHTML(c.industry || "—")}</td>
+        <td>${escapeHTML(c.location || "—")}</td>
+        <td>${tagBadges}</td>
+      `;
+      tr.querySelector(".aq-row-checkbox").addEventListener("change", (e) => {
+        toggleAdvancedQuerySelection(c.id, e.target.checked);
+      });
+      tr.addEventListener("click", (e) => {
+        if (e.target.closest("input")) return;
+        if (aqInspectorRecordId === c.id && aqInspectorType === "company") {
+          closeAqInspectorDrawer();
+        } else {
+          openAqInspectorDrawer(c.id, "company");
+        }
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  renderResultsSummaryText();
+  renderAdvancedQueryBulkBar();
+}
+
+// --- Record Inspector drawer ---
+// Opens from a click on a results row. Saving here (notes/tags/full edit)
+// mutates the actual state.prospects/state.companies record — the same
+// object aqResults is already holding a reference to — so the open results
+// list reflects the edit immediately without re-filtering. Only an explicit
+// Run Query re-derives aqResults from scratch and drops non-matching rows.
+
+let aqInspectorRecordId = null;
+let aqInspectorType = null; // "prospect" | "company"
+
+// Toggles the .active-row class directly on the affected <tr> elements
+// instead of rebuilding the whole results table on every row click. Clicking
+// through records used to tear down and recreate every visible row (with all
+// its listeners) just to move a highlight — that's the main reason the
+// results table felt sluggish, especially with 50/page. A single row click
+// now only ever touches at most two <tr> elements.
+function updateAqActiveRowHighlight(id) {
+  const tbody = document.getElementById("aq-results-body");
+  if (!tbody) return;
+  tbody.querySelectorAll("tr.active-row").forEach(tr => tr.classList.remove("active-row"));
+  if (id) {
+    const row = tbody.querySelector(`tr[data-record-id="${CSS.escape(String(id))}"]`);
+    if (row) row.classList.add("active-row");
+  }
+}
+
+function openAqInspectorDrawer(id, type) {
+  aqInspectorRecordId = id;
+  aqInspectorType = type;
+  if (type === "prospect") {
+    state.selectedProspectId = id;
+  } else {
+    selectedCompanyId = id;
+  }
+  renderAqInspectorDrawer();
+  document.getElementById("aq-inspector-drawer")?.classList.add("open");
+  updateAqActiveRowHighlight(id);
+}
+
+function closeAqInspectorDrawer() {
+  aqInspectorRecordId = null;
+  aqInspectorType = null;
+  document.getElementById("aq-inspector-drawer")?.classList.remove("open");
+  updateAqActiveRowHighlight(null);
+}
+
+// Renders the AQ drawer using the same structure/classes as the Prospect
+// Hub's inspector card (see renderInspector) — history table, memberships /
+// associated contacts, quick actions and all — just targeting a second set
+// of "aq-insp-p-*" / "aq-insp-c-*" element ids so the two inspectors can
+// coexist without id collisions.
+function renderAqInspectorDrawer() {
+  const drawer = document.getElementById("aq-inspector-drawer");
+  if (!drawer || !aqInspectorRecordId) return;
+
+  const prospectCard = document.getElementById("aq-insp-prospect");
+  const companyCard = document.getElementById("aq-insp-company");
+
+  if (aqInspectorType === "prospect") {
+    const p = state.prospects.find(x => x.id === aqInspectorRecordId);
+    if (!p) { closeAqInspectorDrawer(); return; }
+
+    companyCard.classList.add("hidden");
+    prospectCard.classList.remove("hidden");
+
+    document.getElementById("aq-insp-p-name").textContent = `${p.firstName} ${p.lastName}`;
+    const compName = getCompanyName(p.companyId);
+    document.getElementById("aq-insp-p-subtitle").innerHTML = `${escapeHTML(p.title || "—")} at <a href="#" id="aq-insp-link-to-company" style="color:var(--color-primary);text-decoration:none;">${escapeHTML(compName)}</a>`;
+    document.getElementById("aq-insp-link-to-company")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (p.companyId) openAqInspectorDrawer(p.companyId, "company");
+    });
+
+    document.getElementById("aq-insp-p-meta").innerHTML = `
+      <span>📧 ${p.email ? `<a href="mailto:${escapeHTML(p.email)}" style="color:inherit;text-decoration:none;">${escapeHTML(p.email)}</a>` : "No email"}</span>
+      <span>📞 ${p.phone ? `<a href="tel:${escapeHTML(p.phone)}" style="color:inherit;text-decoration:none;">${escapeHTML(p.phone)}</a>` : "No phone"}</span>
+      <span>📍 ${escapeHTML([p.city, p.state].filter(Boolean).join(", ") || "—")}</span>
+      ${p.linkedin ? `<span>🔗 <a href="${escapeHTML(ensureUrlProtocol(p.linkedin))}" target="_blank" style="color:#0a66c2;">LinkedIn</a></span>` : ""}
+    `;
+    document.getElementById("aq-insp-p-tags-list").innerHTML = (p.tags || []).map(t => `<span class="tag-badge">${escapeHTML(t)}</span>`).join("")
+      || `<span style="color:var(--color-text-muted); font-size:12px;">No tags</span>`;
+    document.getElementById("aq-insp-p-notes").value = p.notes || "";
+    document.getElementById("btn-aq-insp-p-save-notes")?.classList.add("hidden");
+
+    // Interaction history
+    const histBody = document.getElementById("aq-insp-p-history-body");
+    histBody.innerHTML = "";
+    if (!p.history || p.history.length === 0) {
+      histBody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--color-text-muted);padding:16px;">No reachout records stored.</td></tr>`;
+    } else {
+      const historySorted = [...p.history].sort((a, b) => new Date(b.date) - new Date(a.date));
+      historySorted.forEach(h => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td style="font-weight:600;white-space:nowrap;">${h.date}</td>
+          <td><span class="feed-type-tag">${h.type}</span></td>
+          <td style="line-height:1.4;">${escapeHTML(h.content)}</td>
+          <td style="text-align:center;">
+            <button class="delete-interaction-btn" data-id="${h.id}" title="Remove reachout log">✕</button>
+          </td>
+        `;
+        tr.querySelector(".delete-interaction-btn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          deleteInteraction(p.id, h.id);
+        });
+        histBody.appendChild(tr);
+      });
+    }
+
+    // Memberships
+    const memEl = document.getElementById("aq-insp-p-memberships");
+    memEl.innerHTML = "";
+    const matchedLists = state.audienceLists.filter(al => al.prospectIds && al.prospectIds.includes(p.id));
+    const matchedCampaigns = state.campaigns.filter(c => matchedLists.some(al => al.id === c.audienceListId));
+    if (matchedLists.length === 0 && matchedCampaigns.length === 0) {
+      memEl.innerHTML = `<div style="color:var(--color-text-muted);font-style:italic;">Not included in any audience lists or outreach campaigns.</div>`;
+    } else {
+      if (matchedLists.length > 0) {
+        memEl.innerHTML += `<div style="font-weight:600;color:var(--color-secondary);margin-bottom:4px;">Audience Lists:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+            ${matchedLists.map(al => `<span class="tag-badge" style="background:rgba(6,182,212,0.15);color:var(--color-secondary);border:1px solid rgba(6,182,212,0.3);">${escapeHTML(al.name)}</span>`).join("")}
+          </div>`;
+      }
+      if (matchedCampaigns.length > 0) {
+        memEl.innerHTML += `<div style="font-weight:600;color:var(--color-primary);margin-bottom:4px;">Outreach Campaigns:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${matchedCampaigns.map(c => `<span class="tag-badge" style="background:rgba(79,70,229,0.15);color:var(--color-primary);border:1px solid rgba(79,70,229,0.3);">${escapeHTML(c.title)} (${escapeHTML(c.status)})</span>`).join("")}
+          </div>`;
+      }
+    }
+  } else {
+    const c = state.companies.find(x => x.id === aqInspectorRecordId);
+    if (!c) { closeAqInspectorDrawer(); return; }
+
+    prospectCard.classList.add("hidden");
+    companyCard.classList.remove("hidden");
+
+    document.getElementById("aq-insp-c-name").textContent = c.name;
+    document.getElementById("aq-insp-c-industry").textContent = c.industry || "General";
+    document.getElementById("aq-insp-c-meta").innerHTML = `
+      <span>📍 ${escapeHTML([c.city, c.state].filter(Boolean).join(", ") || c.location || "—")}</span>
+      <span>📞 ${c.phone ? escapeHTML(c.phone) : "No phone"}</span>
+      ${c.website ? `<span>🌐 <a href="${escapeHTML(ensureUrlProtocol(c.website))}" target="_blank" style="color:var(--color-primary);">${escapeHTML(c.website)}</a></span>` : ""}
+      ${c.linkedin ? `<span>🔗 <a href="${escapeHTML(ensureUrlProtocol(c.linkedin))}" target="_blank" style="color:#0a66c2;">LinkedIn</a></span>` : ""}
+    `;
+    document.getElementById("aq-insp-c-tags-list").innerHTML = (c.tags || []).map(t => `<span class="tag-badge">${escapeHTML(t)}</span>`).join("")
+      || `<span style="color:var(--color-text-muted); font-size:12px;">No tags</span>`;
+    document.getElementById("aq-insp-c-notes").value = c.notes || "";
+    document.getElementById("btn-aq-insp-c-save-notes")?.classList.add("hidden");
+
+    // Associated contacts
+    const contactsBody = document.getElementById("aq-insp-c-contacts-body");
+    contactsBody.innerHTML = "";
+    const assoc = state.prospects.filter(p => p.companyId === c.id);
+    if (assoc.length === 0) {
+      contactsBody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--color-text-muted);padding:16px;">No associated contacts.</td></tr>`;
+    } else {
+      assoc.forEach(p => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><strong>${escapeHTML(p.firstName)} ${escapeHTML(p.lastName)}</strong></td>
+          <td>${escapeHTML(p.title || "—")}</td>
+          <td style="text-align:center;"><button class="text-btn aq-insp-view-contact-btn" data-id="${p.id}">View</button></td>
+        `;
+        tr.querySelector(".aq-insp-view-contact-btn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          openAqInspectorDrawer(p.id, "prospect");
+        });
+        contactsBody.appendChild(tr);
+      });
+    }
+  }
+}
+
+function saveAqInspectorNotes() {
+  if (!aqInspectorRecordId) return;
+  if (aqInspectorType === "prospect") {
+    const val = document.getElementById("aq-insp-p-notes").value.trim();
+    const p = state.prospects.find(x => x.id === aqInspectorRecordId);
+    if (p) p.notes = val;
+    document.getElementById("btn-aq-insp-p-save-notes")?.classList.add("hidden");
+  } else {
+    const val = document.getElementById("aq-insp-c-notes").value.trim();
+    const c = state.companies.find(x => x.id === aqInspectorRecordId);
+    if (c) c.notes = val;
+    document.getElementById("btn-aq-insp-c-save-notes")?.classList.add("hidden");
+  }
+  saveState();
+}
+
+function editAqInspectorTags() {
+  if (!aqInspectorRecordId) return;
+  if (aqInspectorType === "prospect") {
+    openChooseTagsModalForProspectInspector();
+  } else {
+    openChooseTagsModalForCompanyInspector();
+  }
+}
+
+function editAqInspectorFull() {
+  if (!aqInspectorRecordId) return;
+  if (aqInspectorType === "prospect") {
+    openProspectModal(aqInspectorRecordId);
+  } else {
+    openCompanyModal(aqInspectorRecordId);
+  }
+}
+
+// Deletes the record currently shown in the AQ drawer. Unlike the main
+// Prospect Hub delete buttons (deleteProspect/deleteCompany), this also has
+// to clean the record out of the live aqResults/aqSelectedIds so the results
+// table stops showing a row for something that no longer exists — a plain
+// refreshAqAfterEdit() wouldn't catch that since aqResults isn't re-filtered
+// from state until the next Run Query.
+function deleteAqInspectorRecord() {
+  if (!aqInspectorRecordId) return;
+  const id = aqInspectorRecordId;
+
+  if (aqInspectorType === "prospect") {
+    const p = state.prospects.find(x => x.id === id);
+    if (!p) return;
+    const ok = confirm(`Are you sure you want to permanently delete contact ${p.firstName} ${p.lastName}?`);
+    if (!ok) return;
+    state.prospects = state.prospects.filter(x => x.id !== id);
+    if (state.selectedProspectId === id) state.selectedProspectId = null;
+  } else {
+    const c = state.companies.find(x => x.id === id);
+    if (!c) return;
+    const ok = confirm(`Are you sure you want to permanently delete company ${c.name}? Associated contacts will be unassigned.`);
+    if (!ok) return;
+    state.companies = state.companies.filter(x => x.id !== id);
+    state.prospects.forEach(p => { if (p.companyId === id) p.companyId = ""; });
+    if (selectedCompanyId === id) selectedCompanyId = null;
+  }
+
+  aqResults = aqResults.filter(x => x.id !== id);
+  aqSelectedIds.delete(id);
+  closeAqInspectorDrawer();
+  saveState();
+  renderProspectsView();
+  refreshAqAfterEdit();
+}
+
+// Called after any edit that might touch a record currently shown in the
+// Advanced Query results (full edit modal, tag chooser, notes). No-op when
+// the results window isn't open. Re-renders from the existing aqResults
+// array (not a fresh filter), so edits show immediately while a genuinely
+// re-run query still applies the filters fresh.
+function refreshAqAfterEdit() {
+  const resultsModal = document.getElementById("modal-aq-results");
+  if (!resultsModal || resultsModal.classList.contains("hidden")) return;
+  renderAdvancedQueryResults();
+  renderAqInspectorDrawer();
+}
+
+function toggleAdvancedQuerySelection(id, isChecked) {
+  if (isChecked) aqSelectedIds.add(id);
+  else aqSelectedIds.delete(id);
+  renderResultsSummaryText();
+  renderAdvancedQueryBulkBar();
+}
+
+function selectAdvancedQueryScreen() {
+  const startIdx = (aqPage - 1) * aqPerPage;
+  aqResults.slice(startIdx, startIdx + aqPerPage).forEach(item => aqSelectedIds.add(item.id));
+  renderAdvancedQueryResults();
+}
+
+function selectAdvancedQueryAll() {
+  aqResults.forEach(item => aqSelectedIds.add(item.id));
+  renderAdvancedQueryResults();
+}
+
+function clearAdvancedQuerySelection() {
+  aqSelectedIds = new Set();
+  renderAdvancedQueryResults();
+}
+
+function advancedQueryPrevPage() {
+  if (aqPage > 1) {
+    aqPage--;
+    renderAdvancedQueryResults();
+  }
+}
+
+function advancedQueryNextPage() {
+  const totalPages = Math.max(1, Math.ceil(aqResults.length / aqPerPage));
+  if (aqPage < totalPages) {
+    aqPage++;
+    renderAdvancedQueryResults();
+  }
+}
+
+function changeAdvancedQueryPerPage() {
+  aqPage = 1;
+  renderAdvancedQueryResults();
+}
+
+// --- CSV export from query results ---
+
+function exportAqRecordsCSV(list, suffix) {
+  if (aqTarget === "prospect") {
+    const csv = convertToCSV(list,
+      ["ID", "First Name", "Last Name", "Email", "Phone", "Title", "LinkedIn", "Company ID", "Company", "Location", "City", "State", "Seniority", "Notes", "Tags", "History"],
+      p => [
+        p.id, p.firstName, p.lastName, p.email, p.phone || "", p.title || "", p.linkedin || "", p.companyId,
+        getCompanyName(p.companyId) || "", p.location || "", p.city || "", p.state || "", p.seniority || "",
+        p.notes || "", (p.tags || []).join(";"), p.history ? JSON.stringify(p.history) : ""
+      ]
+    );
+    downloadCSVFile(`vantage_advanced_query_prospects_${suffix}_${getBackupTimestamp()}.csv`, csv);
+  } else {
+    const csv = convertToCSV(list,
+      ["ID", "Name", "Domain", "Website", "Employees", "Employee Range", "Location", "Industry", "Description", "Specialities", "Headquarters", "Address", "City", "State", "Postal", "Phone", "LinkedIn", "Notes", "Tags"],
+      co => [
+        co.id, co.name, co.domain, co.website || "", co.employees || "", co.employeeRange || "",
+        co.location || "", co.industry || "General", co.description || "", co.specialities || "",
+        co.headquarters || "", co.address || "", co.city || "", co.state || "", co.postal || "",
+        co.phone || "", co.linkedin || "", co.notes || "", (co.tags || []).join(";")
+      ]
+    );
+    downloadCSVFile(`vantage_advanced_query_companies_${suffix}_${getBackupTimestamp()}.csv`, csv);
+  }
+}
+
+function exportAqSelectedCSV() {
+  if (aqSelectedIds.size === 0) { alert("Please select at least one record to export."); return; }
+  const source = aqTarget === "prospect" ? state.prospects : state.companies;
+  const list = source.filter(item => aqSelectedIds.has(item.id));
+  exportAqRecordsCSV(list, "selected");
+}
+
+function exportAqAllCSV() {
+  if (aqResults.length === 0) { alert("No results to export. Run a query first."); return; }
+  exportAqRecordsCSV(aqResults, "all");
+}
+
+// --- Bulk actions bar ---
+
+function renderAdvancedQueryBulkBar() {
+  const bar = document.getElementById("aq-bulk-actions");
+  const count = aqSelectedIds.size;
+  document.getElementById("aq-selected-count").textContent = count;
+  bar.classList.toggle("hidden", count === 0);
+  if (count === 0) return;
+
+  const tagSelect = document.getElementById("aq-bulk-tag-select");
+  const availableTags = aqTarget === "prospect" ? state.prospect_tags : state.company_tags;
+  const tagCurrentVal = tagSelect.value;
+  tagSelect.innerHTML = `<option value="">-- Choose Tag --</option>`;
+  (availableTags || []).forEach(t => {
+    tagSelect.innerHTML += `<option value="${escapeHTML(t)}">${escapeHTML(t)}</option>`;
+  });
+  tagSelect.value = tagCurrentVal || "";
+
+  const audSelect = document.getElementById("aq-bulk-audience-select");
+  const audCurrentVal = audSelect.value;
+  audSelect.innerHTML = `<option value="">-- Choose Audience --</option>`;
+  state.audienceLists.forEach(al => {
+    audSelect.innerHTML += `<option value="${al.id}">${escapeHTML(al.name)}</option>`;
+  });
+  audSelect.value = audCurrentVal || "";
+}
+
+// Adds (never replaces) a tag across every selected prospect/company record.
+function bulkAddTagToSelected() {
+  if (aqSelectedIds.size === 0) { alert("Please select at least one record."); return; }
+
+  const selectEl = document.getElementById("aq-bulk-tag-select");
+  const newTagInput = document.getElementById("aq-bulk-tag-new");
+  const tag = newTagInput.value.trim() || selectEl.value.trim();
+  if (!tag) { alert("Please choose an existing tag or enter a new one."); return; }
+
+  const targetArray = aqTarget === "prospect" ? state.prospects : state.companies;
+  const tagListField = aqTarget === "prospect" ? "prospect_tags" : "company_tags";
+
+  let updatedCount = 0;
+  aqSelectedIds.forEach(id => {
+    const record = targetArray.find(x => x.id === id);
+    if (!record) return;
+    if (!record.tags) record.tags = [];
+    if (!record.tags.includes(tag)) {
+      record.tags.push(tag);
+      updatedCount++;
+    }
+  });
+
+  // Register brand-new tags in the managed tag list so they show up in Settings/filters
+  if (!state[tagListField].includes(tag)) {
+    state[tagListField].push(tag);
+  }
+
+  saveState();
+  newTagInput.value = "";
+  renderAdvancedQueryResults();
+  renderProspectsView();
+  alert(`Added tag "${tag}" to ${updatedCount} record${updatedCount === 1 ? "" : "s"}.`);
+}
+
+function bulkAddSelectedToAudience() {
+  if (aqTarget !== "prospect") return;
+  if (aqSelectedIds.size === 0) { alert("Please select at least one contact."); return; }
+
+  const audId = document.getElementById("aq-bulk-audience-select").value;
+  if (!audId) { alert("Please choose an audience list."); return; }
+
+  const aud = state.audienceLists.find(a => a.id === audId);
+  if (!aud) return;
+
+  if (!aud.prospectIds) aud.prospectIds = [];
+  let addedCount = 0;
+  aqSelectedIds.forEach(id => {
+    if (!aud.prospectIds.includes(id)) {
+      aud.prospectIds.push(id);
+      addedCount++;
+    }
+  });
+  addAudienceTagToProspects(Array.from(aqSelectedIds), aud.name);
+
+  saveState();
+  renderAdvancedQueryResults();
+  renderProspectsView();
+  alert(`Added ${addedCount} contact${addedCount === 1 ? "" : "s"} to audience "${aud.name}".`);
+}
+
+function bulkCreateAudienceFromSelected() {
+  if (aqTarget !== "prospect") return;
+  if (aqSelectedIds.size === 0) { alert("Please select at least one contact."); return; }
+
+  const nameInput = document.getElementById("aq-bulk-new-audience-name");
+  const name = nameInput.value.trim();
+  if (!name) { alert("Please enter a name for the new audience."); return; }
+
+  const duplicate = state.audienceLists.some(a => a.name.toLowerCase() === name.toLowerCase());
+  if (duplicate) { alert("An audience list with this name already exists."); return; }
+
+  const prospectIds = Array.from(aqSelectedIds);
+  const audId = `aud-${Date.now()}`;
+  state.audienceLists.push({ id: audId, name, prospectIds, status: "active" });
+  addAudienceTagToProspects(prospectIds, name);
+
+  saveState();
+  nameInput.value = "";
+  renderAdvancedQueryResults();
+  renderProspectsView();
+  alert(`Created audience "${name}" with ${prospectIds.length} contact${prospectIds.length === 1 ? "" : "s"}.`);
+}
+
 function clearCampaignsFilters() {
   activeCampaignFilterTags = [];
   activeCampaignFilterPhase = "all";
@@ -2550,8 +4079,44 @@ let campaignViewSubState = "dashboard"; // "dashboard" or "query" or "audiences"
 let activeCampaignFilterPhase = "all";
 let activeCampaignFilterTags = [];
 let selectedAudienceListId = null;
+let audienceListStatusFilter = "active"; // "active" or "archived"
 let viewingCampaignDetailId = null;
 let editingCampaignId = null;
+let pendingAudienceImport = null; // { matchedIds: [], unresolvedRows: [] } while the import modal is open
+
+/* --------------------------------------------------------------------------
+   Audience <-> Prospect Tag Sync
+   Invariant: a prospect's tags array includes an audience's name if and only
+   if that prospect's id is in that audience's prospectIds. Keeping this in
+   sync means audience membership shows up as a normal tag everywhere in the
+   Prospect Hub (filtering, inspector, exports), and deleting/renaming an
+   audience cleanly updates every contact that was in it.
+   -------------------------------------------------------------------------- */
+
+function addAudienceTagToProspects(prospectIds, audienceName) {
+  (prospectIds || []).forEach(pid => {
+    const p = state.prospects.find(x => x.id === pid);
+    if (!p) return;
+    if (!p.tags) p.tags = [];
+    if (!p.tags.includes(audienceName)) p.tags.push(audienceName);
+  });
+}
+
+function removeAudienceTagFromProspects(prospectIds, audienceName) {
+  (prospectIds || []).forEach(pid => {
+    const p = state.prospects.find(x => x.id === pid);
+    if (!p || !p.tags) return;
+    p.tags = p.tags.filter(t => t !== audienceName);
+  });
+}
+
+function renameAudienceTagOnProspects(prospectIds, oldName, newName) {
+  (prospectIds || []).forEach(pid => {
+    const p = state.prospects.find(x => x.id === pid);
+    if (!p || !p.tags) return;
+    p.tags = p.tags.map(t => (t === oldName ? newName : t));
+  });
+}
 
 function switchCampaignSubTab(tab) {
   const cBtn = document.getElementById("subtab-campaigns");
@@ -2780,36 +4345,95 @@ function openCampaignDetail(campId) {
 }
 
 function renderAudienceListsView() {
+  // Render Active / Archived tab toggle
+  const tabBar = document.getElementById("audience-status-tabs");
+  if (tabBar) {
+    tabBar.innerHTML = `
+      <button class="media-status-filter ${audienceListStatusFilter === 'active' ? 'active-filter' : ''}" data-status="active">Active</button>
+      <button class="media-status-filter ${audienceListStatusFilter === 'archived' ? 'active-filter' : ''}" data-status="archived">Archived</button>
+    `;
+    tabBar.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        audienceListStatusFilter = btn.dataset.status;
+        if (selectedAudienceListId) {
+          const sel = state.audienceLists.find(a => a.id === selectedAudienceListId);
+          if (sel && (sel.status || "active") !== audienceListStatusFilter) selectedAudienceListId = null;
+        }
+        renderAudienceListsView();
+      });
+    });
+  }
+
   const tableBody = document.getElementById("audiences-table-body");
   if (!tableBody) return;
   tableBody.innerHTML = "";
 
-  if (state.audienceLists.length === 0) {
-    tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding:24px; color:var(--color-text-muted);">No audience lists created yet. Run a query or click Create List!</td></tr>`;
+  const filtered = state.audienceLists.filter(al => (al.status || "active") === audienceListStatusFilter);
+
+  if (filtered.length === 0) {
+    const msg = audienceListStatusFilter === "archived"
+      ? "No archived audience lists."
+      : "No audience lists created yet. Run a query or click Create List!";
+    tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding:24px; color:var(--color-text-muted);">${msg}</td></tr>`;
   } else {
-    state.audienceLists.forEach(aud => {
+    filtered.forEach(aud => {
       const size = (aud.prospectIds || []).length;
-      const isActive = selectedAudienceListId === aud.id;
+      const isSelected = selectedAudienceListId === aud.id;
       const tr = document.createElement("tr");
-      if (isActive) tr.className = "active-row";
-      
-      tr.innerHTML = `
-        <td><strong>${escapeHTML(aud.name)}</strong></td>
-        <td>${size} contacts</td>
-        <td style="text-align:right;">
-          <button class="text-btn btn-aud-inspect-trig" style="margin-right:8px;">👀 View</button>
-          <button class="text-btn btn-aud-delete-trig" style="color:var(--color-danger);">🗑️ Delete</button>
-        </td>
-      `;
+      if (isSelected) tr.className = "active-row";
+
+      if (audienceListStatusFilter === "active") {
+        tr.innerHTML = `
+          <td><strong>${escapeHTML(aud.name)}</strong></td>
+          <td>${size} contacts</td>
+          <td style="text-align:right;">
+            <button class="text-btn btn-aud-inspect-trig" style="margin-right:8px;">👀 View</button>
+            <button class="text-btn btn-aud-export-trig" style="margin-right:8px;">⬇️ CSV</button>
+            <button class="text-btn btn-aud-archive-trig" style="color:var(--color-text-muted);">📦 Archive</button>
+          </td>
+        `;
+        tr.querySelector(".btn-aud-export-trig").addEventListener("click", (e) => {
+          e.stopPropagation();
+          exportAudienceContactsCSV(aud.id);
+        });
+        tr.querySelector(".btn-aud-archive-trig").addEventListener("click", (e) => {
+          e.stopPropagation();
+          archiveAudienceList(aud.id);
+        });
+      } else {
+        tr.innerHTML = `
+          <td><strong>${escapeHTML(aud.name)}</strong> <span style="font-size:11px; color:var(--color-text-muted);">(archived)</span></td>
+          <td>${size} contacts</td>
+          <td style="text-align:right;">
+            <button class="text-btn btn-aud-inspect-trig" style="margin-right:6px;">👀 View</button>
+            <button class="text-btn btn-aud-export-trig" style="margin-right:6px;">⬇️ CSV</button>
+            <button class="text-btn btn-aud-restore-trig" style="margin-right:6px; color:var(--color-primary);">↩️ Restore</button>
+            <button class="text-btn btn-aud-copy-trig" style="margin-right:6px;">📋 Copy</button>
+            <button class="text-btn btn-aud-delete-trig" style="color:var(--color-danger);">🗑️ Delete</button>
+          </td>
+        `;
+        tr.querySelector(".btn-aud-export-trig").addEventListener("click", (e) => {
+          e.stopPropagation();
+          exportAudienceContactsCSV(aud.id);
+        });
+        tr.querySelector(".btn-aud-restore-trig").addEventListener("click", (e) => {
+          e.stopPropagation();
+          restoreAudienceList(aud.id);
+        });
+        tr.querySelector(".btn-aud-copy-trig").addEventListener("click", (e) => {
+          e.stopPropagation();
+          copyAudienceToNewList(aud.id);
+        });
+        tr.querySelector(".btn-aud-delete-trig").addEventListener("click", (e) => {
+          e.stopPropagation();
+          deleteAudienceListById(aud.id);
+        });
+      }
 
       tr.querySelector(".btn-aud-inspect-trig").addEventListener("click", (e) => {
         e.stopPropagation();
         selectedAudienceListId = aud.id;
         renderAudienceListsView();
-      });
-      tr.querySelector(".btn-aud-delete-trig").addEventListener("click", (e) => {
-        e.stopPropagation();
-        deleteAudienceListById(aud.id);
       });
       tr.addEventListener("click", () => {
         selectedAudienceListId = aud.id;
@@ -2833,30 +4457,61 @@ function renderAudienceInspector() {
   const inspectSize = document.getElementById("aud-inspect-size");
   const tbody = document.getElementById("aud-inspect-contacts-body");
 
-  // Re-populate prospect datalist inside inspector
-  const dl = document.getElementById("prospects-datalist");
-  if (dl) {
-    dl.innerHTML = "";
-    state.prospects.forEach(p => {
-      dl.innerHTML += `<option value="${escapeHTML(p.firstName)} ${escapeHTML(p.lastName)} (${escapeHTML(p.id)})"></option>`;
-    });
-  }
+  // Guard: if any required element is missing, bail out gracefully
+  if (!inspectName || !inspectSize || !tbody) return;
 
   if (!aud) {
     inspectName.textContent = "Select an Audience List";
     inspectSize.textContent = "No audience selected";
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--color-text-muted); padding:32px;">Click "View" on any audience list to inspect and edit contacts.</td></tr>`;
+    const actionsEl = document.getElementById("aud-inspect-actions");
+    if (actionsEl) actionsEl.innerHTML = "";
+    const badgeEl = document.getElementById("aud-inspect-status-badge");
+    if (badgeEl) badgeEl.textContent = "";
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--color-text-muted); padding:32px;">Click "View" on any audience list to inspect contacts.</td></tr>`;
     return;
   }
 
   inspectName.textContent = aud.name;
   inspectSize.textContent = `${(aud.prospectIds || []).length} contacts stored`;
 
+  // Inject action buttons based on status
+  const actionsEl = document.getElementById("aud-inspect-actions");
+  const badgeEl = document.getElementById("aud-inspect-status-badge");
+  const isArchived = (aud.status || "active") === "archived";
+  if (actionsEl) {
+    if (isArchived) {
+      actionsEl.innerHTML = `
+        <button class="header-action-btn secondary-btn" id="btn-inspector-export-aud" style="padding:4px 8px;font-size:11px;height:auto;">⬇️ Export CSV</button>
+        <button class="header-action-btn secondary-btn" id="btn-inspector-restore-aud" style="padding:4px 8px;font-size:11px;height:auto;">↩️ Restore</button>
+        <button class="header-action-btn secondary-btn" id="btn-inspector-copy-aud" style="padding:4px 8px;font-size:11px;height:auto;">📋 Copy to New</button>
+        <button class="header-action-btn danger-btn" id="btn-inspector-delete-aud" style="padding:4px 8px;font-size:11px;height:auto;background:rgba(239,68,68,0.1);">🗑️ Delete</button>
+      `;
+      actionsEl.querySelector("#btn-inspector-export-aud").addEventListener("click", () => exportAudienceContactsCSV(aud.id));
+      actionsEl.querySelector("#btn-inspector-restore-aud").addEventListener("click", () => restoreAudienceList(aud.id));
+      actionsEl.querySelector("#btn-inspector-copy-aud").addEventListener("click", () => copyAudienceToNewList(aud.id));
+      actionsEl.querySelector("#btn-inspector-delete-aud").addEventListener("click", () => deleteAudienceListById(aud.id));
+    } else {
+      actionsEl.innerHTML = `
+        <button class="header-action-btn secondary-btn" id="btn-inspector-export-aud" style="padding:4px 8px;font-size:11px;height:auto;">⬇️ Export CSV</button>
+        <button class="header-action-btn secondary-btn" id="btn-inspector-rename-aud" style="padding:4px 8px;font-size:11px;height:auto;">✏️ Rename</button>
+        <button class="header-action-btn secondary-btn" id="btn-inspector-archive-aud" style="padding:4px 8px;font-size:11px;height:auto;">📦 Archive</button>
+      `;
+      actionsEl.querySelector("#btn-inspector-export-aud").addEventListener("click", () => exportAudienceContactsCSV(aud.id));
+      actionsEl.querySelector("#btn-inspector-rename-aud").addEventListener("click", renameSelectedAudienceList);
+      actionsEl.querySelector("#btn-inspector-archive-aud").addEventListener("click", () => archiveAudienceList(aud.id));
+    }
+  }
+  if (badgeEl) {
+    badgeEl.innerHTML = isArchived
+      ? `<span style="color:var(--color-text-muted);">📦 Archived</span>`
+      : `<span style="color:#10b981;">● Active</span>`;
+  }
+
   tbody.innerHTML = "";
   const ids = aud.prospectIds || [];
 
   if (ids.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--color-text-muted); padding:24px;">This audience list is empty. Add a contact above.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--color-text-muted); padding:24px;">This audience list is empty.</td></tr>`;
   } else {
     ids.forEach(pid => {
       const p = state.prospects.find(x => x.id === pid);
@@ -2887,6 +4542,9 @@ function deleteAudienceListById(audId) {
   const ok = confirm(`Are you sure you want to delete audience list "${aud.name}"?`);
   if (!ok) return;
 
+  // Remove the audience name as a tag from every contact who was in it
+  removeAudienceTagFromProspects(aud.prospectIds, aud.name);
+
   state.audienceLists = state.audienceLists.filter(x => x.id !== audId);
   // Unassign campaigns pointing to it
   state.campaigns.forEach(c => {
@@ -2904,6 +4562,7 @@ function removeContactFromAudienceList(audId, prospectId) {
   const aud = state.audienceLists.find(x => x.id === audId);
   if (aud && aud.prospectIds) {
     aud.prospectIds = aud.prospectIds.filter(id => id !== prospectId);
+    removeAudienceTagFromProspects([prospectId], aud.name);
     saveState();
     renderAudienceListsView();
   }
@@ -2938,6 +4597,7 @@ function addContactToAudienceListDirectly() {
   }
 
   aud.prospectIds.push(pid);
+  addAudienceTagToProspects([pid], aud.name);
   saveState();
   searchInput.value = "";
   renderAudienceListsView();
@@ -2954,7 +4614,8 @@ function createEmptyAudienceList() {
   state.audienceLists.push({
     id: audId,
     name: name.trim(),
-    prospectIds: []
+    prospectIds: [],
+    status: "active"
   });
   selectedAudienceListId = audId;
   saveState();
@@ -2971,7 +4632,9 @@ function renameSelectedAudienceList() {
   const duplicate = state.audienceLists.some(a => a.id !== aud.id && a.name.toLowerCase() === newName.trim().toLowerCase());
   if (duplicate) { alert("An audience list with this name already exists."); return; }
 
+  const oldName = aud.name;
   aud.name = newName.trim();
+  renameAudienceTagOnProspects(aud.prospectIds, oldName, aud.name);
   saveState();
   renderAudienceListsView();
 }
@@ -2980,6 +4643,238 @@ function deleteSelectedAudienceList() {
   if (selectedAudienceListId) {
     deleteAudienceListById(selectedAudienceListId);
   }
+}
+
+function archiveAudienceList(audId) {
+  const aud = state.audienceLists.find(x => x.id === audId);
+  if (!aud) return;
+  aud.status = "archived";
+  if (selectedAudienceListId === audId) selectedAudienceListId = null;
+  audienceListStatusFilter = "active";
+  saveState();
+  renderAudienceListsView();
+}
+
+function restoreAudienceList(audId) {
+  const aud = state.audienceLists.find(x => x.id === audId);
+  if (!aud) return;
+  aud.status = "active";
+  audienceListStatusFilter = "active";
+  selectedAudienceListId = audId;
+  saveState();
+  renderAudienceListsView();
+}
+
+function copyAudienceToNewList(audId) {
+  const aud = state.audienceLists.find(x => x.id === audId);
+  if (!aud) return;
+  const newName = prompt("Name for the new audience list:", `${aud.name} (Copy)`);
+  if (!newName || !newName.trim()) return;
+  const duplicate = state.audienceLists.some(a => a.name.toLowerCase() === newName.trim().toLowerCase());
+  if (duplicate) { alert("An audience list with this name already exists."); return; }
+  const newId = `aud-${Date.now()}`;
+  const newList = { id: newId, name: newName.trim(), prospectIds: [...(aud.prospectIds || [])], status: "active" };
+  state.audienceLists.push(newList);
+  saveState();
+  audienceListStatusFilter = "active";
+  selectedAudienceListId = newId;
+  renderAudienceListsView();
+  alert(`Created "${newName.trim()}" with ${newList.prospectIds.length} contacts.`);
+}
+
+/* --------------------------------------------------------------------------
+   Audience CSV Import
+   Upload a CSV/Excel exported from the Prospect Hub and build a new audience
+   directly from the contact IDs in that file — no re-matching against the
+   database, since these files are assumed to always originate from Vantage's
+   own Prospect Hub export. Any row whose ID no longer exists (e.g. the
+   contact was deleted since export) is silently skipped and reflected in the
+   summary count.
+   -------------------------------------------------------------------------- */
+
+// Converts raw parsed rows (rows[0] = headers) into plain objects keyed by
+// the original header text plus normalized variants (lowercase, no spaces,
+// alnum-only) so lookups are tolerant of header formatting differences.
+function csvRowsToObjects(rows) {
+  if (!rows || rows.length <= 1) return [];
+  const headers = rows[0].map(h => (h || "").toString());
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const cols = rows[i];
+    if (!cols || cols.length === 0 || cols.every(c => !c?.toString().trim())) continue;
+    const obj = {};
+    headers.forEach((header, idx) => {
+      let cleanHeader = header.trim();
+      if (cleanHeader.charCodeAt(0) === 0xFEFF) cleanHeader = cleanHeader.slice(1); // strip UTF-8 BOM if present
+      if (!cleanHeader) return;
+      const val = cols[idx]?.toString().trim() || "";
+      obj[cleanHeader] = val;
+      obj[cleanHeader.toLowerCase()] = val;
+      obj[cleanHeader.toLowerCase().replace(/\s+/g, "")] = val;
+      obj[cleanHeader.toLowerCase().replace(/[^a-z0-9]/g, "")] = val;
+    });
+    out.push(obj);
+  }
+  return out;
+}
+
+function csvRowLookup(row, keys) {
+  for (const key of keys) {
+    const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (row[cleanKey] !== undefined && row[cleanKey] !== "") return row[cleanKey];
+  }
+  return "";
+}
+
+function openAudienceImportModal() {
+  pendingAudienceImport = null;
+  document.getElementById("audience-import-name").value = "";
+  const fileInput = document.getElementById("audience-import-file-input");
+  if (fileInput) fileInput.value = "";
+  document.getElementById("modal-audience-import").classList.remove("hidden");
+  showAudienceImportUploadStep();
+}
+
+function closeAudienceImportModal() {
+  document.getElementById("modal-audience-import").classList.add("hidden");
+  pendingAudienceImport = null;
+}
+
+function showAudienceImportUploadStep() {
+  document.getElementById("audience-import-upload-section").classList.remove("hidden");
+  document.getElementById("audience-import-review-section").classList.add("hidden");
+}
+
+function showAudienceImportReviewStep() {
+  document.getElementById("audience-import-upload-section").classList.add("hidden");
+  document.getElementById("audience-import-review-section").classList.remove("hidden");
+}
+
+function handleAudienceCSVFiles(files) {
+  const file = files && files[0];
+  if (!file) return;
+  const fileName = file.name.toLowerCase();
+
+  if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        if (workbook.SheetNames.length === 0) {
+          alert("No sheets found in that Excel file.");
+          return;
+        }
+        const ws = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        processAudienceImportRows(rows);
+      } catch (err) {
+        alert("Error parsing Excel file: " + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const rows = parseCSV(evt.target.result);
+      processAudienceImportRows(rows);
+    };
+    reader.readAsText(file);
+  }
+}
+
+// Reads contact IDs straight out of the CSV's "ID" column (the column
+// Vantage's own Prospect Hub export always includes) and builds the review
+// list from whichever of those IDs still exist in the database.
+function processAudienceImportRows(rows) {
+  const objects = csvRowsToObjects(rows);
+  if (objects.length === 0) {
+    alert("No contact rows found in that file.");
+    return;
+  }
+
+  const prospectIds = [];
+  let skipped = 0;
+
+  objects.forEach(row => {
+    const id = csvRowLookup(row, ["id", "prospect id", "prospectid"]);
+    const exists = id && state.prospects.some(p => p.id === id);
+    if (exists) {
+      if (!prospectIds.includes(id)) prospectIds.push(id);
+    } else {
+      skipped++;
+    }
+  });
+
+  if (prospectIds.length === 0) {
+    alert("No valid Vantage contact IDs were found in that file. Make sure it's a CSV exported from the Prospect Hub.");
+    return;
+  }
+
+  pendingAudienceImport = { prospectIds, skipped };
+  showAudienceImportReviewStep();
+  renderAudienceImportReview();
+}
+
+function renderAudienceImportReview() {
+  if (!pendingAudienceImport) return;
+  const { prospectIds, skipped } = pendingAudienceImport;
+
+  document.getElementById("audience-import-summary").textContent =
+    `${prospectIds.length} contact${prospectIds.length === 1 ? "" : "s"} found` +
+    (skipped > 0 ? ` · ${skipped} row${skipped === 1 ? "" : "s"} skipped (no longer in Vantage)` : "");
+
+  const body = document.getElementById("audience-import-matched-body");
+  body.innerHTML = "";
+  if (prospectIds.length === 0) {
+    body.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--color-text-muted);padding:12px;">No contacts left — choose a different file.</td></tr>`;
+  } else {
+    prospectIds.forEach(pid => {
+      const p = state.prospects.find(x => x.id === pid);
+      if (!p) return;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><strong>${escapeHTML(p.firstName)} ${escapeHTML(p.lastName)}</strong></td>
+        <td>${escapeHTML(getCompanyName(p.companyId) || "—")}</td>
+        <td style="text-align:center;"><button class="delete-interaction-btn btn-aud-import-exclude" title="Exclude from this audience">✕</button></td>
+      `;
+      tr.querySelector(".btn-aud-import-exclude").addEventListener("click", () => {
+        pendingAudienceImport.prospectIds = pendingAudienceImport.prospectIds.filter(id => id !== pid);
+        renderAudienceImportReview();
+      });
+      body.appendChild(tr);
+    });
+  }
+}
+
+function saveAudienceImport() {
+  if (!pendingAudienceImport) {
+    alert("Please upload a CSV file first.");
+    return;
+  }
+
+  const nameInput = document.getElementById("audience-import-name");
+  const name = nameInput.value.trim();
+  if (!name) { alert("Please enter a name for this audience."); return; }
+
+  const duplicate = state.audienceLists.some(a => a.name.toLowerCase() === name.toLowerCase());
+  if (duplicate) { alert("An audience list with this name already exists."); return; }
+
+  const prospectIds = [...pendingAudienceImport.prospectIds];
+  if (prospectIds.length === 0) { alert("No contacts to save."); return; }
+
+  const audId = `aud-${Date.now()}`;
+  state.audienceLists.push({ id: audId, name, prospectIds });
+  addAudienceTagToProspects(prospectIds, name);
+
+  saveState();
+  closeAudienceImportModal();
+
+  campaignViewSubState = "audiences";
+  selectedAudienceListId = audId;
+  renderCampaignsView();
+
+  alert(`Created audience "${name}" with ${prospectIds.length} contact${prospectIds.length === 1 ? "" : "s"}!`);
 }
 
 function renderCampaignQueryView() {
@@ -3144,6 +5039,7 @@ function addQueryContactsToExistingList() {
       addedCount++;
     }
   });
+  addAudienceTagToProspects(pids, aud.name);
 
   saveState();
   alert(`Added ${addedCount} new contacts to audience list "${aud.name}"!`);
@@ -3166,8 +5062,10 @@ function createListFromQueryContacts() {
   state.audienceLists.push({
     id: audId,
     name: name,
-    prospectIds: pids
+    prospectIds: pids,
+    status: "active"
   });
+  addAudienceTagToProspects(pids, name);
 
   saveState();
   nameInput.value = "";
@@ -3203,13 +5101,38 @@ function normalizeTitle(title) {
   t = t.replace(/\bmgr\.?\b/g, "manager");
   t = t.replace(/\bexec\.?\b/g, "executive");
   t = t.replace(/\badmin\.?\b/g, "administrator");
+  t = t.replace(/\bassoc\.?\b/g, "associate");
   t = t.replace(/\bceo\b/g, "chief executive officer");
   t = t.replace(/\bcto\b/g, "chief technology officer");
   t = t.replace(/\bcmo\b/g, "chief marketing officer");
   t = t.replace(/\bcfo\b/g, "chief financial officer");
   t = t.replace(/\bcoo\b/g, "chief operating officer");
+  t = t.replace(/\bcio\b/g, "chief information officer");
+  t = t.replace(/\bciso\b/g, "chief information security officer");
+  t = t.replace(/\bchro\b/g, "chief human resources officer");
+  t = t.replace(/\bcpo\b/g, "chief product officer");
+  t = t.replace(/\bcro\b/g, "chief revenue officer");
+  t = t.replace(/\bhr\b/g, "human resources");
   t = t.replace(/\bpres\.?\b/g, "president");
   return t;
+}
+
+// Smart title matching: combines plain substring search with normalizeTitle's
+// abbreviation expansion (both sides normalized the same way) so e.g. "VP"
+// finds "Vice President", "Executive Vice President", "Senior VP", etc., and
+// searching "Chief Executive Officer" finds records stored as just "CEO".
+// Also supports the same AND/OR boolean syntax as other Advanced Query text
+// fields (splitBooleanQuery), so "VP OR Director" and "VP AND Sales" work.
+function matchesTitleFilter(fieldVal, filterVal) {
+  if (!filterVal) return true;
+  const val = (fieldVal || "").toString().toLowerCase();
+  const normVal = normalizeTitle(val);
+  const orGroups = splitBooleanQuery(filterVal);
+  if (orGroups.length === 0) return true;
+  return orGroups.some(andTerms => andTerms.every(term => {
+    const t = term.toLowerCase();
+    return val.includes(t) || normVal.includes(normalizeTitle(t));
+  }));
 }
 
 
@@ -3361,6 +5284,7 @@ function saveProspect() {
   saveState();
   document.getElementById("modal-prospect").classList.add("hidden");
   renderProspectsView();
+  refreshAqAfterEdit();
 }
 
 function deleteProspect() {
@@ -3369,10 +5293,18 @@ function deleteProspect() {
   const ok = confirm(`Are you sure you want to permanently delete contact ${p.firstName} ${p.lastName}?`);
   if (!ok) return;
 
-  state.prospects = state.prospects.filter(x => x.id !== state.selectedProspectId);
+  const deletedId = state.selectedProspectId;
+  state.prospects = state.prospects.filter(x => x.id !== deletedId);
   state.selectedProspectId = null;
+  // A deleted record needs to disappear from any open Advanced Query results
+  // too — those aren't re-filtered from state until the next Run Query, so
+  // without this the row would keep showing (just with a closed drawer).
+  aqResults = aqResults.filter(x => x.id !== deletedId);
+  aqSelectedIds.delete(deletedId);
+  if (aqInspectorRecordId === deletedId) closeAqInspectorDrawer();
   saveState();
   renderProspectsView();
+  refreshAqAfterEdit();
 }
 
 function deleteCompany() {
@@ -3382,15 +5314,20 @@ function deleteCompany() {
   const ok = confirm(`Are you sure you want to permanently delete company ${c.name}? Associated contacts will be unassigned.`);
   if (!ok) return;
 
-  state.companies = state.companies.filter(x => x.id !== selectedCompanyId);
+  const deletedId = selectedCompanyId;
+  state.companies = state.companies.filter(x => x.id !== deletedId);
   state.prospects.forEach(p => {
-    if (p.companyId === selectedCompanyId) {
+    if (p.companyId === deletedId) {
       p.companyId = "";
     }
   });
   selectedCompanyId = null;
+  aqResults = aqResults.filter(x => x.id !== deletedId);
+  aqSelectedIds.delete(deletedId);
+  if (aqInspectorRecordId === deletedId) closeAqInspectorDrawer();
   saveState();
   renderProspectsView();
+  refreshAqAfterEdit();
 }
 
 // Company CRUD
@@ -3451,6 +5388,7 @@ function saveCompany() {
     document.getElementById("pros-company").value = c.name;
     document.getElementById("modal-company").classList.add("hidden");
     renderProspectsView();
+    refreshAqAfterEdit();
   }
 }
 
@@ -3494,6 +5432,7 @@ function recordInteraction() {
 
   document.getElementById("modal-interaction").classList.add("hidden");
   renderProspectsView();
+  refreshAqAfterEdit();
 }
 
 function deleteInteraction(prosId, histId) {
@@ -3502,6 +5441,7 @@ function deleteInteraction(prosId, histId) {
     p.history = p.history.filter(h => h.id !== histId);
     saveState();
     renderProspectsView();
+    refreshAqAfterEdit();
   }
 }
 
@@ -3530,13 +5470,16 @@ function openCreateCampaignModal(id = null) {
     });
   }
 
-  // Populate media select
+  // Populate media select — Sequence Media only makes sense as a "Sequence"
+  // type piece of content, and shouldn't offer content that's been archived.
   const mediaSelect = document.getElementById("new-campaign-media");
   if (mediaSelect) {
     mediaSelect.innerHTML = `<option value="">-- Choose Finished content sequence --</option>`;
-    state.media.forEach(m => {
-      mediaSelect.innerHTML += `<option value="${m.id}">${escapeHTML(m.title)} (${m.type})</option>`;
-    });
+    state.media
+      .filter(m => m.type === "Sequence" && m.status !== "Archive")
+      .forEach(m => {
+        mediaSelect.innerHTML += `<option value="${m.id}">${escapeHTML(m.title)}</option>`;
+      });
   }
 
   if (id) {
@@ -3860,6 +5803,36 @@ function downloadApolloNoPhoneTemplate() {
   XLSX.writeFile(wb, "Apollo Import Template-NO PHONE.xls");
 }
 
+// Merge newly-imported records into an existing array, skipping duplicates.
+// keyFn(record) should return a stable dedupe key string, or null/"" if no
+// reliable key can be derived (in which case the record is always added,
+// since we can't safely assume it's a duplicate).
+function mergeImportedRecords(existingArray, newRecords, keyFn) {
+  const seen = new Set();
+  (existingArray || []).forEach(r => {
+    const k = keyFn(r);
+    if (k) seen.add(k);
+  });
+  let added = 0;
+  let duplicates = 0;
+  const toAdd = [];
+  (newRecords || []).forEach(r => {
+    const k = keyFn(r);
+    if (k && seen.has(k)) {
+      duplicates++;
+    } else {
+      toAdd.push(r);
+      added++;
+      if (k) seen.add(k);
+    }
+  });
+  return { merged: (existingArray || []).concat(toAdd), added, duplicates };
+}
+
+function mergeSummaryLabel(count) {
+  return count ? `, ${count} duplicate${count === 1 ? "" : "s"} skipped` : "";
+}
+
 function importCSVContacts(e) {
   const files = e.target.files;
   if (!files || files.length === 0) return;
@@ -4039,8 +6012,10 @@ function importCSVContacts(e) {
         };
       });
       if (importedCompanies.length > 0) {
-        state.companies = importedCompanies;
-        loadedTables.push("Companies 🏢");
+        if (!state.companies) state.companies = [];
+        const result = mergeImportedRecords(state.companies, importedCompanies, c => (c.id || "").toLowerCase().trim() || null);
+        state.companies = result.merged;
+        loadedTables.push(`Companies 🏢 (${result.added} added${mergeSummaryLabel(result.duplicates)})`);
       }
     }
     
@@ -4211,8 +6186,19 @@ function importCSVContacts(e) {
       });
       
       if (importedProspects.length > 0) {
-        state.prospects = importedProspects;
-        loadedTables.push("Prospects 👥");
+        if (!state.prospects) state.prospects = [];
+        const prospectKey = (p) => {
+          const email = (p.email || "").trim().toLowerCase();
+          if (email) return "email:" + email;
+          const first = (p.firstName || "").trim().toLowerCase();
+          const last = (p.lastName || "").trim().toLowerCase();
+          const company = (p.companyId || "").trim().toLowerCase();
+          if (!first && !last) return null; // not enough info to safely call it a duplicate
+          return "name:" + first + "|" + last + "|" + company;
+        };
+        const result = mergeImportedRecords(state.prospects, importedProspects, prospectKey);
+        state.prospects = result.merged;
+        loadedTables.push(`Prospects 👥 (${result.added} added${mergeSummaryLabel(result.duplicates)})`);
       }
     }
     
@@ -4237,8 +6223,17 @@ function importCSVContacts(e) {
         };
       });
       if (importedCampaigns.length > 0) {
-        state.campaigns = importedCampaigns;
-        loadedTables.push("Campaigns 🎯");
+        if (!state.campaigns) state.campaigns = [];
+        const campaignKey = (c) => {
+          if (c.id) return "id:" + c.id;
+          const title = (c.title || "").trim().toLowerCase();
+          const launch = (c.launchDate || "").trim().toLowerCase();
+          if (!title) return null;
+          return "t:" + title + "|" + launch;
+        };
+        const result = mergeImportedRecords(state.campaigns, importedCampaigns, campaignKey);
+        state.campaigns = result.merged;
+        loadedTables.push(`Campaigns 🎯 (${result.added} added${mergeSummaryLabel(result.duplicates)})`);
       }
     }
     
@@ -4255,8 +6250,15 @@ function importCSVContacts(e) {
         };
       });
       if (importedAudiences.length > 0) {
-        state.audienceLists = importedAudiences;
-        loadedTables.push("Audience Lists 👥");
+        if (!state.audienceLists) state.audienceLists = [];
+        const audienceKey = (a) => {
+          if (a.id) return "id:" + a.id;
+          const name = (a.name || "").trim().toLowerCase();
+          return name ? "n:" + name : null;
+        };
+        const result = mergeImportedRecords(state.audienceLists, importedAudiences, audienceKey);
+        state.audienceLists = result.merged;
+        loadedTables.push(`Audience Lists 👥 (${result.added} added${mergeSummaryLabel(result.duplicates)})`);
       }
     }
     
@@ -4325,15 +6327,25 @@ function importCSVContacts(e) {
         };
       });
       if (importedMedia.length > 0) {
-        state.media = importedMedia;
-        loadedTables.push("Media Hub 📁");
+        if (!state.media) state.media = [];
+        const mediaKey = (m) => {
+          if (m.id) return "id:" + m.id;
+          const title = (m.title || "").trim().toLowerCase();
+          return title ? "t:" + title : null;
+        };
+        const result = mergeImportedRecords(state.media, importedMedia, mediaKey);
+        state.media = result.merged;
+        loadedTables.push(`Media Hub 📁 (${result.added} added${mergeSummaryLabel(result.duplicates)})`);
       }
     }
 
     // 5. Dynamic Custom Table Route (content_versions, countries, shows)
     else {
-      state[baseName] = genericRows;
-      loadedTables.push(`${baseName.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())} (Custom) 📊`);
+      if (!state[baseName]) state[baseName] = [];
+      const result = mergeImportedRecords(state[baseName], genericRows, r => r.id ? ("id:" + r.id) : ("j:" + JSON.stringify(r)));
+      state[baseName] = result.merged;
+      const label = baseName.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      loadedTables.push(`${label} (Custom) 📊 (${result.added} added${mergeSummaryLabel(result.duplicates)})`);
     }
   }
 
@@ -4341,7 +6353,7 @@ function importCSVContacts(e) {
     if (filesProcessed === totalFilesExpected) {
       ensureStateDefaults();
       saveState();
-      alert(`Vantage Database Restore Finished!\n\nSuccessfully Restored/Synced modules:\n- ${[...new Set(loadedTables)].join("\n- ")}`);
+      alert(`Import Complete!\n\nExisting records were kept — duplicates were skipped and only new records were added:\n- ${[...new Set(loadedTables)].join("\n- ")}`);
       
       e.target.value = "";
       renderApp();
@@ -4496,6 +6508,57 @@ function setupEventListeners() {
   document.getElementById("prospect-tag-chooser")?.addEventListener("input", renderProspectsView);
   document.getElementById("btn-clear-prospects-filters")?.addEventListener("click", clearProspectsFilters);
   document.getElementById("btn-prospects-settings")?.addEventListener("click", openSettingsModal);
+  document.getElementById("btn-close-inspector-panel")?.addEventListener("click", closeInspectorPanel);
+  document.getElementById("btn-export-contacts-filtered")?.addEventListener("click", exportFilteredContactsCSV);
+  document.getElementById("btn-export-companies-filtered")?.addEventListener("click", exportFilteredCompaniesCSV);
+
+  // Advanced Query modal wiring
+  initAqPickers();
+  document.getElementById("btn-open-advanced-query")?.addEventListener("click", openAdvancedQueryModal);
+  document.getElementById("btn-advanced-query-close-x")?.addEventListener("click", closeAdvancedQueryModal);
+  // Enter runs the query from any filter field (buttons/textareas handle
+  // their own Enter behavior natively, so they're excluded here).
+  document.getElementById("modal-advanced-query")?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    const tag = e.target.tagName;
+    if (tag === "BUTTON" || tag === "TEXTAREA") return;
+    e.preventDefault();
+    runAdvancedQuery();
+  });
+  document.getElementById("aq-target-prospects")?.addEventListener("click", () => setAdvancedQueryTarget("prospect"));
+  document.getElementById("aq-target-companies")?.addEventListener("click", () => setAdvancedQueryTarget("company"));
+  document.getElementById("btn-run-advanced-query")?.addEventListener("click", runAdvancedQuery);
+  document.getElementById("btn-clear-advanced-query")?.addEventListener("click", clearAdvancedQueryFilters);
+  document.getElementById("aq-per-page")?.addEventListener("change", changeAdvancedQueryPerPage);
+  document.getElementById("btn-aq-select-screen")?.addEventListener("click", selectAdvancedQueryScreen);
+  document.getElementById("btn-aq-select-all")?.addEventListener("click", selectAdvancedQueryAll);
+  document.getElementById("btn-aq-clear-selection")?.addEventListener("click", clearAdvancedQuerySelection);
+  document.getElementById("btn-aq-prev-page")?.addEventListener("click", advancedQueryPrevPage);
+  document.getElementById("btn-aq-next-page")?.addEventListener("click", advancedQueryNextPage);
+  document.getElementById("btn-aq-results-close-x")?.addEventListener("click", closeAqResultsModal);
+  document.getElementById("btn-aq-results-maximize")?.addEventListener("click", toggleAqResultsMaximize);
+  initAqResultsWindowControls();
+  document.getElementById("btn-aq-export-selected")?.addEventListener("click", exportAqSelectedCSV);
+  document.getElementById("btn-aq-export-all")?.addEventListener("click", exportAqAllCSV);
+  document.getElementById("btn-aq-insp-close")?.addEventListener("click", closeAqInspectorDrawer);
+  document.getElementById("btn-aq-insp-p-edit-tags")?.addEventListener("click", editAqInspectorTags);
+  document.getElementById("btn-aq-insp-c-edit-tags")?.addEventListener("click", editAqInspectorTags);
+  document.getElementById("btn-aq-insp-p-edit-full")?.addEventListener("click", editAqInspectorFull);
+  document.getElementById("btn-aq-insp-c-edit-full")?.addEventListener("click", editAqInspectorFull);
+  document.getElementById("btn-aq-insp-p-delete")?.addEventListener("click", deleteAqInspectorRecord);
+  document.getElementById("btn-aq-insp-c-delete")?.addEventListener("click", deleteAqInspectorRecord);
+  document.getElementById("btn-aq-insp-add-interaction")?.addEventListener("click", openInteractionModal);
+  document.getElementById("aq-insp-p-notes")?.addEventListener("input", () => {
+    document.getElementById("btn-aq-insp-p-save-notes")?.classList.remove("hidden");
+  });
+  document.getElementById("aq-insp-c-notes")?.addEventListener("input", () => {
+    document.getElementById("btn-aq-insp-c-save-notes")?.classList.remove("hidden");
+  });
+  document.getElementById("btn-aq-insp-p-save-notes")?.addEventListener("click", saveAqInspectorNotes);
+  document.getElementById("btn-aq-insp-c-save-notes")?.addEventListener("click", saveAqInspectorNotes);
+  document.getElementById("btn-aq-bulk-add-tag")?.addEventListener("click", bulkAddTagToSelected);
+  document.getElementById("btn-aq-bulk-add-audience")?.addEventListener("click", bulkAddSelectedToAudience);
+  document.getElementById("btn-aq-bulk-create-audience")?.addEventListener("click", bulkCreateAudienceFromSelected);
   document.getElementById("btn-show-all-contacts")?.addEventListener("click", () => {
     state.forceShowAllContacts = true;
     state.forceShowAllCompanies = false;
@@ -4709,6 +6772,7 @@ function setupEventListeners() {
 
   // Dashboard / Modals
   document.getElementById("btn-open-create-campaign")?.addEventListener("click", () => openCreateCampaignModal());
+  document.getElementById("btn-clear-campaign-filters")?.addEventListener("click", clearCampaignsFilters);
   document.getElementById("btn-clear-campaign-tags")?.addEventListener("click", () => {
     activeCampaignFilterTags = [];
     renderCampaignDashboard();
@@ -4753,9 +6817,25 @@ function setupEventListeners() {
 
   // Audience Lists View Actions
   document.getElementById("btn-create-empty-audience")?.addEventListener("click", createEmptyAudienceList);
-  document.getElementById("btn-rename-audience")?.addEventListener("click", renameSelectedAudienceList);
-  document.getElementById("btn-delete-audience")?.addEventListener("click", deleteSelectedAudienceList);
-  document.getElementById("btn-add-contact-to-aud")?.addEventListener("click", addContactToAudienceListDirectly);
+  // Note: audience inspector buttons (rename/archive/restore/copy/delete) are wired dynamically in renderAudienceInspector()
+
+  // Audience CSV Import modal wiring
+  document.getElementById("btn-open-audience-import")?.addEventListener("click", openAudienceImportModal);
+  document.getElementById("btn-save-audience-import")?.addEventListener("click", saveAudienceImport);
+  document.getElementById("btn-cancel-audience-import")?.addEventListener("click", closeAudienceImportModal);
+  document.getElementById("btn-audience-import-close-x")?.addEventListener("click", closeAudienceImportModal);
+  document.getElementById("btn-audience-import-choose-different")?.addEventListener("click", showAudienceImportUploadStep);
+
+  const audienceImportDropzone = document.getElementById("audience-import-dropzone");
+  const audienceImportFileInput = document.getElementById("audience-import-file-input");
+  if (audienceImportDropzone && audienceImportFileInput) {
+    audienceImportDropzone.addEventListener("click", () => audienceImportFileInput.click());
+    audienceImportFileInput.addEventListener("change", (e) => {
+      handleAudienceCSVFiles(e.target.files);
+      e.target.value = ""; // allow re-selecting the same file later
+    });
+    setupDragDropHandlers(audienceImportDropzone, (files) => handleAudienceCSVFiles(files));
+  }
 
   // Tags Choose Campaign modal trigger
   document.getElementById("btn-campaign-edit-tags")?.addEventListener("click", (e) => {
@@ -4902,18 +6982,21 @@ function setupEventListeners() {
     e.stopPropagation();
     openLinkMasterFileModal();
   });
-  document.getElementById("master-link-type").addEventListener("change", toggleMasterLinkSubforms);
   document.getElementById("master-modal-cancel").addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
     document.getElementById("modal-master-file").classList.add("hidden");
     editingMasterFileId = null;
-    pendingMasterFile = null;
   });
   document.getElementById("master-modal-confirm").addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
     saveMasterFile();
+  });
+  document.getElementById("btn-master-paste-link")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    pasteMasterLinkFromClipboard();
   });
 
   // Link Master File file selector drag & drop triggers
@@ -5575,10 +7658,16 @@ function renderPublishEventsList(m) {
     const isExpired = ev.expirationDate && new Date(ev.expirationDate).setHours(23, 59, 59, 999) < new Date();
     const expirationStyled = isExpired ? `<span class="tag-badge" style="background:#ef4444; color:#fff; border-color:#ef4444; font-size:11px; padding:2px 6px; border-radius:4px;">Expired (${ev.expirationDate})</span>` : expirationText;
 
+    const evCampaign = ev.campaignId ? state.campaigns.find(c => c.id === ev.campaignId) : null;
+    const campaignCell = evCampaign
+      ? `<span class="tag-badge" style="font-size:11px;">${escapeHTML(evCampaign.title)}</span>`
+      : `<span style="color:var(--color-text-muted);">—</span>`;
+
     tr.innerHTML = `
       <td style="font-weight:600; cursor:pointer; color:var(--color-primary); text-decoration:underline; white-space:nowrap;" class="pub-date-link">${ev.date}</td>
       <td>${expirationStyled}</td>
       <td><strong>${escapeHTML(ev.platform)}</strong></td>
+      <td>${campaignCell}</td>
       <td>${linkBadge}</td>
       <td>${(ev.views || 0).toLocaleString()}</td>
       <td>${(ev.clicks || 0).toLocaleString()}</td>
@@ -5612,12 +7701,23 @@ function openPublishEventModal(mediaId = null, eventId = null) {
   const m = state.media.find(x => x.id === mediaId);
   if (!m) return;
   
+  // Populate platform select (ensure "Campaign" is always an option)
   const platformSelect = document.getElementById("pub-platform");
   platformSelect.innerHTML = "";
-  state.platforms.forEach(pl => {
+  const platformOptions = state.platforms.includes("Campaign")
+    ? state.platforms
+    : ["Campaign", ...state.platforms];
+  platformOptions.forEach(pl => {
     platformSelect.innerHTML += `<option value="${pl}">${pl}</option>`;
   });
-  
+
+  // Populate campaign select with Launch-status campaigns
+  const campaignSelect = document.getElementById("pub-campaign");
+  campaignSelect.innerHTML = `<option value="">-- No Campaign --</option>`;
+  (state.campaigns || []).filter(c => c.status === "Launch").forEach(c => {
+    campaignSelect.innerHTML += `<option value="${c.id}">${escapeHTML(c.title)}</option>`;
+  });
+
   if (eventId) {
     title.textContent = "Edit Publish Event";
     const ev = m.publishEvents.find(x => x.id === eventId);
@@ -5629,6 +7729,7 @@ function openPublishEventModal(mediaId = null, eventId = null) {
       document.getElementById("pub-clicks").value = ev.clicks || 0;
       document.getElementById("pub-comments").value = ev.comments || 0;
       document.getElementById("pub-expiration-date").value = ev.expirationDate || "";
+      campaignSelect.value = ev.campaignId || "";
     }
   } else {
     title.textContent = "Add Publish Event";
@@ -5639,8 +7740,23 @@ function openPublishEventModal(mediaId = null, eventId = null) {
     document.getElementById("pub-clicks").value = 0;
     document.getElementById("pub-comments").value = 0;
     document.getElementById("pub-expiration-date").value = "";
+    campaignSelect.value = "";
   }
-  
+
+  // Selecting a campaign → auto-set platform to "Campaign"
+  campaignSelect.addEventListener("change", () => {
+    if (campaignSelect.value) {
+      platformSelect.value = "Campaign";
+    }
+  });
+
+  // Changing platform away from "Campaign" → clear campaign selection
+  platformSelect.addEventListener("change", () => {
+    if (platformSelect.value !== "Campaign") {
+      campaignSelect.value = "";
+    }
+  });
+
   modal.classList.remove("hidden");
 }
 
@@ -5657,14 +7773,15 @@ function savePublishEvent() {
   const views = parseInt(document.getElementById("pub-views").value) || 0;
   const clicks = parseInt(document.getElementById("pub-clicks").value) || 0;
   const comments = parseInt(document.getElementById("pub-comments").value) || 0;
-  
+  const campaignId = document.getElementById("pub-campaign").value || "";
+
   if (!date) {
     alert("Publish Date is required!");
     return;
   }
-  
+
   if (!m.publishEvents) m.publishEvents = [];
-  
+
   if (editingPublishEventId) {
     const ev = m.publishEvents.find(x => x.id === editingPublishEventId);
     if (ev) {
@@ -5675,6 +7792,7 @@ function savePublishEvent() {
       ev.views = views;
       ev.clicks = clicks;
       ev.comments = comments;
+      ev.campaignId = campaignId;
     }
   } else {
     m.publishEvents.push({
@@ -5685,7 +7803,8 @@ function savePublishEvent() {
       url,
       views,
       clicks,
-      comments
+      comments,
+      campaignId
     });
   }
   
@@ -5895,6 +8014,7 @@ function saveChosenTags() {
       saveState();
       renderInspector();
       renderProspectsView();
+      refreshAqAfterEdit();
     }
     document.getElementById("modal-choose-tags").classList.add("hidden");
     return;
@@ -5907,6 +8027,7 @@ function saveChosenTags() {
       saveState();
       renderInspector();
       renderProspectsView();
+      refreshAqAfterEdit();
     }
     document.getElementById("modal-choose-tags").classList.add("hidden");
     return;
@@ -5984,9 +8105,18 @@ function renderMasterFilesList(m) {
     let sourceText = "";
     let metaHTML = "";
 
-    if (file.type === "cloud") {
+    // Decide openability from the actual stored string, not just the saved
+    // `type` field — entries linked before the smarter URL detection was
+    // added may have been saved as "path" even though they're really a web
+    // link (e.g. a bare "docs.google.com/..." paste), which used to mean
+    // they'd never get a working open link. Re-checking here self-heals
+    // those without needing to re-edit each one.
+    const isOpenableLink = file.type === "cloud" || (file.type !== "upload" && looksLikeUrl(file.pathOrUrl));
+
+    if (isOpenableLink) {
+      const href = ensureUrlProtocol(file.pathOrUrl);
       sourceText = "☁️ Cloud Link";
-      referenceHTML = `<a href="${escapeHTML(file.pathOrUrl)}" target="_blank" class="media-file-badge" style="display:inline-flex; align-items:center; gap:4px; text-decoration:none; font-size:12px;">${fileIcon} ${escapeHTML(file.name)} ↗</a>`;
+      referenceHTML = `<a href="${escapeHTML(href)}" target="_blank" rel="noopener" class="media-file-badge" style="display:inline-flex; align-items:center; gap:4px; text-decoration:none; font-size:12px;" title="Opens in a new tab">${fileIcon} ${escapeHTML(file.name)} ↗</a>`;
       metaHTML = `<span style="color:var(--color-text-muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; max-width:120px;" title="${escapeHTML(file.pathOrUrl)}">${escapeHTML(file.pathOrUrl)}</span>`;
     } else if (file.type === "path") {
       sourceText = "🗂️ Hard Drive";
@@ -6015,8 +8145,11 @@ function renderMasterFilesList(m) {
       </td>
     `;
 
-    // Wire up events
-    if (file.type === "path") {
+    // Wire up events. Uses the same isOpenableLink check as the rendering
+    // above (not just file.type) so a "path"-typed row that actually
+    // rendered as a clickable link (self-healed) doesn't try to wire up a
+    // Copy Path button that was never rendered.
+    if (!isOpenableLink && file.type === "path") {
       tr.querySelector(".copy-path-btn").addEventListener("click", () => {
         navigator.clipboard.writeText(file.pathOrUrl).then(() => {
           alert(`Copied local file path to clipboard:\n"${file.pathOrUrl}"\n\nYou can now paste it into Windows Explorer or the Win+R Run dialog to open the file.`);
@@ -6055,15 +8188,11 @@ function openLinkMasterFileModal(mediaId = null, masterFileId = null) {
   if (!mediaId) mediaId = selectedMediaDashboardId;
   selectedMediaDashboardId = mediaId;
   editingMasterFileId = masterFileId;
-  pendingMasterFile = null;
 
-  // Reset Sub-forms
+  // Reset form
   document.getElementById("master-file-name").value = "";
-  document.getElementById("master-cloud-url").value = "";
   document.getElementById("master-local-path").value = "";
   document.getElementById("master-file-input").value = "";
-  document.getElementById("master-file-upload-preview").classList.add("hidden");
-  document.getElementById("master-file-upload-preview").innerHTML = "";
 
   const m = state.media.find(x => x.id === mediaId);
   if (!m) return;
@@ -6072,80 +8201,97 @@ function openLinkMasterFileModal(mediaId = null, masterFileId = null) {
     title.textContent = "Modify Link Master File";
     const file = m.masterFiles.find(x => x.id === masterFileId);
     if (file) {
-      document.getElementById("master-link-type").value = file.type;
       document.getElementById("master-file-name").value = file.name;
-      if (file.type === "cloud") {
-        document.getElementById("master-cloud-url").value = file.pathOrUrl || "";
-      } else if (file.type === "path") {
-        document.getElementById("master-local-path").value = file.pathOrUrl || "";
-      } else if (file.type === "upload") {
-        // Render existing file upload preview info
-        const preview = document.getElementById("master-file-upload-preview");
-        preview.classList.remove("hidden");
-        preview.innerHTML = `
-          <div class="file-item-left">
-            <span class="file-item-icon">📁</span>
-            <span class="file-item-name">${escapeHTML(file.name)}</span>
-            <span class="file-item-size">(${formatFileSize(file.size || 0)})</span>
-          </div>
-          <span style="font-size:11px; color:var(--color-secondary); font-weight:600;">Stored Stably</span>
-        `;
-      }
+      // Legacy "upload" entries (from before this became link-only) have no
+      // path/URL to show — leave the location field blank; saving will
+      // convert them to a plain link reference and drop the stored blob.
+      document.getElementById("master-local-path").value = file.type === "upload" ? "" : (file.pathOrUrl || "");
     }
   } else {
     title.textContent = "Link Master File";
-    document.getElementById("master-link-type").value = "cloud";
   }
 
-  // Trigger form visibility refresh
-  toggleMasterLinkSubforms();
   modal.classList.remove("hidden");
 }
 
-function toggleMasterLinkSubforms() {
-  const type = document.getElementById("master-link-type").value;
-  document.getElementById("master-subform-cloud").classList.add("hidden");
-  document.getElementById("master-subform-path").classList.add("hidden");
-  document.getElementById("master-subform-upload").classList.add("hidden");
-
-  if (type === "cloud") {
-    document.getElementById("master-subform-cloud").classList.remove("hidden");
-  } else if (type === "path") {
-    document.getElementById("master-subform-path").classList.remove("hidden");
-  } else if (type === "upload") {
-    document.getElementById("master-subform-upload").classList.remove("hidden");
-  }
-}
-
+// Choosing a file here never uploads or stores its bytes anywhere — it only
+// reads the file's name to help fill in the name/location fields, since
+// browsers don't expose a real filesystem path from a picker for security
+// reasons. The user can still type/paste a full path if they want one that's
+// directly pasteable into Explorer.
 function handleMasterFileSelect(files) {
   if (!files || files.length === 0) return;
-  const file = files[0]; // Single master file upload only
+  const file = files[0];
 
-  pendingMasterFile = {
-    id: `masterfile-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    file: file,
-    name: file.name,
-    size: file.size,
-    type: file.type
-  };
-
-  // Populate File Name field automatically if currently blank
   const nameInput = document.getElementById("master-file-name");
   if (!nameInput.value.trim()) {
     nameInput.value = file.name;
   }
+  const locationInput = document.getElementById("master-local-path");
+  if (!locationInput.value.trim()) {
+    locationInput.value = file.name;
+  }
+}
 
-  // Render preview row
-  const preview = document.getElementById("master-file-upload-preview");
-  preview.classList.remove("hidden");
-  preview.innerHTML = `
-    <div class="file-item-left">
-      <span class="file-item-icon">📁</span>
-      <span class="file-item-name">${escapeHTML(file.name)}</span>
-      <span class="file-item-size">(${formatFileSize(file.size)})</span>
-    </div>
-    <span style="font-size:11px; color:var(--color-primary); font-weight:600;">Pending Link</span>
-  `;
+// Reads whatever the user last copied (e.g. a Google Drive/Docs "Get link"
+// share URL) straight into the Location field, so they don't have to click
+// into the field and hit Ctrl+V manually. Clipboard reads require a secure
+// context (https/localhost) and a user gesture — clicking this button
+// counts — but some browsers still block it outright, so this fails
+// gracefully with a message rather than a silent no-op.
+async function pasteMasterLinkFromClipboard() {
+  if (!navigator.clipboard || !navigator.clipboard.readText) {
+    alert("This browser doesn't support reading the clipboard directly — paste into the field manually with Ctrl+V (or Cmd+V on Mac) instead.");
+    return;
+  }
+  try {
+    const text = (await navigator.clipboard.readText()).trim();
+    if (!text) {
+      alert("Clipboard is empty — copy a link (e.g. Google Drive's \"Get link\") first, then click Paste.");
+      return;
+    }
+    const locationInput = document.getElementById("master-local-path");
+    locationInput.value = text;
+    locationInput.dispatchEvent(new Event("input"));
+
+    // Best-effort name auto-fill from the pasted link, same as picking a
+    // file does — only if the Name field is still blank. Vantage has no way
+    // to fetch the real document title from a link (that would need Google's
+    // API), so this is just a readable fallback derived from the URL itself.
+    const nameInput = document.getElementById("master-file-name");
+    if (!nameInput.value.trim() && looksLikeUrl(text)) {
+      const guessedName = guessNameFromUrl(text);
+      if (guessedName) nameInput.value = guessedName;
+    }
+  } catch (err) {
+    console.error("Clipboard read failed:", err);
+    alert("Couldn't read the clipboard (the browser may have blocked it) — paste into the field manually with Ctrl+V (or Cmd+V on Mac) instead.");
+  }
+}
+
+// Pulls a rough, readable name out of a URL for auto-fill purposes only.
+// Skips generic trailing segments Google Docs/Drive links commonly end in
+// ("edit", "view", "preview", etc.) and file IDs, since those aren't
+// meaningful names — falls back to null (leave the Name field for the user
+// to fill in) rather than showing something like "edit" or a raw doc ID.
+function guessNameFromUrl(url) {
+  try {
+    const clean = url.split(/[?#]/)[0].replace(/\/+$/, "");
+    const segments = clean.split("/").filter(Boolean);
+    const genericSegments = new Set(["edit", "view", "preview", "share", "d", "file", "folders", "document", "spreadsheets", "presentation"]);
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const seg = decodeURIComponent(segments[i]);
+      // Skip generic path words and long opaque IDs (Drive file IDs are
+      // long alphanumeric strings with no spaces/readable words in them).
+      if (genericSegments.has(seg.toLowerCase())) continue;
+      if (/^[a-zA-Z0-9_-]{15,}$/.test(seg)) continue;
+      if (seg.includes(".")) return seg; // looks like an actual filename
+      if (seg.length > 2) return seg.replace(/[-_]+/g, " ");
+    }
+  } catch (err) {
+    // fall through
+  }
+  return null;
 }
 
 async function saveMasterFile() {
@@ -6153,61 +8299,26 @@ async function saveMasterFile() {
   const m = state.media.find(x => x.id === selectedMediaDashboardId);
   if (!m) return;
 
-  const type = document.getElementById("master-link-type").value;
   let name = document.getElementById("master-file-name").value.trim();
-  let pathOrUrl = "";
-  let fileId = "";
-  let size = 0;
+  let pathOrUrl = document.getElementById("master-local-path").value.trim();
 
+  if (!pathOrUrl) {
+    alert("Please paste a link or file location!");
+    return;
+  }
+
+  // No more manual type picker — a link is a "cloud" reference if it looks
+  // like a URL (even without "http(s)://" typed in front — people often
+  // paste a bare "docs.google.com/..." straight from the address bar), and
+  // gets normalized with a protocol so it actually opens when clicked.
+  // Otherwise it's treated as a local filesystem path reference.
+  const type = looksLikeUrl(pathOrUrl) ? "cloud" : "path";
   if (type === "cloud") {
-    pathOrUrl = document.getElementById("master-cloud-url").value.trim();
-    if (!pathOrUrl) {
-      alert("Cloud Document URL is required!");
-      return;
-    }
-    if (!name) {
-      // Parse a clean name from URL if possible
-      name = "Cloud Master File Reference";
-    }
-  } else if (type === "path") {
-    pathOrUrl = document.getElementById("master-local-path").value.trim();
-    if (!pathOrUrl) {
-      alert("Full Local path is required!");
-      return;
-    }
-    if (!name) {
-      name = pathOrUrl.split(/[\\/]/).pop() || "Local Master Reference";
-    }
-  } else if (type === "upload") {
-    // Requires either a newly selected pending file OR modifying an existing upload record
-    if (editingMasterFileId) {
-      const existing = m.masterFiles.find(x => x.id === editingMasterFileId);
-      if (existing && existing.type === "upload") {
-        fileId = existing.fileId;
-        size = existing.size;
-        if (!name) name = existing.name;
-      }
-    }
-
-    if (pendingMasterFile) {
-      fileId = pendingMasterFile.id;
-      size = pendingMasterFile.size;
-      if (!name) name = pendingMasterFile.name;
-      
-      // Save binary blob stably in IndexedDB
-      await saveFileBlob(pendingMasterFile.id, pendingMasterFile.file)
-        .catch(err => console.error("Error saving Master File blob to IndexedDB:", err));
-    }
-
-    if (!fileId) {
-      alert("Please select a file to upload!");
-      return;
-    }
+    pathOrUrl = ensureUrlProtocol(pathOrUrl);
   }
 
   if (!name) {
-    alert("File Name is required!");
-    return;
+    name = pathOrUrl.split(/[\\/]/).pop() || (type === "cloud" ? "Cloud Master File Reference" : "Local Master Reference");
   }
 
   if (!m.masterFiles) m.masterFiles = [];
@@ -6215,11 +8326,16 @@ async function saveMasterFile() {
   if (editingMasterFileId) {
     const file = m.masterFiles.find(x => x.id === editingMasterFileId);
     if (file) {
+      // Converting a legacy uploaded file to a link reference — clean up
+      // its stored blob since we're dropping the upload path entirely.
+      if (file.type === "upload" && file.fileId) {
+        await deleteFileBlob(file.fileId).catch(err => console.error("Error cleaning up legacy Master File blob:", err));
+      }
       file.name = name;
       file.type = type;
       file.pathOrUrl = pathOrUrl;
-      file.fileId = fileId;
-      file.size = size;
+      file.fileId = "";
+      file.size = 0;
       file.dateAdded = new Date().toISOString().split("T")[0];
     }
   } else {
@@ -6228,8 +8344,8 @@ async function saveMasterFile() {
       name,
       type,
       pathOrUrl,
-      fileId,
-      size,
+      fileId: "",
+      size: 0,
       dateAdded: new Date().toISOString().split("T")[0]
     });
   }
@@ -6237,7 +8353,6 @@ async function saveMasterFile() {
   saveState();
   document.getElementById("modal-master-file").classList.add("hidden");
   editingMasterFileId = null;
-  pendingMasterFile = null;
 
   openContentDashboard(m.id);
   renderMediaView();

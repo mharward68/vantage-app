@@ -163,18 +163,19 @@ body {
 }
 
 .brand-logo-container {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
   background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
-  border-radius: var(--border-radius-md);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-family: var(--font-display);
-  font-size: 20px;
-  box-shadow: 0 4px 12px var(--color-primary-glow);
+  -webkit-mask-image: url('assets/vantag-V_no-bg.png');
+  mask-image: url('assets/vantag-V_no-bg.png');
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  filter: drop-shadow(0 4px 10px var(--color-primary-glow));
   transition: var(--transition-elastic);
 }
 
@@ -752,10 +753,23 @@ body {
    ========================================================================== */
 .prospects-layout-container {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
-  gap: 24px;
+  grid-template-columns: 1fr 0fr;
+  gap: 0px;
   height: calc(100vh - 120px);
+  /* Anchors the inspector overlay (see .prospect-inspector-panel below) so it
+     can be positioned relative to this container instead of the viewport,
+     and clips it while off-screen (translated out to the right) so it can't
+     cause a horizontal scrollbar. */
+  position: relative;
+  overflow: hidden;
 }
+
+/* The inspector used to open by squeezing this grid from 1fr/0fr to
+   1.1fr/0.9fr, which resized the directory table on every click — rows
+   shifted horizontally under the mouse, so a second click meant to close
+   the panel (toggle) would land on a different spot. The panel is now a
+   fixed-width overlay (see below) instead, so the directory's width never
+   changes and a click never has to chase a moving target. */
 
 .prospects-directory-card,
 .prospect-inspector-card {
@@ -767,6 +781,80 @@ body {
   flex-direction: column;
   overflow: hidden;
   height: 100%;
+}
+
+.prospect-inspector-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* Cards fill whatever space is left under the topbar rather than the
+   generic 100%-of-parent height, since the topbar now takes some of it. */
+.prospect-inspector-panel .prospect-inspector-card {
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* Desktop: floats over the directory as a fixed-width panel instead of
+   taking a grid column, so opening/closing it never changes the directory
+   table's width (same shared width as the Advanced Query results drawer —
+   see .aq-inspector-drawer — so the two look and behave the same way). */
+@media (min-width: 1101px) {
+  .prospect-inspector-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(420px, 92%);
+    z-index: 20;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-lg);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+    transform: translateX(calc(100% + 24px));
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    padding: 12px;
+  }
+
+  .prospects-layout-container.inspector-open .prospect-inspector-panel {
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 1100px) {
+  .prospect-inspector-panel {
+    height: auto;
+    overflow: visible;
+  }
+}
+
+.inspector-panel-topbar {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.inspector-panel-close-btn {
+  background: none;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 20px;
+  transition: var(--transition-smooth);
+}
+
+.inspector-panel-close-btn:hover {
+  background-color: var(--color-surface-hover);
+  color: var(--color-text-main);
+  border-color: var(--color-border-hover);
 }
 
 .card-header-actions {
@@ -838,6 +926,23 @@ body {
   flex-grow: 1;
   overflow-y: auto;
   padding: 12px;
+  /* Tells the browser this container's internal layout/paint can't affect
+     anything outside it, so scrolling here doesn't trigger recalculation
+     of the rest of the page/modal on every frame. */
+  contain: layout paint;
+}
+
+/* Query Results table specifically: promote it to its own compositor layer
+   so scrolling is handled by the GPU (moving an already-rasterized layer)
+   instead of the main thread repainting rows every frame. This is the
+   biggest remaining lever for scroll smoothness — contain/transition fixes
+   reduce paint *work*, but this changes scrolling itself from a paint-driven
+   operation to a compositor-driven one. Scoped to just this table (rather
+   than every .table-scroll-container in the app) since forcing a layer on
+   every scroll box everywhere would burn GPU memory for no benefit. */
+.aq-results-table-wrap {
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 .premium-table {
@@ -864,7 +969,14 @@ body {
 
 .premium-table tbody tr {
   cursor: pointer;
-  transition: var(--transition-smooth);
+  /* Was transition: var(--transition-smooth), i.e. "all 0.3s" on every row.
+     Animating "all" forces the browser to watch every animatable property
+     (including ones that never actually change here) on every row, which
+     is the main thing that made scrolling through a full page of results
+     feel sluggish. Scoping it to just the one property that actually
+     changes (background-color, on hover/active-row) is far cheaper and
+     looks identical. */
+  transition: background-color 0.15s ease;
 }
 
 .premium-table tbody tr:hover {
@@ -1272,6 +1384,13 @@ body {
   color: var(--color-text-muted);
 }
 
+/* Prospect Hub: purple field labels (Add/Edit Prospect, Add/Edit Company, Advanced Query) */
+#modal-prospect .form-group label,
+#modal-company .form-group label,
+#modal-advanced-query .form-group label {
+  color: #8b5cf6;
+}
+
 .form-group input,
 .form-group select,
 .form-group textarea {
@@ -1284,6 +1403,21 @@ body {
   font-size: 13px;
   outline: none;
   transition: var(--transition-smooth);
+  /* A <select> sizes its closed box to its widest <option> by default, and
+     as a flex item it won't shrink below that (min-width defaults to auto),
+     so long option text (e.g. a long media title) could push it past its
+     card/column — this is what was happening to the Sequence Media picker
+     in Create/Edit Campaign. width:100% + min-width:0 forces it to the
+     column's actual width and lets the text ellipsis/wrap instead. */
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.form-group select {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .form-group input:focus,
@@ -1483,10 +1617,25 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Promote the blurred backdrop to its own compositor layer so scrolling
+     content inside the modal (e.g. the Query Results table) doesn't force
+     the browser to keep re-sampling/repainting the blur underneath it. */
+  will-change: backdrop-filter;
+  transform: translateZ(0);
 }
 
 .modal-overlay.hidden {
   display: none !important;
+}
+
+/* Record-level edit modals must always render above the Advanced Query
+   results window (and its tag chooser), even though they appear earlier in
+   the DOM, since they can be opened from the inspector drawer while the
+   results box is still open. */
+#modal-prospect,
+#modal-company,
+#modal-choose-tags {
+  z-index: 210;
 }
 
 .modal-card {
@@ -1676,6 +1825,351 @@ body {
 }
 
 /* ==========================================================================
+   📋 ADVANCED QUERY RESULTS — Draggable / Resizable / Maximizable Window
+   ========================================================================== */
+
+/* Keep column headers visible while scrolling through result rows. Sticky
+   is applied to the th cells themselves (not the thead) for reliable
+   cross-browser table behavior. */
+#aq-results-thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: #0e0e10;
+}
+
+.light-theme #aq-results-thead th {
+  background-color: #d9d9d9;
+}
+
+.aq-results-card {
+  position: fixed;
+  top: 4vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(980px, calc(100vw - 40px));
+  height: min(92vh, calc(100vh - 40px));
+  min-width: 480px;
+  min-height: 320px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  /* Header is full-bleed (see #aq-results-header) so the card itself carries
+     no top padding — padding is instead applied to the header and to the
+     scrollable content wrapper below it. */
+  padding: 0;
+}
+
+/* Solid, full-bleed title bar. Previously this sat inset inside the card's
+   32px padding with no background of its own, which left a gap at the very
+   top of the window where scrolled row text could show through. Stretching
+   it flush to the card edges (matching the card's corner radius) and giving
+   it an opaque background fixes both. */
+#aq-results-header {
+  background-color: #121214;
+  border-top-left-radius: var(--border-radius-lg);
+  border-top-right-radius: var(--border-radius-lg);
+  padding: 20px 24px 16px 24px !important;
+  margin: 0 !important;
+  position: relative;
+  z-index: 5;
+}
+
+.light-theme #aq-results-header {
+  background-color: #fff;
+}
+
+.aq-results-scroll-wrap {
+  padding: 16px 24px 24px 24px !important;
+}
+
+/* Once JS starts positioning the window explicitly (top/left in px), it also
+   clears the centering transform so drag math stays in plain viewport coords. */
+.aq-results-card.aq-positioned {
+  transform: none;
+}
+
+.aq-results-drag-handle {
+  cursor: move;
+}
+
+/* Edge grabbers — thin invisible strips along each resizable side */
+.aq-resize-edge {
+  position: absolute;
+  z-index: 3;
+}
+
+.aq-resize-e {
+  top: 0;
+  right: 0;
+  bottom: 18px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.aq-resize-w {
+  top: 0;
+  left: 0;
+  bottom: 18px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.aq-resize-s {
+  left: 18px;
+  right: 18px;
+  bottom: 0;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.aq-resize-edge:hover {
+  background-color: var(--color-primary-glow);
+}
+
+/* Corner grabbers — sit above the edges (higher z-index) so the corner wins */
+.aq-resize-handle {
+  position: absolute;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+  border-radius: 4px;
+  z-index: 4;
+}
+
+.aq-resize-se {
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.aq-resize-sw {
+  left: 0;
+  cursor: nesw-resize;
+  justify-content: flex-start;
+}
+
+.aq-resize-handle:hover {
+  color: var(--color-primary);
+  background-color: var(--color-primary-glow);
+}
+
+.aq-results-card.aq-maximized .aq-resize-handle,
+.aq-results-card.aq-maximized .aq-resize-edge {
+  display: none;
+}
+
+.aq-results-card.aq-dragging,
+.aq-results-card.aq-resizing {
+  animation: none;
+  user-select: none;
+}
+
+/* Record Inspector drawer — slides in from the right edge of the results box.
+   Editing here saves to the record directly; it never touches the query
+   results array, so re-running the query is what drops non-matching edits.
+   Same fixed width as the Prospect Hub's overlay inspector (see
+   .prospect-inspector-panel) so the two look and behave the same way. */
+.aq-inspector-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 92%);
+  background-color: #17171a;
+  border-left: 1px solid var(--color-border-hover);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+  transform: translateX(100%);
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.light-theme .aq-inspector-drawer {
+  background-color: #fff;
+}
+
+.aq-inspector-drawer.open {
+  transform: translateX(0);
+}
+
+.aq-inspector-drawer-body {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding: 12px 16px 16px 16px;
+}
+
+/* The drawer body is already the scrolling container, so the nested
+   .prospect-inspector-card (reused here for visual parity with the Prospect
+   Hub inspector) shouldn't also clip/scroll internally — let it size to its
+   content instead of the 100%/overflow:hidden it gets by default. Mirrors
+   the same override used for .prospect-inspector-panel. */
+.aq-inspector-drawer-body .prospect-inspector-card {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+  border: none;
+  background: none;
+  backdrop-filter: none;
+  padding: 0;
+}
+
+/* ==========================================================================
+   🔎 ADVANCED QUERY — Searchable Multi-Select Picker (Tags/Campaigns/Audiences)
+   ========================================================================== */
+
+.aq-picker {
+  position: relative;
+}
+
+.aq-picker-control {
+  position: relative;
+}
+
+.aq-picker-search {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.aq-picker-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  max-height: 220px;
+  overflow-y: auto;
+  background-color: var(--color-sidebar-bg, #0c0c0e);
+  border: 1px solid var(--color-border-hover);
+  border-radius: var(--border-radius-sm);
+  box-shadow: 0 8px 24px var(--color-shadow);
+}
+
+.aq-picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--color-text-main);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.aq-picker-option:last-child {
+  border-bottom: none;
+}
+
+.aq-picker-option:hover {
+  background-color: var(--color-surface-hover);
+}
+
+.aq-picker-option-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.aq-picker-add-btn {
+  border: 1px solid var(--color-border);
+  background: transparent;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  white-space: nowrap;
+}
+
+.aq-picker-include-btn {
+  color: #10b981;
+}
+
+.aq-picker-include-btn:hover {
+  background-color: rgba(16, 185, 129, 0.12);
+  border-color: #10b981;
+}
+
+.aq-picker-exclude-btn {
+  color: #ef4444;
+}
+
+.aq-picker-exclude-btn:hover {
+  background-color: rgba(239, 68, 68, 0.12);
+  border-color: #ef4444;
+}
+
+.aq-picker-empty {
+  padding: 10px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.aq-picker-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.aq-picker-chips:empty {
+  margin-top: 0;
+}
+
+.aq-picker-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid;
+}
+
+.aq-picker-chip-include {
+  background-color: rgba(16, 185, 129, 0.1);
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.aq-picker-chip-exclude {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.aq-picker-chip-mode {
+  font-weight: 800;
+}
+
+.aq-picker-chip-toggle,
+.aq-picker-chip-remove {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+.aq-picker-chip-toggle:hover,
+.aq-picker-chip-remove:hover {
+  opacity: 1;
+}
+
+/* ==========================================================================
    ⚙️ SETTINGS CONFIGURATOR GRID
    ========================================================================== */
 .settings-configurator-grid {
@@ -1708,6 +2202,20 @@ body {
   color: var(--color-primary);
   border-bottom: 1px solid rgba(255,255,255,0.05);
   padding-bottom: 6px;
+}
+
+.settings-group-heading {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-group-heading:not(:first-child) {
+  margin-top: 8px !important;
 }
 
 .settings-item-list {

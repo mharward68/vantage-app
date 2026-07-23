@@ -45,7 +45,7 @@
 
       <!-- Sidebar Header -->
       <div id="sidebar-brand">
-        <div class="brand-logo-container">V</div>
+        <div class="brand-logo-container" role="img" aria-label="Vantage logo"></div>
         <span id="brand-name">Vantage PRM</span>
       </div>
 
@@ -197,27 +197,40 @@
 
             <!-- Left Panel: Prospect Directory & Filters -->
             <div class="prospects-directory-card">
-              <div class="card-header-actions" style="flex-wrap: wrap;">
-                <div class="search-box-wrapper" style="flex: 1; min-width: 250px; margin-right: 8px;">
-                  <input type="text" id="prospect-search" placeholder="Search name, company, title...">
+              <div class="card-header-actions">
+                <!-- Row 1: Search + primary actions (mirrors Media Hub's top bar) -->
+                <div class="view-intro-actions">
+                  <div class="search-box-wrapper" style="flex: 1; max-width: 400px; margin: 0;">
+                    <input type="text" id="prospect-search" placeholder="Search name, company, title...">
+                  </div>
+                  <div class="action-btn-group" style="margin: 0;">
+                    <button id="btn-clear-prospects-filters" class="header-action-btn secondary-btn"
+                      title="Clear all active filters">🧹 Clear Filters</button>
+                    <button id="btn-prospects-settings" class="header-action-btn secondary-btn">⚙️ Settings</button>
+                    <button id="btn-open-advanced-query" class="header-action-btn secondary-btn"
+                      title="Query and bulk-edit prospects or companies by any field">🔎 Advanced Query</button>
+                    <button id="add-prospect-btn" class="header-action-btn primary-btn">+ Add Prospect</button>
+                  </div>
                 </div>
-                <div class="search-box-wrapper" style="flex: 1; min-width: 200px; margin-right: 8px;">
+
+                <!-- Row 2: Geography search -->
+                <div class="search-box-wrapper">
+                  <input type="text" id="prospect-geo-search" placeholder="Geography (e.g. VA, MD, DC)...">
+                </div>
+
+                <!-- Row 3: Tags -->
+                <div class="search-box-wrapper">
                   <select id="prospect-tag-chooser" class="premium-select" multiple size="1" onfocus="this.size=5;"
                     onblur="this.size=1;" onchange="this.size=1; this.blur();"
                     title="Hold Ctrl/Cmd to select multiple tags" style="width:100%; font-size:13px;"></select>
                 </div>
-                <div class="search-box-wrapper" style="flex: 1; min-width: 200px; margin-right: 8px;">
-                  <input type="text" id="prospect-geo-search" placeholder="Geography (e.g. VA, MD, DC)...">
-                </div>
+
+                <!-- Row 4: Secondary utility actions -->
                 <div class="action-btn-group">
-                  <button id="add-prospect-btn" class="header-action-btn primary-btn">+ Add Prospect</button>
                   <button id="btn-show-all-contacts" class="header-action-btn secondary-btn">👀 See All
                     Contacts</button>
                   <button id="btn-show-all-companies" class="header-action-btn secondary-btn">🏢 See All
                     Companies</button>
-                  <button id="btn-clear-prospects-filters" class="header-action-btn secondary-btn">🧹 Clear
-                    Filters</button>
-                  <button id="btn-prospects-settings" class="header-action-btn secondary-btn">⚙️ Settings</button>
                   <button id="download-csv-template" class="header-action-btn secondary-btn"
                     title="Download Import CSV Template">⬇️ Template</button>
 
@@ -233,8 +246,13 @@
               <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 16px;">
                 <!-- Contacts List Table -->
                 <div class="table-section">
-                  <h4 style="margin-bottom: 8px; color: var(--color-primary);">Contacts (<span
-                      id="contacts-count">0</span>)</h4>
+                  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px;">
+                    <h4 style="margin:0; color: var(--color-primary);">Contacts (<span
+                        id="contacts-count">0</span>)</h4>
+                    <button id="btn-export-contacts-filtered" class="text-btn"
+                      title="Export currently shown contacts to CSV (or the full database if no filters are applied)">⬇️
+                      Export CSV</button>
+                  </div>
                   <div class="table-scroll-container" style="max-height: 35vh;">
                     <table class="premium-table" id="prospects-table">
                       <thead>
@@ -257,8 +275,13 @@
 
                 <!-- Companies List Table -->
                 <div class="table-section">
-                  <h4 style="margin-bottom: 8px; color: var(--color-primary);">Companies (<span
-                      id="companies-count">0</span>)</h4>
+                  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px;">
+                    <h4 style="margin:0; color: var(--color-primary);">Companies (<span
+                        id="companies-count">0</span>)</h4>
+                    <button id="btn-export-companies-filtered" class="text-btn"
+                      title="Export currently shown companies to CSV (or the full database if no filters are applied)">⬇️
+                      Export CSV</button>
+                  </div>
                   <div class="table-scroll-container" style="max-height: 35vh;">
                     <table class="premium-table" id="companies-table">
                       <thead>
@@ -279,7 +302,14 @@
               </div>
             </div>
 
-            <!-- Right Panel: Contact Inspector & Reachout History Table -->
+            <!-- Right Panel: Inspector — closable slide-out. Opens when a
+                 contact/company row is clicked; closing it returns the
+                 directory panel to full width. -->
+            <div class="prospect-inspector-panel" id="prospect-inspector-panel">
+              <div class="inspector-panel-topbar">
+                <button id="btn-close-inspector-panel" class="inspector-panel-close-btn" title="Close">✕ Close</button>
+              </div>
+
             <div class="prospect-inspector-card hidden" id="prospect-inspector">
               <div class="inspector-header">
                 <h3 id="inspector-name">Select a Prospect</h3>
@@ -422,6 +452,8 @@
               </div>
             </div>
 
+            </div>
+
           </div>
         </section>
 
@@ -546,9 +578,12 @@
               <p>Orchestrate your audience targeting and launch comprehensive outreach campaigns.</p>
             </div>
             <div class="action-btn-group" style="margin: 0;">
-              <button id="btn-launch-standalone-query" class="header-action-btn primary-btn">🔍 Audience Query
-                Engine</button>
+              <button id="btn-clear-campaign-filters" class="header-action-btn secondary-btn"
+                title="Clear all active filters">🧹 Clear Filters</button>
               <button id="btn-campaigns-settings" class="header-action-btn secondary-btn">⚙️ Settings</button>
+              <button id="btn-open-create-campaign" class="header-action-btn primary-btn">+ Create Campaign</button>
+              <button id="btn-launch-standalone-query" class="header-action-btn secondary-btn">🔍 Audience Query
+                Engine</button>
             </div>
           </div>
 
@@ -575,7 +610,6 @@
               <div class="media-hub-left">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                   <h3>Campaign Cards</h3>
-                  <button id="btn-open-create-campaign" class="header-action-btn primary-btn">+ Create Campaign</button>
                 </div>
                 <div class="media-card-grid" id="campaign-deck">
                   <!-- Dynamic Campaign Cards -->
@@ -600,15 +634,21 @@
 
           <!-- SUB-VIEW 2: AUDIENCE LISTS MANAGER -->
           <div id="audience-lists-view" class="hidden">
-            <div class="prospects-layout-container" style="height: calc(100vh - 280px);">
+            <div class="prospects-layout-container" style="height: calc(100vh - 280px); grid-template-columns: 1.2fr 0.9fr; gap: 16px;">
               <!-- Left Side: Audience Lists Directory -->
               <div class="prospects-directory-card" style="padding: 16px;">
                 <div
                   style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--color-border); padding-bottom:12px; margin-bottom:12px;">
                   <h4 style="margin:0; color:var(--color-secondary);">Audience Lists Directory</h4>
-                  <button id="btn-create-empty-audience" class="header-action-btn secondary-btn"
-                    style="padding: 4px 8px; font-size:11px; height:auto;">+ Create List</button>
+                  <div style="display:flex; gap:6px;">
+                    <button id="btn-open-audience-import" class="header-action-btn secondary-btn"
+                      title="Build a new audience from a Prospect Hub CSV export"
+                      style="padding: 4px 8px; font-size:11px; height:auto;">📤 Import Audience</button>
+                    <button id="btn-create-empty-audience" class="header-action-btn secondary-btn"
+                      style="padding: 4px 8px; font-size:11px; height:auto;">+ Create List</button>
+                  </div>
                 </div>
+                <div id="audience-status-tabs" style="display:flex; gap:6px; margin-bottom:10px;"></div>
                 <div class="table-scroll-container">
                   <table class="premium-table" id="audiences-table">
                     <thead>
@@ -632,16 +672,12 @@
                   style="background: linear-gradient(180deg, var(--color-secondary-glow) 0%, transparent 100%);">
                   <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
                     <h3 id="aud-inspect-name">Select an Audience List</h3>
-                    <div>
-                      <button id="btn-rename-audience" class="header-action-btn secondary-btn"
-                        style="padding: 4px 8px; font-size:11px; height:auto;">✏️ Rename</button>
-                      <button id="btn-delete-audience" class="header-action-btn danger-btn"
-                        style="padding: 4px 8px; font-size:11px; height:auto; background:rgba(239,68,68,0.1);">🗑️
-                        Delete</button>
+                    <div id="aud-inspect-actions" style="display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end;">
+                      <!-- Buttons injected by renderAudienceInspector based on status -->
                     </div>
                   </div>
-                  <p id="aud-inspect-size" style="font-size:12px; color:var(--color-text-muted); margin:0;">0 contacts
-                    stored</p>
+                  <p id="aud-inspect-size" style="font-size:12px; color:var(--color-text-muted); margin:0;">0 contacts stored</p>
+                  <p id="aud-inspect-status-badge" style="font-size:11px; margin:4px 0 0 0;"></p>
                 </div>
 
                 <!-- Contacts in Audience Table -->
@@ -649,14 +685,6 @@
                   style="flex-grow:1; display:flex; flex-direction:column; overflow:hidden;">
                   <div class="section-title-bar" style="margin-bottom:10px;">
                     <h4>Contacts Table</h4>
-                    <div style="display:flex; gap:6px; align-items:center;">
-                      <input type="text" id="aud-add-contact-search" placeholder="Search & add contact..."
-                        list="prospects-datalist"
-                        style="background:rgba(0,0,0,0.2); border:1px solid var(--color-border); color:var(--color-text-main); padding:6px 12px; border-radius:var(--border-radius-md); font-size:12px; outline:none; width: 180px;">
-                      <datalist id="prospects-datalist"></datalist>
-                      <button id="btn-add-contact-to-aud" class="header-action-btn primary-btn"
-                        style="padding: 6px 10px; font-size:12px; height:auto;">+ Add</button>
-                    </div>
                   </div>
 
                   <div class="table-scroll-container" style="flex-grow:1; overflow-y:auto;">
@@ -1117,6 +1145,410 @@
     </div>
   </div>
 
+  <!-- Advanced Query Modal -->
+  <div id="modal-advanced-query" class="modal-overlay hidden">
+    <div class="modal-card"
+      style="max-width: 980px; max-height: 92vh; display: flex; flex-direction: column; gap: 0; overflow: hidden;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 16px; flex-shrink: 0;">
+        <h3 style="margin: 0; font-size: 20px; color: var(--color-primary);">🔎 Advanced Query</h3>
+        <button id="btn-advanced-query-close-x"
+          style="background: none; border: none; color: var(--color-text-muted); font-size: 20px; cursor: pointer; padding: 0 4px;">✕</button>
+      </div>
+
+      <div style="flex-grow: 1; overflow-y: auto; padding-right: 8px;">
+
+        <!-- Target Toggle -->
+        <div style="display:flex; gap:8px; margin-bottom:16px;">
+          <button id="aq-target-prospects" class="media-status-filter active-filter" data-target="prospect">👥
+            Prospects</button>
+          <button id="aq-target-companies" class="media-status-filter" data-target="company">🏢 Companies</button>
+        </div>
+
+        <!-- Prospect Filter Fields -->
+        <div id="aq-fields-prospect">
+          <div class="form-row">
+            <div class="form-group"><label for="aq-p-firstname">First Name</label><input type="text"
+                id="aq-p-firstname"></div>
+            <div class="form-group"><label for="aq-p-lastname">Last Name</label><input type="text"
+                id="aq-p-lastname"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="aq-p-email">Email</label><input type="text" id="aq-p-email"></div>
+            <div class="form-group"><label for="aq-p-phone">Phone</label><input type="text" id="aq-p-phone"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group aq-picker" data-aq-picker="title">
+              <label for="aq-p-title-search">Title</label>
+              <div class="aq-picker-control">
+                <input type="text" id="aq-p-title-search" class="aq-picker-search"
+                  placeholder='e.g. "VP" AND "Sales" NOT "Assistant"' autocomplete="off"
+                  title="Smart search: e.g. &quot;VP&quot; also finds Vice President, Executive VP, Senior VP; CEO/CFO/CTO/etc. match their spelled-out forms too. Press Enter to add typed text as a chip — or type a full expression like &quot;VP&quot; AND &quot;Sales&quot; NOT &quot;Assistant&quot; and press Enter to add all three chips at once (quotes optional).">
+                <div id="aq-p-title-dropdown" class="aq-picker-dropdown hidden"></div>
+              </div>
+              <div id="aq-p-title-chips" class="aq-picker-chips"></div>
+            </div>
+            <div class="form-group">
+              <label for="aq-p-seniority">Seniority</label>
+              <select id="aq-p-seniority">
+                <option value="any">Any Seniority</option>
+                <option value="C-Level">C-Level / Executive</option>
+                <option value="VP">VP</option>
+                <option value="Director">Director</option>
+                <option value="Manager">Manager</option>
+                <option value="Individual Contributor">Individual Contributor</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="aq-p-company">Company Name</label><input type="text"
+                id="aq-p-company"></div>
+            <div class="form-group"><label for="aq-p-linkedin">LinkedIn</label><input type="text"
+                id="aq-p-linkedin"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="aq-p-city">City</label><input type="text" id="aq-p-city"></div>
+            <div class="form-group"><label for="aq-p-state">State</label><input type="text" id="aq-p-state"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="aq-p-location">Metro / Location</label><input type="text"
+                id="aq-p-location"></div>
+            <div class="form-group"><label for="aq-p-company-tags">Company Tags</label><input type="text"
+                id="aq-p-company-tags" placeholder="comma-separated"></div>
+          </div>
+
+          <!-- Tags / Campaigns / Audiences: searchable multi-select with include/exclude -->
+          <div class="form-row">
+            <div class="form-group aq-picker" data-aq-picker="tags">
+              <label for="aq-p-tags-search">Prospect Tags</label>
+              <div class="aq-picker-control">
+                <input type="text" id="aq-p-tags-search" class="aq-picker-search" placeholder="Search tags…"
+                  autocomplete="off">
+                <div id="aq-p-tags-dropdown" class="aq-picker-dropdown hidden"></div>
+              </div>
+              <div id="aq-p-tags-chips" class="aq-picker-chips"></div>
+            </div>
+            <div class="form-group aq-picker" data-aq-picker="campaigns">
+              <label for="aq-p-campaigns-search">Campaigns</label>
+              <div class="aq-picker-control">
+                <input type="text" id="aq-p-campaigns-search" class="aq-picker-search" placeholder="Search campaigns…"
+                  autocomplete="off">
+                <div id="aq-p-campaigns-dropdown" class="aq-picker-dropdown hidden"></div>
+              </div>
+              <div id="aq-p-campaigns-chips" class="aq-picker-chips"></div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group aq-picker" data-aq-picker="audiences">
+              <label for="aq-p-audiences-search">Audiences</label>
+              <div class="aq-picker-control">
+                <input type="text" id="aq-p-audiences-search" class="aq-picker-search" placeholder="Search audiences…"
+                  autocomplete="off">
+                <div id="aq-p-audiences-dropdown" class="aq-picker-dropdown hidden"></div>
+              </div>
+              <div id="aq-p-audiences-chips" class="aq-picker-chips"></div>
+            </div>
+            <div class="form-group aq-picker" data-aq-picker="industry">
+              <label for="aq-p-industry-search">Company Industry</label>
+              <div class="aq-picker-control">
+                <input type="text" id="aq-p-industry-search" class="aq-picker-search" placeholder="Search industries…"
+                  autocomplete="off">
+                <div id="aq-p-industry-dropdown" class="aq-picker-dropdown hidden"></div>
+              </div>
+              <div id="aq-p-industry-chips" class="aq-picker-chips"></div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Added to Vantage</label>
+              <div style="display:flex; gap:6px;">
+                <select id="aq-p-added-mode" style="flex: 0 0 100px;">
+                  <option value="any">Any</option>
+                  <option value="before">Before</option>
+                  <option value="after">After</option>
+                  <option value="on">On</option>
+                </select>
+                <input type="date" id="aq-p-added-date" style="flex:1;">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Last Reachout Date</label>
+              <div style="display:flex; gap:6px;">
+                <select id="aq-p-reachout-mode" style="flex: 0 0 100px;">
+                  <option value="any">Any</option>
+                  <option value="before">Before</option>
+                  <option value="after">After</option>
+                  <option value="on">On</option>
+                </select>
+                <input type="date" id="aq-p-reachout-date" style="flex:1;">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Company Filter Fields -->
+        <div id="aq-fields-company" class="hidden">
+          <div class="form-row">
+            <div class="form-group"><label for="aq-c-name">Company Name</label><input type="text"
+                id="aq-c-name"></div>
+            <div class="form-group"><label for="aq-c-domain">Domain / Website</label><input type="text"
+                id="aq-c-domain"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="aq-c-industry">Industry</label><input type="text"
+                id="aq-c-industry"></div>
+            <div class="form-group"><label for="aq-c-employees">Employees / Range</label><input type="text"
+                id="aq-c-employees"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="aq-c-city">City</label><input type="text" id="aq-c-city"></div>
+            <div class="form-group"><label for="aq-c-state">State</label><input type="text" id="aq-c-state"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="aq-c-hq">Headquarters</label><input type="text" id="aq-c-hq"></div>
+            <div class="form-group"><label for="aq-c-phone">Phone</label><input type="text" id="aq-c-phone"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="aq-c-linkedin">LinkedIn</label><input type="text"
+                id="aq-c-linkedin"></div>
+            <div class="form-group"><label for="aq-c-notes">Notes</label><input type="text" id="aq-c-notes"></div>
+          </div>
+          <div class="form-group"><label for="aq-c-tags">Company Tags</label><input type="text" id="aq-c-tags"
+              placeholder="comma-separated"></div>
+        </div>
+
+        <div style="display:flex; gap:10px; align-items:center; margin: 4px 0 8px 0; flex-wrap:wrap;">
+          <button id="btn-run-advanced-query" class="header-action-btn primary-btn">🔍 Run Query</button>
+          <button id="btn-clear-advanced-query" class="header-action-btn secondary-btn">🧹 Clear Filters</button>
+        </div>
+        <p class="query-instructions" style="margin: 0 0 20px 0;">Press Enter to run the query. Text fields support
+          AND / OR (e.g. "VP OR Director", "Manager AND Sales"). State also accepts 2-letter codes like TX or
+          NY.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Advanced Query Results Modal (opens on Run Query) — draggable, resizable, maximizable -->
+  <div id="modal-aq-results" class="modal-overlay hidden">
+    <div id="aq-results-card" class="modal-card aq-results-card"
+      style="display: flex; flex-direction: column; gap: 0; overflow: hidden;">
+      <div id="aq-results-header" class="aq-results-drag-handle"
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 16px; flex-shrink: 0;">
+        <h3 style="margin: 0; font-size: 20px; color: var(--color-primary);">📋 Query Results</h3>
+        <div style="display:flex; align-items:center; gap:4px;">
+          <button id="btn-aq-results-maximize" title="Maximize"
+            style="background: none; border: none; color: var(--color-text-muted); font-size: 16px; cursor: pointer; padding: 0 4px;">⛶</button>
+          <button id="btn-aq-results-close-x" title="Close"
+            style="background: none; border: none; color: var(--color-text-muted); font-size: 20px; cursor: pointer; padding: 0 4px;">✕</button>
+        </div>
+      </div>
+
+      <div class="aq-results-scroll-wrap" style="flex-grow: 1; overflow-y: auto; padding-right: 8px; display: flex; flex-direction: column; min-height: 0;">
+
+        <!-- Top controls: per page, then summary -->
+        <div
+          style="flex-shrink: 0; display:flex; align-items:center; flex-wrap:wrap; gap:14px; margin-bottom:10px;">
+          <label style="font-size:12px; color:var(--color-text-muted); display:flex; align-items:center; gap:4px;">Per
+            Page:
+            <select id="aq-per-page">
+              <option value="25">25</option>
+              <option value="50">50</option>
+            </select>
+          </label>
+          <p id="aq-results-summary" style="margin:0; font-size:13px; color:var(--color-text-muted);">Run a query
+            to see results.</p>
+        </div>
+
+        <!-- Selection actions, then export controls -->
+        <div style="flex-shrink: 0; display:flex; gap:10px; align-items:center; margin: 0 0 14px 0; flex-wrap:wrap;">
+          <button id="btn-aq-select-screen" class="text-btn">Select This Screen</button>
+          <button id="btn-aq-select-all" class="text-btn">Select All</button>
+          <button id="btn-aq-clear-selection" class="text-btn" style="color:var(--color-danger);">Clear
+            Selection</button>
+          <span style="width:1px; align-self:stretch; background:var(--color-border);"></span>
+          <button id="btn-aq-export-selected" class="header-action-btn secondary-btn">⬇ Export Selected
+            (CSV)</button>
+          <button id="btn-aq-export-all" class="header-action-btn secondary-btn">⬇ Export All (CSV)</button>
+        </div>
+
+        <div class="table-scroll-container aq-results-table-wrap"
+          style="flex: 1 1 auto; min-height: 120px; border: 1px solid var(--color-border); border-radius: 6px; background: rgba(0,0,0,0.15);">
+          <table class="premium-table">
+            <thead id="aq-results-thead"></thead>
+            <tbody id="aq-results-body"></tbody>
+          </table>
+        </div>
+
+        <div style="flex-shrink: 0; display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+          <button id="btn-aq-prev-page" class="text-btn">← Prev</button>
+          <span id="aq-page-indicator" style="font-size:12px; color:var(--color-text-muted);">Page 1 of 1</span>
+          <button id="btn-aq-next-page" class="text-btn">Next →</button>
+        </div>
+
+        <!-- Bulk Actions -->
+        <div id="aq-bulk-actions" class="hidden"
+          style="flex-shrink: 0; border-top: 1px solid var(--color-border); margin-top:16px; padding-top: 16px; display: flex; flex-direction: column; gap: 12px;">
+          <p style="margin:0; font-size:13px; font-weight:600;"><span id="aq-selected-count">0</span> selected</p>
+
+          <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+            <div class="form-group" style="margin:0; flex:1; min-width:160px;">
+              <label for="aq-bulk-tag-select">Add Existing Tag</label>
+              <select id="aq-bulk-tag-select">
+                <option value="">-- Choose Tag --</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0; flex:1; min-width:160px;">
+              <label for="aq-bulk-tag-new">Or New Tag</label>
+              <input type="text" id="aq-bulk-tag-new" placeholder="e.g. Priority Follow-up">
+            </div>
+            <button id="btn-aq-bulk-add-tag" class="header-action-btn primary-btn">🏷️ Add Tag to Selected</button>
+          </div>
+
+          <div id="aq-bulk-audience-row" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+            <div class="form-group" style="margin:0; flex:1; min-width:160px;">
+              <label for="aq-bulk-audience-select">Add to Existing Audience</label>
+              <select id="aq-bulk-audience-select">
+                <option value="">-- Choose Audience --</option>
+              </select>
+            </div>
+            <button id="btn-aq-bulk-add-audience" class="header-action-btn secondary-btn">👥 Add to Audience</button>
+            <div class="form-group" style="margin:0; flex:1; min-width:160px;">
+              <label for="aq-bulk-new-audience-name">Or Create New Audience</label>
+              <input type="text" id="aq-bulk-new-audience-name" placeholder="e.g. 7.7.26_Directors of Meetings">
+            </div>
+            <button id="btn-aq-bulk-create-audience" class="header-action-btn secondary-btn">+ Create &
+              Add</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Record Inspector — slides in from the right when a result row is clicked.
+           Editing here saves directly to the record; it does not re-run the query.
+           Mirrors the Prospect Hub's .prospect-inspector-card structure/width so the
+           two inspectors look and feel the same. -->
+      <div id="aq-inspector-drawer" class="aq-inspector-drawer">
+        <div class="inspector-panel-topbar" style="padding: 10px 12px 0 12px;">
+          <button id="btn-aq-insp-close" class="inspector-panel-close-btn" title="Close">✕ Close</button>
+        </div>
+        <div class="aq-inspector-drawer-body">
+
+          <!-- Prospect variant -->
+          <div class="prospect-inspector-card" id="aq-insp-prospect">
+            <div class="inspector-header">
+              <h3 id="aq-insp-p-name">Select a record</h3>
+              <p id="aq-insp-p-subtitle">—</p>
+              <div class="inspector-meta" id="aq-insp-p-meta" style="flex-wrap: wrap;"></div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                <span
+                  style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700;">Prospect
+                  Tags</span>
+                <button id="btn-aq-insp-p-edit-tags" class="text-btn"
+                  style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Edit Tags</button>
+              </div>
+              <div class="inspector-tags" id="aq-insp-p-tags-list" style="margin-top: 4px;"></div>
+              <div style="margin-top: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 6px;">
+                <textarea id="aq-insp-p-notes" placeholder="No notes added..." rows="3"
+                  style="font-size: 13px; color: var(--color-text-main); background: rgba(0,0,0,0.2); padding: 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--color-border); white-space: pre-wrap; width: 100%; resize: vertical; outline: none; font-family: inherit; box-sizing: border-box;"></textarea>
+                <button id="btn-aq-insp-p-save-notes" class="header-action-btn primary-btn hidden"
+                  style="align-self: flex-end; padding: 4px 12px; font-size: 11px;">Save Notes</button>
+              </div>
+              <div class="inspector-quick-actions">
+                <button id="btn-aq-insp-p-edit-full" class="header-action-btn secondary-btn">✏️ Edit Details</button>
+                <button id="btn-aq-insp-p-delete" class="header-action-btn danger-btn">🗑️ Delete Contact</button>
+              </div>
+            </div>
+
+            <div class="inspector-history-section">
+              <div class="section-title-bar">
+                <h4>Interaction Reachout Table</h4>
+                <button id="btn-aq-insp-add-interaction" class="header-action-btn primary-btn">+ Add
+                  Interaction</button>
+              </div>
+              <div class="table-scroll-container">
+                <table class="premium-table history-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>Outreach Content / Notes</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="aq-insp-p-history-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="inspector-history-section"
+              style="margin-top: 16px; border-top: 1px solid var(--color-border); padding-top: 16px;">
+              <div class="section-title-bar">
+                <h4>Audience Lists & Campaigns</h4>
+              </div>
+              <div id="aq-insp-p-memberships"
+                style="font-size: 13px; display: flex; flex-direction: column; gap: 8px; margin-top: 8px;"></div>
+            </div>
+          </div>
+
+          <!-- Company variant -->
+          <div class="prospect-inspector-card hidden" id="aq-insp-company">
+            <div class="inspector-header">
+              <h3 id="aq-insp-c-name">Company Name</h3>
+              <p id="aq-insp-c-industry">Industry</p>
+              <div class="inspector-meta" id="aq-insp-c-meta" style="flex-wrap: wrap;"></div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                <span
+                  style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700;">Company
+                  Tags</span>
+                <button id="btn-aq-insp-c-edit-tags" class="text-btn"
+                  style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Edit Tags</button>
+              </div>
+              <div class="inspector-tags" id="aq-insp-c-tags-list" style="margin-top: 4px;"></div>
+              <div style="margin-top: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 6px;">
+                <textarea id="aq-insp-c-notes" placeholder="No notes added..." rows="3"
+                  style="font-size: 13px; color: var(--color-text-main); background: rgba(0,0,0,0.2); padding: 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--color-border); white-space: pre-wrap; width: 100%; resize: vertical; outline: none; font-family: inherit; box-sizing: border-box;"></textarea>
+                <button id="btn-aq-insp-c-save-notes" class="header-action-btn primary-btn hidden"
+                  style="align-self: flex-end; padding: 4px 12px; font-size: 11px;">Save Notes</button>
+              </div>
+              <div class="inspector-quick-actions">
+                <button id="btn-aq-insp-c-edit-full" class="header-action-btn secondary-btn">✏️ Edit
+                  Company</button>
+                <button id="btn-aq-insp-c-delete" class="header-action-btn danger-btn">🗑️ Delete Company</button>
+              </div>
+            </div>
+
+            <div class="inspector-history-section">
+              <div class="section-title-bar">
+                <h4>Associated Contacts</h4>
+              </div>
+              <div class="table-scroll-container">
+                <table class="premium-table history-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Title</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="aq-insp-c-contacts-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Resize grabbers: both sides, the bottom edge, and both bottom corners -->
+      <div class="aq-resize-edge aq-resize-e" data-dirs="e" title="Drag to resize width"></div>
+      <div class="aq-resize-edge aq-resize-w" data-dirs="w" title="Drag to resize width"></div>
+      <div class="aq-resize-edge aq-resize-s" data-dirs="s" title="Drag to resize height"></div>
+      <div id="aq-results-resize-handle" class="aq-resize-handle aq-resize-se" data-dirs="e s" title="Drag to resize">⌟</div>
+      <div class="aq-resize-handle aq-resize-sw" data-dirs="w s" title="Drag to resize"></div>
+    </div>
+  </div>
+
   <!-- Create/Edit Campaign Modal -->
   <div id="modal-create-campaign" class="modal-overlay hidden">
     <div class="modal-card">
@@ -1248,6 +1680,72 @@
     </div>
   </div>
 
+  <!-- Audience CSV Import Modal -->
+  <div id="modal-audience-import" class="modal-overlay hidden">
+    <div class="modal-card"
+      style="max-width: 780px; max-height: 85vh; display: flex; flex-direction: column; gap: 0; overflow: hidden;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 16px; flex-shrink: 0;">
+        <h3 style="margin: 0; font-size: 20px; color: var(--color-secondary);">Import Audience from CSV</h3>
+        <button id="btn-audience-import-close-x"
+          style="background: none; border: none; color: var(--color-text-muted); font-size: 20px; cursor: pointer; padding: 0 4px;">✕</button>
+      </div>
+
+      <div
+        style="flex-grow: 1; overflow-y: auto; padding-right: 8px; display: flex; flex-direction: column; gap: 16px;">
+
+        <!-- STEP 1: Upload -->
+        <div id="audience-import-upload-section">
+          <p style="font-size: 13px; color: var(--color-text-muted); margin: 0 0 12px 0;">Upload a CSV exported
+            from the Prospect Hub (the "Export CSV" buttons next to Contacts and Companies). Vantage will read
+            the contact IDs directly from that file — no need to re-match anything.</p>
+          <div id="audience-import-dropzone" class="file-dropzone" style="min-height: 140px;">
+            <span style="font-size: 28px;">📤</span>
+            <span>Drag & Drop a Prospect Hub CSV/Excel export here, or click to choose</span>
+            <input type="file" id="audience-import-file-input" accept=".csv,.xlsx,.xls" class="hidden">
+          </div>
+        </div>
+
+        <!-- STEP 2: Review -->
+        <div id="audience-import-review-section" class="hidden">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <p id="audience-import-summary" style="font-size: 13px; color: var(--color-text-muted); margin: 0;">0
+              contacts found</p>
+            <button id="btn-audience-import-choose-different" class="text-btn" style="font-size:11px;">⬅ Choose a
+              different file</button>
+          </div>
+
+          <div class="table-scroll-container"
+            style="border: 1px solid var(--color-border); border-radius: 6px; background: rgba(0,0,0,0.15); max-height: 300px;">
+            <table class="premium-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Company</th>
+                  <th style="text-align:center; width:60px;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="audience-import-matched-body"></tbody>
+            </table>
+          </div>
+
+          <div class="form-group" style="margin: 16px 0 0 0;">
+            <label for="audience-import-name">Audience Name</label>
+            <input type="text" id="audience-import-name" placeholder="e.g. 7.7.26_Directors of Meetings">
+          </div>
+        </div>
+      </div>
+
+      <div
+        style="margin-top: 16px; border-top: 1px solid var(--color-border); padding-top: 16px; flex-shrink: 0; display: flex; gap: 12px;">
+        <button id="btn-cancel-audience-import" class="header-action-btn secondary-btn"
+          style="flex: 1; justify-content: center;">Cancel</button>
+        <button id="btn-save-audience-import" class="header-action-btn primary-btn"
+          style="flex: 1; justify-content: center;">💾 Save Audience</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Add To Campaign Modal -->
   <div id="modal-add-to-campaign" class="modal-overlay hidden">
     <div class="modal-card">
@@ -1321,10 +1819,49 @@
       <!-- Option Configurator Sections -->
       <div class="settings-configurator-grid">
 
-        <!-- Media Hub: Types -->
+        <!-- ============ PROSPECT HUB ============ -->
+        <h3 class="settings-group-heading" style="color: #8b5cf6; grid-column: 1 / -1; margin: 0;">Prospect Hub</h3>
+
+        <!-- Prospect Hub Tags -->
         <div class="settings-config-section"
           style="border-left: 4px solid #8b5cf6; padding-left: 12px; margin-left: -12px;">
-          <h4 style="color: #8b5cf6;">Media Types</h4>
+          <h4 style="color: #8b5cf6;">Prospect Hub Tags</h4>
+          <div class="settings-item-list" id="list-settings-prospect-tags"></div>
+          <div class="settings-inline-add">
+            <input type="text" id="input-add-prospect-tag" placeholder="e.g. Decision Maker">
+            <button class="header-action-btn primary-btn" id="btn-add-prospect-tag-opt">+</button>
+          </div>
+        </div>
+
+        <!-- Company Tags (Companies live in the Prospect Hub) -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #8b5cf6; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #8b5cf6;">Company Tags</h4>
+          <div class="settings-item-list" id="list-settings-company-tags"></div>
+          <div class="settings-inline-add">
+            <input type="text" id="input-add-company-tag" placeholder="e.g. Enterprise">
+            <button class="header-action-btn primary-btn" id="btn-add-company-tag-opt">+</button>
+          </div>
+        </div>
+
+        <!-- Reachout Types (logged against prospects in the Prospect Hub) -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #8b5cf6; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #8b5cf6;">Reachout Types</h4>
+          <div class="settings-item-list" id="list-settings-reachout-types"></div>
+          <div class="settings-inline-add">
+            <input type="text" id="input-add-reachout-type" placeholder="e.g. Email">
+            <button class="header-action-btn primary-btn" id="btn-add-reachout-type-opt">+</button>
+          </div>
+        </div>
+
+        <!-- ============ MEDIA HUB ============ -->
+        <h3 class="settings-group-heading" style="color: #f97316; grid-column: 1 / -1; margin: 0;">Media Hub</h3>
+
+        <!-- Media Hub: Types -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #f97316; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #f97316;">Media Types</h4>
           <div class="settings-item-list" id="list-settings-types"></div>
           <div class="settings-inline-add">
             <input type="text" id="input-add-type" placeholder="e.g. Podcast">
@@ -1334,8 +1871,8 @@
 
         <!-- Media Hub: Development Phases -->
         <div class="settings-config-section"
-          style="border-left: 4px solid #8b5cf6; padding-left: 12px; margin-left: -12px;">
-          <h4 style="color: #8b5cf6;">Development Phases</h4>
+          style="border-left: 4px solid #f97316; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #f97316;">Development Phases</h4>
           <div class="settings-item-list" id="list-settings-phases"></div>
           <div class="settings-inline-add">
             <input type="text" id="input-add-phase" placeholder="e.g. Scheduled">
@@ -1345,8 +1882,8 @@
 
         <!-- Media Hub: Publishing Platforms -->
         <div class="settings-config-section"
-          style="border-left: 4px solid #8b5cf6; padding-left: 12px; margin-left: -12px;">
-          <h4 style="color: #8b5cf6;">Publishing Platforms</h4>
+          style="border-left: 4px solid #f97316; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #f97316;">Publishing Platforms</h4>
           <div class="settings-item-list" id="list-settings-platforms"></div>
           <div class="settings-inline-add">
             <input type="text" id="input-add-platform" placeholder="e.g. Anchor">
@@ -1356,8 +1893,8 @@
 
         <!-- Media Hub: Tags -->
         <div class="settings-config-section"
-          style="border-left: 4px solid #8b5cf6; padding-left: 12px; margin-left: -12px;">
-          <h4 style="color: #8b5cf6;">Media Hub Tags</h4>
+          style="border-left: 4px solid #f97316; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #f97316;">Media Hub Tags</h4>
           <div class="settings-item-list" id="list-settings-tags"></div>
           <div class="settings-inline-add">
             <input type="text" id="input-add-tag" placeholder="e.g. Mobile">
@@ -1365,21 +1902,13 @@
           </div>
         </div>
 
-        <!-- Prospect Hub Tags -->
-        <div class="settings-config-section"
-          style="border-left: 4px solid #0d9488; padding-left: 12px; margin-left: -12px;">
-          <h4 style="color: #0d9488;">Prospect Hub Tags</h4>
-          <div class="settings-item-list" id="list-settings-prospect-tags"></div>
-          <div class="settings-inline-add">
-            <input type="text" id="input-add-prospect-tag" placeholder="e.g. Decision Maker">
-            <button class="header-action-btn primary-btn" id="btn-add-prospect-tag-opt">+</button>
-          </div>
-        </div>
+        <!-- ============ CAMPAIGN HUB ============ -->
+        <h3 class="settings-group-heading" style="color: #10b981; grid-column: 1 / -1; margin: 0;">Campaign Hub</h3>
 
         <!-- Campaign Hub Tags -->
         <div class="settings-config-section"
-          style="border-left: 4px solid #f97316; padding-left: 12px; margin-left: -12px;">
-          <h4 style="color: #f97316;">Campaign Hub Tags</h4>
+          style="border-left: 4px solid #10b981; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #10b981;">Campaign Hub Tags</h4>
           <div class="settings-item-list" id="list-settings-campaign-tags"></div>
           <div class="settings-inline-add">
             <input type="text" id="input-add-campaign-tag" placeholder="e.g. Q3 Outreach">
@@ -1389,34 +1918,12 @@
 
         <!-- Campaign Development Phases -->
         <div class="settings-config-section"
-          style="border-left: 4px solid #f97316; padding-left: 12px; margin-left: -12px;">
-          <h4 style="color: #f97316;">Campaign Development Phases</h4>
+          style="border-left: 4px solid #10b981; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #10b981;">Campaign Development Phases</h4>
           <div class="settings-item-list" id="list-settings-campaign-phases"></div>
           <div class="settings-inline-add">
             <input type="text" id="input-add-campaign-phase" placeholder="e.g. Pre-Launch">
             <button class="header-action-btn primary-btn" id="btn-add-campaign-phase-opt">+</button>
-          </div>
-        </div>
-
-        <!-- Company Tags -->
-        <div class="settings-config-section"
-          style="border-left: 4px solid #10b981; padding-left: 12px; margin-left: -12px;">
-          <h4 style="color: #10b981;">Company Tags</h4>
-          <div class="settings-item-list" id="list-settings-company-tags"></div>
-          <div class="settings-inline-add">
-            <input type="text" id="input-add-company-tag" placeholder="e.g. Enterprise">
-            <button class="header-action-btn primary-btn" id="btn-add-company-tag-opt">+</button>
-          </div>
-        </div>
-
-        <!-- Reachout Types -->
-        <div class="settings-config-section"
-          style="border-left: 4px solid #3b82f6; padding-left: 12px; margin-left: -12px;">
-          <h4 style="color: #3b82f6;">Reachout Types</h4>
-          <div class="settings-item-list" id="list-settings-reachout-types"></div>
-          <div class="settings-inline-add">
-            <input type="text" id="input-add-reachout-type" placeholder="e.g. Email">
-            <button class="header-action-btn primary-btn" id="btn-add-reachout-type-opt">+</button>
           </div>
         </div>
 
@@ -1581,6 +2088,7 @@
                   <th style="width: 110px; white-space: nowrap;">Date (Edit)</th>
                   <th>Expiration Date</th>
                   <th>Platform</th>
+                  <th>Campaign</th>
                   <th>Published Link</th>
                   <th>Views</th>
                   <th>Clicks</th>
@@ -1623,11 +2131,20 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <label for="pub-platform">Publishing Platform</label>
-        <select id="pub-platform">
-          <!-- Populated dynamically -->
-        </select>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="pub-platform">Publishing Platform</label>
+          <select id="pub-platform">
+            <!-- Populated dynamically -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="pub-campaign">Campaign (optional)</label>
+          <select id="pub-campaign">
+            <option value="">-- No Campaign --</option>
+            <!-- Populated dynamically with Launch-status campaigns -->
+          </select>
+        </div>
       </div>
 
       <div class="form-group">
@@ -1664,48 +2181,33 @@
       <h3 id="master-file-modal-title">Link Master File</h3>
 
       <div class="form-group">
-        <label for="master-link-type">Link Source Type</label>
-        <select id="master-link-type" class="premium-select"
-          style="background-color: rgba(0,0,0,0.25); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-md); font-size: 13px; outline: none; transition: var(--transition-smooth); cursor: pointer; width: 100%;">
-          <option value="cloud">☁️ Google Drive / Cloud Link</option>
-          <option value="upload">💻 Local File Upload (Saves in Vantage DB)</option>
-          <option value="path">🗂️ Local Disk File Path Reference</option>
-        </select>
-      </div>
-
-      <div class="form-group">
         <label for="master-file-name">File / Document Name</label>
         <input type="text" id="master-file-name" placeholder="e.g. Q3 Sales Strategy Document">
       </div>
 
-      <!-- Sub-form for Cloud link -->
-      <div id="master-subform-cloud" class="form-group">
-        <label for="master-cloud-url">Google Drive / Cloud Document URL</label>
-        <input type="url" id="master-cloud-url" placeholder="https://drive.google.com/open?id=...">
-      </div>
-
-      <!-- Sub-form for Local path reference -->
-      <div id="master-subform-path" class="form-group hidden">
-        <label for="master-local-path">Full Local Path on Hard Drive</label>
-        <input type="text" id="master-local-path" placeholder="e.g. C:\Users\YourName\Documents\sales_pitch.docx">
+      <div class="form-group">
+        <label for="master-local-path">Link or File Location</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="master-local-path" style="flex:1;"
+            placeholder="Paste a Google Drive/cloud link, or a local file path">
+          <button type="button" id="btn-master-paste-link" class="header-action-btn secondary-btn"
+            style="flex-shrink:0; padding: 0 12px;" title="Paste link from clipboard">📋 Paste</button>
+        </div>
         <p style="font-size: 11px; color: var(--color-text-muted); margin-top: 4px; line-height: 1.4;">
-          Note: Modern browsers block opening local files directly due to sandbox security. This creates a link and
-          quick "Copy" button in your dashboard so you can instantly copy the path and paste it into Windows Explorer or
-          the Run utility (Win+R).
+          Only this link/path is stored — the file itself is never uploaded into Vantage. Cloud links (http/https)
+          open directly in a new tab; local paths get a "Copy Path" button so you can paste it into Windows Explorer
+          or the Run dialog (Win+R), since browsers can't open local files directly for security reasons. Copy a
+          share link from Google Drive/Docs first (e.g. right-click → "Get link"), then click "📋 Paste" here.
         </p>
       </div>
 
-      <!-- Sub-form for Local file upload -->
-      <div id="master-subform-upload" class="form-group hidden">
+      <div class="form-group">
         <label
-          style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700; display: block; margin-bottom: 6px;">Select
-          Master File to Upload</label>
+          style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700; display: block; margin-bottom: 6px;">Or
+          Choose a File to Auto-Fill Its Name</label>
         <div id="master-file-dropzone" class="file-dropzone">
-          <span>📁 Drag & Drop file here or click to choose</span>
+          <span>📁 Click to choose a file — only its name is linked, it is not uploaded</span>
           <input type="file" id="master-file-input" class="hidden">
-        </div>
-        <div id="master-file-upload-preview" class="file-item-row hidden" style="margin-top: 10px;">
-          <!-- Dynamic single file preview populated in JS -->
         </div>
       </div>
 
