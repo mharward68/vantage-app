@@ -17,10 +17,18 @@ let state = {
   forceShowAllCompanies: false,
   customSortOrder: [],
   mediaTypes: ["Article", "Video", "Newsletter"],
-  developmentPhases: ["Priority", "Idea", "Draft", "In Review", "Finished", "Published", "Archive"],
+  developmentPhases: ["Priority", "Idea", "Draft", "In Review", "Finished", "Published", "This Week", "Next Week", "Archive"],
   platforms: ["YouTube", "Substack", "Medium", "LinkedIn", "Twitter", "General"],
   media_tags: ["Frontend", "React", "Fintech", "Developer", "General"],
   company_tags: ["Enterprise", "SMB", "Agency", "Startup"],
+  emailAccounts: [],
+  emailProviders: ["Gmail", "Outlook / Microsoft 365", "Zoho Mail", "Custom SMTP"],
+  emailProviderDefaultUrls: {},
+  domains: [],
+  domainRegistrars: ["GoDaddy", "Namecheap", "Cloudflare", "Porkbun"],
+  domainHosts: ["Cloudflare", "AWS Route 53", "Namecheap", "Bluehost"],
+  domainRegistrarDefaultUrls: {},
+  domainHostDefaultUrls: {},
   theme: "dark"
 };
 
@@ -53,6 +61,90 @@ function getMediaTypeIcon(type) {
   return MEDIA_TYPE_ICON_GLYPHS[type] || "📁";
 }
 
+// Status Pipeline (development phase) icon glyphs — shared between the
+// Media Hub status filter bar and every status dropdown (media card select,
+// Content Dashboard select) so the icons always stay in sync. Falls back to
+// no icon for any custom phase added via Settings that isn't listed here.
+const DEVELOPMENT_PHASE_ICON_GLYPHS = {
+  "Priority": "🌟",
+  "Idea": "💡",
+  "Draft": "📝",
+  "In Review": "🔍",
+  "Finished": "✅",
+  "Published": "📢",
+  "This Week": "🗓️",
+  "Next Week": "🔜",
+  "Archive": "📦"
+};
+
+function getDevelopmentPhaseIcon(phase) {
+  return DEVELOPMENT_PHASE_ICON_GLYPHS[phase] || "";
+}
+
+// Email Account status icon glyphs — shared between the Email Accounts
+// status filter bar, table rows, and the Add/Edit modal's status select.
+const EMAIL_ACCOUNT_STATUS_ICON_GLYPHS = {
+  "Active": "🟢",
+  "Warming": "🌡️",
+  "Paused": "⏸️",
+  "Banned": "🚫"
+};
+
+function getEmailAccountStatusIcon(status) {
+  return EMAIL_ACCOUNT_STATUS_ICON_GLYPHS[status] || "";
+}
+
+// Domain status icon glyphs — shared between the Domain Management status
+// filter bar, table rows, and the Add/Edit modal's status select.
+const DOMAIN_STATUS_ICON_GLYPHS = {
+  "Active": "🟢",
+  "Expiring Soon": "⏳",
+  "Expired": "🔴",
+  "Parked": "🅿️"
+};
+
+function getDomainStatusIcon(status) {
+  return DOMAIN_STATUS_ICON_GLYPHS[status] || "";
+}
+
+const DOMAIN_DNS_HEALTH_ICON_GLYPHS = {
+  "Configured": "✅",
+  "Partial": "⚠️",
+  "Not Configured": "❌"
+};
+
+function getDomainDnsHealthIcon(dnsHealth) {
+  return DOMAIN_DNS_HEALTH_ICON_GLYPHS[dnsHealth] || "";
+}
+
+// Seed values only — one-time starting point copied into
+// state.domainRegistrarDefaultUrls / state.domainHostDefaultUrls /
+// state.emailProviderDefaultUrls the first time the app runs. From then on
+// the *state* copies are the source of truth: they're user-editable from
+// Settings (each provider/registrar/host row has a "Default URL" input) and
+// travel with backup/restore. Never read these seed consts directly outside
+// ensureStateDefaults() — always look up state.*DefaultUrls instead.
+const DOMAIN_REGISTRAR_DASHBOARD_URL_SEED = {
+  "GoDaddy": "https://dcc.godaddy.com/manage",
+  "Namecheap": "https://ap.www.namecheap.com/domains/list",
+  "Cloudflare": "https://dash.cloudflare.com",
+  "Porkbun": "https://porkbun.com/account/domainsSpeedy"
+};
+
+const DOMAIN_HOST_DASHBOARD_URL_SEED = {
+  "Cloudflare": "https://dash.cloudflare.com",
+  "AWS Route 53": "https://console.aws.amazon.com/route53/v2/hostedzones",
+  "Namecheap": "https://ap.www.namecheap.com/domains/list",
+  "Bluehost": "https://my.bluehost.com/hosting/app"
+};
+
+const EMAIL_PROVIDER_DASHBOARD_URL_SEED = {
+  "Gmail": "https://mail.google.com/mail/u/0/",
+  "Outlook / Microsoft 365": "https://outlook.office.com/mail/",
+  "Zoho Mail": "https://mail.zoho.com/",
+  "Custom SMTP": ""
+};
+
 /* ==========================================================================
    💾 INDEXEDDB MANAGER (VantageDB) FOR MULTI-FILE BINARY STORAGE
    ========================================================================== */
@@ -60,11 +152,14 @@ let fileDB;
 
 function initIndexedDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("VantagePRMFiles", 1);
+    const request = indexedDB.open("VantagePRMFiles", 2);
     request.onupgradeneeded = function(e) {
       const db = e.target.result;
       if (!db.objectStoreNames.contains("files")) {
         db.createObjectStore("files", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("handles")) {
+        db.createObjectStore("handles", { keyPath: "id" });
       }
     };
     request.onsuccess = function(e) {
@@ -113,6 +208,174 @@ function deleteFileBlob(id) {
     request.onsuccess = () => resolve();
     request.onerror = (e) => reject(e.target.error);
   });
+}
+
+/* ==========================================================================
+   📁 BACKUP FOLDER (File System Access API)
+   Desktop Chrome/Edge/Opera only — window.showDirectoryPicker() is not
+   available in Firefox, Safari, or any mobile browser. When unsupported,
+   every function below no-ops or is skipped, and callers silently fall
+   back to the existing download-dialog / drag-and-drop behavior.
+   ========================================================================== */
+const SUPPORTS_FS_ACCESS = typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
+let backupFolderSessionDisabled = false;
+
+function saveBackupFolderHandle(handle) {
+  return new Promise((resolve, reject) => {
+    if (!fileDB) return reject("DB not initialized");
+    const tx = fileDB.transaction(["handles"], "readwrite");
+    tx.objectStore("handles").put({ id: "backupFolder", handle });
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function getStoredBackupFolderHandle() {
+  return new Promise((resolve) => {
+    if (!fileDB) return resolve(null);
+    try {
+      const tx = fileDB.transaction(["handles"], "readonly");
+      const req = tx.objectStore("handles").get("backupFolder");
+      req.onsuccess = (e) => resolve(e.target.result ? e.target.result.handle : null);
+      req.onerror = () => resolve(null);
+    } catch (err) {
+      resolve(null);
+    }
+  });
+}
+
+function clearBackupFolderHandle() {
+  return new Promise((resolve) => {
+    if (!fileDB) return resolve();
+    const tx = fileDB.transaction(["handles"], "readwrite");
+    tx.objectStore("handles").delete("backupFolder");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}
+
+// Verifies (and if needed, requests) readwrite permission on a stored
+// directory handle, and confirms the folder is still actually there.
+// Returns false on any failure — callers should fall back to a normal
+// download rather than throw.
+async function ensureFolderWritePermission(handle) {
+  try {
+    const opts = { mode: "readwrite" };
+    let perm = await handle.queryPermission(opts);
+    if (perm !== "granted") {
+      perm = await handle.requestPermission(opts);
+    }
+    if (perm !== "granted") return false;
+    // Touch the directory to confirm it still exists on disk.
+    await handle.values().next();
+    return true;
+  } catch (err) {
+    console.error("[Backup Folder] Folder is no longer accessible:", err);
+    return false;
+  }
+}
+
+// Lets the user pick (or change) the folder Vantage saves backups into.
+async function chooseBackupFolder() {
+  if (!SUPPORTS_FS_ACCESS) return;
+  try {
+    const handle = await window.showDirectoryPicker({ id: "vantage-backup-folder", mode: "readwrite" });
+    const perm = await handle.requestPermission({ mode: "readwrite" });
+    if (perm !== "granted") {
+      alert("Vantage needs write access to this folder to save backups there.");
+      return;
+    }
+    await saveBackupFolderHandle(handle);
+    backupFolderSessionDisabled = false;
+    await updateBackupFolderUI();
+  } catch (err) {
+    if (err.name !== "AbortError") {
+      console.error("[Backup Folder] Choose failed:", err);
+      alert("Couldn't set that folder as your backup location.");
+    }
+  }
+}
+
+// Refreshes the "Backup Folder" display in Data Management.
+async function updateBackupFolderUI() {
+  const nameEl = document.getElementById("backup-folder-name");
+  if (!nameEl) return;
+  const handle = SUPPORTS_FS_ACCESS ? await getStoredBackupFolderHandle() : null;
+  const chooseBtn = document.getElementById("btn-choose-backup-folder");
+  if (handle) {
+    nameEl.textContent = handle.name;
+    nameEl.title = `Backups save directly into the "${handle.name}" folder.`;
+    if (chooseBtn) chooseBtn.textContent = "Change Folder";
+  } else {
+    nameEl.textContent = "Not set";
+    nameEl.title = "";
+    if (chooseBtn) chooseBtn.textContent = "Choose Folder";
+  }
+}
+
+// Central write path for every backup export (CSV or ZIP/JSON blob).
+// Saves directly into the chosen backup folder when one is set and the
+// browser supports it; otherwise falls back to a normal file download.
+async function saveBackupFile(name, content) {
+  const blob = (content instanceof Blob)
+    ? content
+    : new Blob([content], { type: name.endsWith(".json") ? "application/json" : "text/csv;charset=utf-8;" });
+
+  if (SUPPORTS_FS_ACCESS && !backupFolderSessionDisabled) {
+    const handle = await getStoredBackupFolderHandle();
+    if (handle) {
+      const ok = await ensureFolderWritePermission(handle);
+      if (ok) {
+        try {
+          const fileHandle = await handle.getFileHandle(name, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          return true;
+        } catch (err) {
+          console.error("[Backup Folder] Write failed:", err);
+          backupFolderSessionDisabled = true;
+          alert(`Couldn't save to your backup folder "${handle.name}" — it may have been moved, renamed, or deleted.\n\nFiles will download normally for the rest of this session. Re-choose your backup folder in Data Management if you'd like to fix this.`);
+        }
+      }
+    }
+  }
+  downloadBlob(name, blob);
+  return false;
+}
+
+// Opens a native file picker (starting inside the backup folder when one
+// is set) and feeds the chosen file into the existing restore pipeline.
+async function restoreFromBackupFolder() {
+  if (!SUPPORTS_FS_ACCESS) return;
+  const handle = await getStoredBackupFolderHandle();
+  const pickerOpts = {
+    types: [{
+      description: "Vantage Backup Files",
+      accept: {
+        "application/zip": [".zip"],
+        "text/csv": [".csv"],
+        "application/json": [".json"],
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"]
+      }
+    }],
+    excludeAcceptAllOption: false,
+    multiple: false
+  };
+  if (handle) pickerOpts.startIn = handle;
+
+  let fileHandles;
+  try {
+    fileHandles = await window.showOpenFilePicker(pickerOpts);
+  } catch (err) {
+    if (err.name !== "AbortError") {
+      console.error("[Restore] File picker failed:", err);
+      alert("Couldn't open the file picker.");
+    }
+    return;
+  }
+  const file = await fileHandles[0].getFile();
+  processRestoreFile(file, null);
 }
 
 function formatFileSize(bytes) {
@@ -196,7 +459,10 @@ function ensureStateDefaults() {
   if (!state.campaigns) state.campaigns = [];
   if (!state.audienceLists) state.audienceLists = [];
   // Migrate: ensure all audience lists have a status field
-  state.audienceLists.forEach(al => { if (!al.status) al.status = "active"; });
+  state.audienceLists.forEach(al => {
+    if (!al.status) al.status = "active";
+    if (al.notes === undefined) al.notes = "";
+  });
   if (!state.campaignPhases || state.campaignPhases.length === 0) {
     state.campaignPhases = ["Development", "Launch", "Archive"];
   }
@@ -214,8 +480,8 @@ function ensureStateDefaults() {
     state.mediaTypes = ["Article", "Video", "Newsletter"];
   }
   // Standard development phases
-  const targetPhases = ["Priority", "Idea", "Draft", "In Review", "Finished", "Published", "Archive"];
-  
+  const targetPhases = ["Priority", "Idea", "Draft", "In Review", "Finished", "Published", "This Week", "Next Week", "Archive"];
+
   if (!state.developmentPhases || state.developmentPhases.length === 0) {
     state.developmentPhases = targetPhases;
   } else {
@@ -228,11 +494,19 @@ function ensureStateDefaults() {
     });
     // Remove duplicates if any were created
     state.developmentPhases = [...new Set(state.developmentPhases)];
-    
-    // Ensure all standard target phases are present in the list
+
+    // Ensure all standard target phases are present in the list. Newly
+    // introduced ones (This Week / Next Week) are inserted just before
+    // Archive to match the top filter bar order, instead of tacking them
+    // onto the very end past a pre-existing Archive phase.
     targetPhases.forEach(tp => {
       if (!state.developmentPhases.includes(tp)) {
-        state.developmentPhases.push(tp);
+        const archiveIdx = state.developmentPhases.indexOf("Archive");
+        if (archiveIdx !== -1) {
+          state.developmentPhases.splice(archiveIdx, 0, tp);
+        } else {
+          state.developmentPhases.push(tp);
+        }
       }
     });
   }
@@ -435,6 +709,74 @@ function ensureStateDefaults() {
       }
     });
   }
+
+  // Email Accounts (Campaign Hub) — independent mini database for Smart
+  // Leads sending accounts. Kept generic/array-driven like the other managed
+  // lists so it rides along automatically with backup/restore.
+  if (!state.emailAccounts) state.emailAccounts = [];
+  if (!state.emailProviders || state.emailProviders.length === 0) {
+    state.emailProviders = ["Gmail", "Outlook / Microsoft 365", "Zoho Mail", "Custom SMTP"];
+  }
+  if (!state.emailProviderDefaultUrls || Object.keys(state.emailProviderDefaultUrls).length === 0) {
+    state.emailProviderDefaultUrls = { ...EMAIL_PROVIDER_DASHBOARD_URL_SEED };
+  }
+  state.emailAccounts.forEach(a => {
+    if (!a.status) a.status = "Active";
+    if (a.dashboardUrl === undefined) a.dashboardUrl = "";
+    if (a.dailyLimit === undefined) a.dailyLimit = "";
+    if (a.domain === undefined) a.domain = "";
+    if (a.notes === undefined) a.notes = "";
+    if (!a.dateAdded) a.dateAdded = new Date().toISOString().split("T")[0];
+    // Preserve any custom provider value used on a record even if it isn't
+    // (yet) in the managed list, same pattern used for media types/tags above.
+    if (a.provider && !state.emailProviders.some(p => p.trim().toLowerCase() === a.provider.trim().toLowerCase())) {
+      state.emailProviders.push(a.provider);
+    }
+  });
+
+  // Domain Management (Campaign Hub) — independent mini database for domains
+  // used with Smart Leads sending. Same array-driven pattern as Email
+  // Accounts above so it rides along automatically with backup/restore.
+  if (!state.domains) state.domains = [];
+  if (!state.domainRegistrars || state.domainRegistrars.length === 0) {
+    state.domainRegistrars = ["GoDaddy", "Namecheap", "Cloudflare", "Porkbun"];
+  }
+  if (!state.domainHosts || state.domainHosts.length === 0) {
+    state.domainHosts = ["Cloudflare", "AWS Route 53", "Namecheap", "Bluehost"];
+  }
+  if (!state.domainRegistrarDefaultUrls || Object.keys(state.domainRegistrarDefaultUrls).length === 0) {
+    state.domainRegistrarDefaultUrls = { ...DOMAIN_REGISTRAR_DASHBOARD_URL_SEED };
+  }
+  if (!state.domainHostDefaultUrls || Object.keys(state.domainHostDefaultUrls).length === 0) {
+    state.domainHostDefaultUrls = { ...DOMAIN_HOST_DASHBOARD_URL_SEED };
+  }
+  state.domains.forEach(d => {
+    if (!d.status) d.status = "Active";
+    if (d.ip === undefined) d.ip = "";
+    if (d.userId === undefined) d.userId = "";
+    if (d.password === undefined) d.password = "";
+    if (d.annualCost === undefined) d.annualCost = "";
+    if (d.expirationDate === undefined) d.expirationDate = "";
+    if (!d.autoRenew) d.autoRenew = "No";
+    if (!d.dnsHealth) d.dnsHealth = "Not Configured";
+    if (!d.linkedEmailAccountIds) d.linkedEmailAccountIds = [];
+    if (d.registrarDashboardUrl === undefined) {
+      d.registrarDashboardUrl = state.domainRegistrarDefaultUrls[d.registrar] || "";
+    }
+    if (d.hostDashboardUrl === undefined) {
+      d.hostDashboardUrl = state.domainHostDefaultUrls[d.host] || "";
+    }
+    if (d.notes === undefined) d.notes = "";
+    if (!d.dateAdded) d.dateAdded = new Date().toISOString().split("T")[0];
+    if (d.registrar && !state.domainRegistrars.some(r => r.trim().toLowerCase() === d.registrar.trim().toLowerCase())) {
+      state.domainRegistrars.push(d.registrar);
+    }
+    if (d.host && !state.domainHosts.some(h => h.trim().toLowerCase() === d.host.trim().toLowerCase())) {
+      state.domainHosts.push(d.host);
+    }
+    // Clean up stale references to deleted email accounts
+    d.linkedEmailAccountIds = d.linkedEmailAccountIds.filter(id => state.emailAccounts.some(a => a.id === id));
+  });
 }
 
 async function loadDatabase() {
@@ -524,9 +866,11 @@ async function wipeAllData() {
   state.media = [];
   state.campaigns = [];
   state.audienceLists = [];
+  state.emailAccounts = [];
+  state.domains = [];
   state.selectedProspectId = null;
   state.activeView = "dashboard";
-  
+
   saveState();
   updateThemeColors();
   renderApp();
@@ -562,6 +906,17 @@ function renderDataManagementView() {
   document.getElementById("db-media-count").textContent = state.media.length;
   document.getElementById("db-campaigns-count").textContent = state.campaigns.length;
   document.getElementById("db-companies-count").textContent = state.companies.length;
+  document.getElementById("db-email-accounts-count").textContent = (state.emailAccounts || []).length;
+  document.getElementById("db-domains-count").textContent = (state.domains || []).length;
+
+  // Backup Folder controls only exist on desktop Chrome/Edge/Opera.
+  if (SUPPORTS_FS_ACCESS) {
+    const folderSection = document.getElementById("backup-folder-section");
+    const restoreFolderBtn = document.getElementById("btn-restore-from-folder");
+    if (folderSection) folderSection.classList.remove("hidden");
+    if (restoreFolderBtn) restoreFolderBtn.classList.remove("hidden");
+    updateBackupFolderUI();
+  }
 }
 
 function convertToCSV(array, headers, mapper) {
@@ -600,7 +955,7 @@ function exportProspectsCSV() {
     ["ID", "First Name", "Last Name", "Email", "Phone", "Title", "LinkedIn", "Company ID", "Location", "City", "State", "Seniority", "Notes", "Tags", "History"],
     p => [p.id, p.firstName, p.lastName, p.email, p.phone || "", p.title || "", p.linkedin || "", p.companyId, p.location || "", p.city || "", p.state || "", p.seniority || "", p.notes || "", (p.tags || []).join(";"), p.history ? JSON.stringify(p.history) : ""]
   );
-  downloadCSVFile(`vantage_data_backup_prospects_${getBackupTimestamp()}.csv`, csv);
+  saveBackupFile(`vantage_data_backup_prospects_${getBackupTimestamp()}.csv`, csv);
 }
 
 function exportMediaCSV() {
@@ -625,7 +980,7 @@ function exportMediaCSV() {
       m.files ? JSON.stringify(m.files) : ""
     ]
   );
-  downloadCSVFile(`vantage_data_backup_media_${getBackupTimestamp()}.csv`, csv);
+  saveBackupFile(`vantage_data_backup_media_${getBackupTimestamp()}.csv`, csv);
 }
 
 function exportCampaignsCSV() {
@@ -633,15 +988,15 @@ function exportCampaignsCSV() {
     ["ID", "Title", "Sequence Media ID", "Launch Date", "Status", "Tags", "Audience List ID", "Intended Audience", "Goal Summary"],
     c => [c.id, c.title, c.sequenceMediaId, c.launchDate, c.status, (c.tags || []).join(";"), c.audienceListId || "", c.intendedAudience || "", c.goalSummary || ""]
   );
-  downloadCSVFile(`vantage_data_backup_campaigns_${getBackupTimestamp()}.csv`, csv);
+  saveBackupFile(`vantage_data_backup_campaigns_${getBackupTimestamp()}.csv`, csv);
 }
 
 function exportAudienceListsCSV() {
   const csv = convertToCSV(state.audienceLists || [],
-    ["ID", "Name", "Prospect IDs", "Status"],
-    al => [al.id, al.name, (al.prospectIds || []).join(";"), al.status || "active"]
+    ["ID", "Name", "Prospect IDs", "Status", "Notes"],
+    al => [al.id, al.name, (al.prospectIds || []).join(";"), al.status || "active", al.notes || ""]
   );
-  downloadCSVFile(`vantage_data_backup_audience_lists_${getBackupTimestamp()}.csv`, csv);
+  saveBackupFile(`vantage_data_backup_audience_lists_${getBackupTimestamp()}.csv`, csv);
 }
 
 function exportCompaniesCSV() {
@@ -669,7 +1024,23 @@ function exportCompaniesCSV() {
       (co.tags || []).join(";")
     ]
   );
-  downloadCSVFile(`vantage_data_backup_companies_${getBackupTimestamp()}.csv`, csv);
+  saveBackupFile(`vantage_data_backup_companies_${getBackupTimestamp()}.csv`, csv);
+}
+
+function exportEmailAccountsCSV() {
+  const csv = convertToCSV(state.emailAccounts || [],
+    ["ID", "Email", "Password", "Provider", "Dashboard URL", "Status", "Daily Send Limit", "Sending Domain", "Notes", "Date Added"],
+    a => [a.id, a.email, a.password || "", a.provider || "", a.dashboardUrl || "", a.status || "Active", a.dailyLimit || "", a.domain || "", a.notes || "", a.dateAdded || ""]
+  );
+  saveBackupFile(`vantage_data_backup_email_accounts_${getBackupTimestamp()}.csv`, csv);
+}
+
+function exportDomainsCSV() {
+  const csv = convertToCSV(state.domains || [],
+    ["ID", "URL", "Registrar", "Registrar Dashboard URL", "Host", "Host Dashboard URL", "IP", "User ID", "Password", "Annual Cost", "Expiration Date", "Status", "Auto-Renew", "DNS Health", "Linked Email Account IDs", "Notes", "Date Added"],
+    d => [d.id, d.url, d.registrar || "", d.registrarDashboardUrl || "", d.host || "", d.hostDashboardUrl || "", d.ip || "", d.userId || "", d.password || "", d.annualCost || "", d.expirationDate || "", d.status || "Active", d.autoRenew || "No", d.dnsHealth || "Not Configured", (d.linkedEmailAccountIds || []).join(";"), d.notes || "", d.dateAdded || ""]
+  );
+  saveBackupFile(`vantage_data_backup_domains_${getBackupTimestamp()}.csv`, csv);
 }
 
 // Exports whatever contacts are currently visible in the Prospect Hub table
@@ -754,6 +1125,22 @@ function generateSettingsCSV() {
   (state.campaignPhases || []).forEach(p => rows.push(["Campaign Phase", p]));
   state.company_tags.forEach(tg => rows.push(["Company Tag", tg]));
   state.reachoutTypes.forEach(t => rows.push(["Reachout Type", t]));
+  (state.emailProviders || []).forEach(p => rows.push(["Email Provider", p]));
+  (state.domainRegistrars || []).forEach(r => rows.push(["Domain Registrar", r]));
+  (state.domainHosts || []).forEach(h => rows.push(["Domain Host", h]));
+  // Default dashboard URL lookups (see buildRowWithUrl in renderSettingsLists)
+  // — stored as "Name=URL" so a single CSV row round-trips both fields.
+  // Split on the *first* "=" only when restoring, since URLs can contain
+  // their own "=" in query strings.
+  Object.entries(state.emailProviderDefaultUrls || {}).forEach(([name, url]) => {
+    if (url) rows.push(["Email Provider Default URL", `${name}=${url}`]);
+  });
+  Object.entries(state.domainRegistrarDefaultUrls || {}).forEach(([name, url]) => {
+    if (url) rows.push(["Domain Registrar Default URL", `${name}=${url}`]);
+  });
+  Object.entries(state.domainHostDefaultUrls || {}).forEach(([name, url]) => {
+    if (url) rows.push(["Domain Host Default URL", `${name}=${url}`]);
+  });
   if (state.customSortOrder && state.customSortOrder.length > 0) {
     rows.push(["Custom Sort Order", state.customSortOrder.join(";")]);
   }
@@ -763,7 +1150,7 @@ function generateSettingsCSV() {
 
 function exportSettingsCSV() {
   const csv = generateSettingsCSV();
-  downloadCSVFile(`vantage_data_backup_settings_${getBackupTimestamp()}.csv`, csv);
+  saveBackupFile(`vantage_data_backup_settings_${getBackupTimestamp()}.csv`, csv);
 }
 
 async function exportZIPBackup() {
@@ -802,8 +1189,8 @@ async function exportZIPBackup() {
   );
   
   const audienceListsCSV = convertToCSV(state.audienceLists || [],
-    ["ID", "Name", "Prospect IDs", "Status"],
-    al => [al.id, al.name, (al.prospectIds || []).join(";"), al.status || "active"]
+    ["ID", "Name", "Prospect IDs", "Status", "Notes"],
+    al => [al.id, al.name, (al.prospectIds || []).join(";"), al.status || "active", al.notes || ""]
   );
   
   const companiesCSV = convertToCSV(state.companies,
@@ -831,15 +1218,27 @@ async function exportZIPBackup() {
     ]
   );
   
+  const emailAccountsCSV = convertToCSV(state.emailAccounts || [],
+    ["ID", "Email", "Password", "Provider", "Dashboard URL", "Status", "Daily Send Limit", "Sending Domain", "Notes", "Date Added"],
+    a => [a.id, a.email, a.password || "", a.provider || "", a.dashboardUrl || "", a.status || "Active", a.dailyLimit || "", a.domain || "", a.notes || "", a.dateAdded || ""]
+  );
+
+  const domainsCSV = convertToCSV(state.domains || [],
+    ["ID", "URL", "Registrar", "Registrar Dashboard URL", "Host", "Host Dashboard URL", "IP", "User ID", "Password", "Annual Cost", "Expiration Date", "Status", "Auto-Renew", "DNS Health", "Linked Email Account IDs", "Notes", "Date Added"],
+    d => [d.id, d.url, d.registrar || "", d.registrarDashboardUrl || "", d.host || "", d.hostDashboardUrl || "", d.ip || "", d.userId || "", d.password || "", d.annualCost || "", d.expirationDate || "", d.status || "Active", d.autoRenew || "No", d.dnsHealth || "Not Configured", (d.linkedEmailAccountIds || []).join(";"), d.notes || "", d.dateAdded || ""]
+  );
+
   const settingsCSV = generateSettingsCSV();
-  
+
   zip.file("prm_prospects.csv", prospectsCSV);
   zip.file("prm_media_content.csv", mediaCSV);
   zip.file("prm_campaigns.csv", campaignsCSV);
   zip.file("prm_audience_lists.csv", audienceListsCSV);
   zip.file("prm_companies.csv", companiesCSV);
+  zip.file("prm_email_accounts.csv", emailAccountsCSV);
+  zip.file("prm_domains.csv", domainsCSV);
   zip.file("prm_settings.csv", settingsCSV);
-  
+
   const filesFolder = zip.folder("files");
   const fileIds = new Map();
   state.media.forEach(m => {
@@ -859,7 +1258,7 @@ async function exportZIPBackup() {
   }
   
   zip.generateAsync({type: "blob"}).then(function(content) {
-    downloadBlob(`vantage_data_backup_${getBackupTimestamp()}.zip`, content);
+    saveBackupFile(`vantage_data_backup_${getBackupTimestamp()}.zip`, content);
   });
 }
 
@@ -1080,7 +1479,8 @@ function restoreAudienceListsFromCSV(text) {
       id: obj["ID"] || obj["id"] || `aud-${Date.now()}-${i}`,
       name: obj["Name"] || obj["name"] || "Untitled Audience List",
       prospectIds: prospectIds,
-      status: obj["Status"] || obj["status"] || "active"
+      status: obj["Status"] || obj["status"] || "active",
+      notes: obj["Notes"] || obj["notes"] || ""
     });
   }
 }
@@ -1122,6 +1522,68 @@ function restoreCompaniesFromCSV(text) {
   }
 }
 
+function restoreEmailAccountsFromCSV(text) {
+  const rows = parseCSV(text);
+  if (rows.length <= 1) return;
+  state.emailAccounts = [];
+  const headers = rows[0];
+  for (let i = 1; i < rows.length; i++) {
+    const cols = rows[i];
+    if (cols.length === 0 || cols.every(c => !c.trim())) continue;
+    const obj = {};
+    headers.forEach((h, idx) => {
+      obj[h.trim()] = cols[idx]?.trim() || "";
+    });
+    state.emailAccounts.push({
+      id: obj["ID"] || obj["id"] || `ea-${Date.now()}-${i}`,
+      email: obj["Email"] || obj["email"] || "",
+      password: obj["Password"] || obj["password"] || "",
+      provider: obj["Provider"] || obj["provider"] || "",
+      dashboardUrl: obj["Dashboard URL"] || obj["dashboardurl"] || "",
+      status: obj["Status"] || obj["status"] || "Active",
+      dailyLimit: obj["Daily Send Limit"] || obj["dailysendlimit"] || "",
+      domain: obj["Sending Domain"] || obj["sendingdomain"] || "",
+      notes: obj["Notes"] || obj["notes"] || "",
+      dateAdded: obj["Date Added"] || obj["dateadded"] || new Date().toISOString().split("T")[0]
+    });
+  }
+}
+
+function restoreDomainsFromCSV(text) {
+  const rows = parseCSV(text);
+  if (rows.length <= 1) return;
+  state.domains = [];
+  const headers = rows[0];
+  for (let i = 1; i < rows.length; i++) {
+    const cols = rows[i];
+    if (cols.length === 0 || cols.every(c => !c.trim())) continue;
+    const obj = {};
+    headers.forEach((h, idx) => {
+      obj[h.trim()] = cols[idx]?.trim() || "";
+    });
+    const linkedIdsStr = obj["Linked Email Account IDs"] || obj["linkedemailaccountids"] || "";
+    state.domains.push({
+      id: obj["ID"] || obj["id"] || `dom-${Date.now()}-${i}`,
+      url: obj["URL"] || obj["url"] || "",
+      registrar: obj["Registrar"] || obj["registrar"] || "",
+      registrarDashboardUrl: obj["Registrar Dashboard URL"] || obj["registrardashboardurl"] || "",
+      host: obj["Host"] || obj["host"] || "",
+      hostDashboardUrl: obj["Host Dashboard URL"] || obj["hostdashboardurl"] || "",
+      ip: obj["IP"] || obj["ip"] || "",
+      userId: obj["User ID"] || obj["userid"] || "",
+      password: obj["Password"] || obj["password"] || "",
+      annualCost: obj["Annual Cost"] || obj["annualcost"] || "",
+      expirationDate: obj["Expiration Date"] || obj["expirationdate"] || "",
+      status: obj["Status"] || obj["status"] || "Active",
+      autoRenew: obj["Auto-Renew"] || obj["autorenew"] || "No",
+      dnsHealth: obj["DNS Health"] || obj["dnshealth"] || "Not Configured",
+      linkedEmailAccountIds: linkedIdsStr ? linkedIdsStr.split(";").map(t => t.trim()).filter(Boolean) : [],
+      notes: obj["Notes"] || obj["notes"] || "",
+      dateAdded: obj["Date Added"] || obj["dateadded"] || new Date().toISOString().split("T")[0]
+    });
+  }
+}
+
 function restoreSettingsFromCSV(text) {
   const rows = parseCSV(text);
   if (rows.length <= 1) return;
@@ -1135,6 +1597,12 @@ function restoreSettingsFromCSV(text) {
   const campaignPhases = [];
   const company_tags = [];
   const reachoutTypes = [];
+  const emailProviders = [];
+  const domainRegistrars = [];
+  const domainHosts = [];
+  const emailProviderDefaultUrls = {};
+  const domainRegistrarDefaultUrls = {};
+  const domainHostDefaultUrls = {};
 
   let sawMediaTypes = false;
   let sawDevelopmentPhases = false;
@@ -1145,7 +1613,13 @@ function restoreSettingsFromCSV(text) {
   let sawCampaignPhases = false;
   let sawCompanyTags = false;
   let sawReachoutTypes = false;
-  
+  let sawEmailProviders = false;
+  let sawDomainRegistrars = false;
+  let sawDomainHosts = false;
+  let sawEmailProviderDefaultUrls = false;
+  let sawDomainRegistrarDefaultUrls = false;
+  let sawDomainHostDefaultUrls = false;
+
   const headers = rows[0];
   let typeIdx = 0;
   let valIdx = 1;
@@ -1191,11 +1665,38 @@ function restoreSettingsFromCSV(text) {
     } else if (typeLower === "reachout type") {
       sawReachoutTypes = true;
       if (val) reachoutTypes.push(val);
+    } else if (typeLower === "email provider") {
+      sawEmailProviders = true;
+      if (val) emailProviders.push(val);
+    } else if (typeLower === "domain registrar") {
+      sawDomainRegistrars = true;
+      if (val) domainRegistrars.push(val);
+    } else if (typeLower === "domain host") {
+      sawDomainHosts = true;
+      if (val) domainHosts.push(val);
+    } else if (typeLower === "email provider default url" || typeLower === "domain registrar default url" || typeLower === "domain host default url") {
+      // "Name=URL" — split on the *first* "=" only, since URLs can contain
+      // their own "=" in query strings.
+      const eqIdx = val.indexOf("=");
+      if (eqIdx > -1) {
+        const name = val.slice(0, eqIdx);
+        const url = val.slice(eqIdx + 1);
+        if (typeLower === "email provider default url") {
+          sawEmailProviderDefaultUrls = true;
+          emailProviderDefaultUrls[name] = url;
+        } else if (typeLower === "domain registrar default url") {
+          sawDomainRegistrarDefaultUrls = true;
+          domainRegistrarDefaultUrls[name] = url;
+        } else {
+          sawDomainHostDefaultUrls = true;
+          domainHostDefaultUrls[name] = url;
+        }
+      }
     } else if (typeLower === "custom sort order") {
       state.customSortOrder = val ? val.split(";").map(id => id.trim()).filter(Boolean) : [];
     }
   }
-  
+
   if (sawMediaTypes) state.mediaTypes = mediaTypes;
   if (sawDevelopmentPhases) state.developmentPhases = developmentPhases;
   if (sawPlatforms) state.platforms = platforms;
@@ -1205,13 +1706,27 @@ function restoreSettingsFromCSV(text) {
   if (sawCampaignPhases) state.campaignPhases = campaignPhases;
   if (sawCompanyTags) state.company_tags = company_tags;
   if (sawReachoutTypes) state.reachoutTypes = reachoutTypes;
+  if (sawEmailProviders) state.emailProviders = emailProviders;
+  if (sawDomainRegistrars) state.domainRegistrars = domainRegistrars;
+  if (sawDomainHosts) state.domainHosts = domainHosts;
+  if (sawEmailProviderDefaultUrls) state.emailProviderDefaultUrls = emailProviderDefaultUrls;
+  if (sawDomainRegistrarDefaultUrls) state.domainRegistrarDefaultUrls = domainRegistrarDefaultUrls;
+  if (sawDomainHostDefaultUrls) state.domainHostDefaultUrls = domainHostDefaultUrls;
 }
 
 function handleRestoreFile(e) {
   const file = e.target.files[0];
   if (!file) return;
+  processRestoreFile(file, e.target);
+}
+
+// Shared restore engine — accepts a raw File object from either the
+// drag-and-drop/<input type=file> path or the File System Access folder
+// picker path. resetInputEl (optional) is cleared after a successful
+// restore; only applies to the <input> path.
+function processRestoreFile(file, resetInputEl) {
   const fileName = file.name.toLowerCase();
-  
+
   if (fileName.endsWith(".zip")) {
     const reader = new FileReader();
     reader.onload = function(evt) {
@@ -1253,13 +1768,27 @@ function handleRestoreFile(e) {
           restoredModules.push("Companies 🏢");
         }
         
+        const emailAccountsFile = findFileInZip(zip, "prm_email_accounts.csv") || findFileInZip(zip, "email_accounts.csv");
+        if (emailAccountsFile) {
+          const text = await emailAccountsFile.async("string");
+          restoreEmailAccountsFromCSV(text);
+          restoredModules.push("Email Accounts 📧");
+        }
+
+        const domainsFile = findFileInZip(zip, "prm_domains.csv") || findFileInZip(zip, "domains.csv");
+        if (domainsFile) {
+          const text = await domainsFile.async("string");
+          restoreDomainsFromCSV(text);
+          restoredModules.push("Domain Management 🌐");
+        }
+
         const settingsFile = findFileInZip(zip, "settings.csv");
         if (settingsFile) {
           const text = await settingsFile.async("string");
           restoreSettingsFromCSV(text);
           restoredModules.push("Media Hub Settings ⚙️");
         }
-        
+
         const filesFolder = zip.folder("files");
         if (filesFolder) {
           const filePromises = [];
@@ -1276,7 +1805,7 @@ function handleRestoreFile(e) {
           ensureStateDefaults();
           saveState();
           alert(`Successfully cleared and restored tables from ZIP:\n- ${restoredModules.join("\n- ")}`);
-          e.target.value = "";
+          if (resetInputEl) resetInputEl.value = "";
           renderApp();
         } else {
           alert("No compatible CSV tables found inside the ZIP file.");
@@ -1307,18 +1836,24 @@ function handleRestoreFile(e) {
       } else if (fileName.includes("compan")) {
         restoreCompaniesFromCSV(text);
         restoredName = "Companies 🏢";
+      } else if (fileName.includes("email")) {
+        restoreEmailAccountsFromCSV(text);
+        restoredName = "Email Accounts 📧";
+      } else if (fileName.includes("domain")) {
+        restoreDomainsFromCSV(text);
+        restoredName = "Domain Management 🌐";
       } else if (fileName.includes("setting")) {
         restoreSettingsFromCSV(text);
         restoredName = "Media Hub Settings ⚙️";
       } else {
-        alert("Unable to detect target table from CSV filename. Name file 'prospects.csv', 'media.csv', 'campaigns.csv', 'audience_lists.csv', 'companies.csv', or 'settings.csv'.");
+        alert("Unable to detect target table from CSV filename. Name file 'prospects.csv', 'media.csv', 'campaigns.csv', 'audience_lists.csv', 'companies.csv', 'email_accounts.csv', 'domains.csv', or 'settings.csv'.");
         return;
       }
       
       ensureStateDefaults();
       saveState();
       alert(`Successfully cleared and restored table: ${restoredName}`);
-      e.target.value = "";
+      if (resetInputEl) resetInputEl.value = "";
       renderApp();
     };
     reader.readAsText(file);
@@ -1355,18 +1890,24 @@ function handleRestoreFile(e) {
         } else if (fileName.includes("compan")) {
           restoreCompaniesFromCSV(csvText);
           restoredName = "Companies 🏢";
+        } else if (fileName.includes("email")) {
+          restoreEmailAccountsFromCSV(csvText);
+          restoredName = "Email Accounts 📧";
+        } else if (fileName.includes("domain")) {
+          restoreDomainsFromCSV(csvText);
+          restoredName = "Domain Management 🌐";
         } else if (fileName.includes("setting")) {
           restoreSettingsFromCSV(csvText);
           restoredName = "Media Hub Settings ⚙️";
         } else {
-          alert("Unable to detect target table from Excel filename. Name file 'prospects.xlsx', 'media.xlsx', 'campaigns.xlsx', 'audience_lists.xlsx', 'companies.xlsx', or 'settings.xlsx'.");
+          alert("Unable to detect target table from Excel filename. Name file 'prospects.xlsx', 'media.xlsx', 'campaigns.xlsx', 'audience_lists.xlsx', 'companies.xlsx', 'email_accounts.xlsx', 'domains.xlsx', or 'settings.xlsx'.");
           return;
         }
         
         ensureStateDefaults();
         saveState();
         alert(`Successfully cleared and restored table: ${restoredName}`);
-        e.target.value = "";
+        if (resetInputEl) resetInputEl.value = "";
         renderApp();
       } catch(err) {
         alert("Error parsing Excel restore file: " + err.message);
@@ -2391,8 +2932,13 @@ function saveCurrentOrderAsCustom() {
 }
 
 function renderMediaView() {
-  // Synchronize status filter buttons active classes
-  document.querySelectorAll(".media-status-filter").forEach(btn => {
+  // Synchronize status filter buttons active classes. Scoped to the Media
+  // Hub's own status bar (#media-status-filters-bar) rather than a bare
+  // ".media-status-filter" query — that class is reused as generic pill-
+  // button styling by Campaign Hub's sub-tabs, Email Accounts, and Domain
+  // Management, and a document-wide query here would clobber their
+  // independent active-state tracking too.
+  document.querySelectorAll("#media-status-filters-bar .media-status-filter").forEach(btn => {
     if (btn.getAttribute("data-status") === state.activeMediaFilterStatus) {
       btn.classList.add("active-filter");
     } else {
@@ -2623,20 +3169,10 @@ function renderMediaView() {
       const fileBadge = fileCount > 0 ? `<span class="media-file-badge" style="font-size: 9px; padding: 2px 6px; border-radius: var(--border-radius-sm);">📎 ${fileCount} file${fileCount > 1 ? 's' : ''}</span>` : '';
       const tagBadges = (m.media_tags || []).map(t => `<span class="tag-badge">${escapeHTML(t)}</span>`).join("");
 
-      // Status indicator icons
-      const statusIcons = { 
-        "Priority": "🌟 Priority", 
-        "Idea": "💡 Idea", 
-        "Draft": "📝 Draft", 
-        "In Review": "🔍 In Review", 
-        "Finished": "✅ Finished", 
-        "Published": "📢 Published",
-        "Archive": "📦 Archive"
-      };
-
       const statusOptionsHtml = state.developmentPhases.map(p => {
         const selected = (p === m.status) ? "selected" : "";
-        return `<option value="${p}" ${selected}>${statusIcons[p] || p}</option>`;
+        const icon = getDevelopmentPhaseIcon(p);
+        return `<option value="${p}" ${selected}>${icon ? icon + " " : ""}${p}</option>`;
       }).join("");
 
       let displayPlatform = m.platform || "Unassigned";
@@ -4075,11 +4611,25 @@ function clearCampaignsFilters() {
    🎯 RENDER VIEW: CAMPAIGN MANAGER
    ========================================================================== */
 
-let campaignViewSubState = "dashboard"; // "dashboard" or "query" or "audiences"
+let campaignViewSubState = "dashboard"; // "dashboard" or "query" or "audiences" or "emailAccounts"
 let activeCampaignFilterPhase = "all";
 let activeCampaignFilterTags = [];
 let selectedAudienceListId = null;
 let audienceListStatusFilter = "active"; // "active" or "archived"
+
+// Email Accounts (Campaign Hub sub-tab)
+let activeEmailAccountFilterStatus = "all";
+let activeEmailAccountFilterProvider = "all";
+let editingEmailAccountId = null;
+let visibleEmailAccountPasswordIds = new Set(); // ids currently toggled to plaintext
+
+// Domain Management (Campaign Hub sub-tab)
+let activeDomainFilterStatus = "all";
+let activeDomainFilterRegistrar = "all";
+let editingDomainId = null;
+let visibleDomainPasswordIds = new Set(); // ids currently toggled to plaintext
+let currentDomainLinkedEmailAccountIds = []; // working selection while the modal is open
+
 let viewingCampaignDetailId = null;
 let editingCampaignId = null;
 let pendingAudienceImport = null; // { matchedIds: [], unresolvedRows: [] } while the import modal is open
@@ -4121,44 +4671,734 @@ function renameAudienceTagOnProspects(prospectIds, oldName, newName) {
 function switchCampaignSubTab(tab) {
   const cBtn = document.getElementById("subtab-campaigns");
   const aBtn = document.getElementById("subtab-audiences");
+  const eBtn = document.getElementById("subtab-emailaccounts");
+  const dBtn = document.getElementById("subtab-domains");
   const dash = document.getElementById("campaign-dashboard-view");
   const auds = document.getElementById("audience-lists-view");
+  const emailView = document.getElementById("email-accounts-view");
+  const domainView = document.getElementById("domain-management-view");
   const queryView = document.getElementById("campaign-query-view");
-  
+
+  // Top action bar buttons that only make sense on some sub-tabs
+  const createCampaignBtn = document.getElementById("btn-open-create-campaign");
+  const queryEngineBtn = document.getElementById("btn-launch-standalone-query");
+  const addEmailAccountBtn = document.getElementById("btn-add-email-account");
+  const addDomainBtn = document.getElementById("btn-add-domain");
+
+  cBtn?.classList.remove("active-filter");
+  aBtn?.classList.remove("active-filter");
+  eBtn?.classList.remove("active-filter");
+  dBtn?.classList.remove("active-filter");
+  dash?.classList.add("hidden");
+  auds?.classList.add("hidden");
+  emailView?.classList.add("hidden");
+  domainView?.classList.add("hidden");
+  queryView?.classList.add("hidden");
+  createCampaignBtn?.classList.add("hidden");
+  queryEngineBtn?.classList.add("hidden");
+  addEmailAccountBtn?.classList.add("hidden");
+  addDomainBtn?.classList.add("hidden");
+
   if (tab === "campaigns") {
     cBtn?.classList.add("active-filter");
-    aBtn?.classList.remove("active-filter");
     dash?.classList.remove("hidden");
-    auds?.classList.add("hidden");
-    queryView?.classList.add("hidden");
+    createCampaignBtn?.classList.remove("hidden");
+    queryEngineBtn?.classList.remove("hidden");
     campaignViewSubState = "dashboard";
     renderCampaignDashboard();
   } else if (tab === "audiences") {
-    cBtn?.classList.remove("active-filter");
     aBtn?.classList.add("active-filter");
-    dash?.classList.add("hidden");
     auds?.classList.remove("hidden");
-    queryView?.classList.add("hidden");
     campaignViewSubState = "audiences";
     renderAudienceListsView();
+  } else if (tab === "emailAccounts") {
+    eBtn?.classList.add("active-filter");
+    emailView?.classList.remove("hidden");
+    addEmailAccountBtn?.classList.remove("hidden");
+    campaignViewSubState = "emailAccounts";
+    renderEmailAccountsView();
+  } else if (tab === "domains") {
+    dBtn?.classList.add("active-filter");
+    domainView?.classList.remove("hidden");
+    addDomainBtn?.classList.remove("hidden");
+    campaignViewSubState = "domains";
+    renderDomainManagementView();
   }
 }
 
 function renderCampaignsView() {
   const dash = document.getElementById("campaign-dashboard-view");
   const auds = document.getElementById("audience-lists-view");
+  const emailView = document.getElementById("email-accounts-view");
+  const domainView = document.getElementById("domain-management-view");
   const queryView = document.getElementById("campaign-query-view");
 
   if (campaignViewSubState === "query") {
     dash?.classList.add("hidden");
     auds?.classList.add("hidden");
+    emailView?.classList.add("hidden");
+    domainView?.classList.add("hidden");
     queryView?.classList.remove("hidden");
     renderCampaignQueryView();
   } else if (campaignViewSubState === "audiences") {
     switchCampaignSubTab("audiences");
+  } else if (campaignViewSubState === "emailAccounts") {
+    switchCampaignSubTab("emailAccounts");
+  } else if (campaignViewSubState === "domains") {
+    switchCampaignSubTab("domains");
   } else {
     switchCampaignSubTab("campaigns");
   }
+}
+
+// Click-and-drag column resizing for a <table>. Adds a thin drag handle to
+// the right edge of every header cell except the last. The last column is
+// expected to be an empty trailing spacer <th> in the markup (no text, no
+// width) — it's deliberately left with no pixel width so table-layout:fixed
+// hands it 100% of whatever space the other columns don't use. That way
+// shrinking a column doesn't stretch its neighbors to fill the container;
+// the leftover space collects harmlessly at the end instead, and real
+// columns (including Actions) can sit snug next to each other.
+// Only needs to run once per table — the <thead> is static markup that
+// isn't rebuilt on re-render, so widths set here survive subsequent calls
+// to whatever render function repopulates <tbody>.
+function makeTableColumnsResizable(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table || table.dataset.resizableInit) return;
+  table.dataset.resizableInit = "true";
+
+  const headerCells = Array.from(table.querySelectorAll("thead th"));
+  const lastIdx = headerCells.length - 1;
+  // Capture each real column's current rendered width before switching to
+  // table-layout:fixed, so turning on resizing doesn't itself jump/reflow
+  // the columns the user already sees. The trailing spacer column is
+  // excluded — it must stay width-less to act as the flexible filler.
+  const startWidths = headerCells.map(th => th.offsetWidth);
+
+  table.classList.add("col-resizable-table");
+  headerCells.forEach((th, idx) => {
+    if (idx === lastIdx) return; // leave the spacer column flexible
+    th.style.width = startWidths[idx] + "px";
+  });
+
+  headerCells.forEach((th, idx) => {
+    if (idx === lastIdx) return; // no handle on the trailing spacer column
+
+    const handle = document.createElement("div");
+    handle.className = "col-resize-handle";
+    th.appendChild(handle);
+
+    let startX = 0;
+    let startWidth = 0;
+
+    const onMouseMove = (e) => {
+      const newWidth = Math.max(60, startWidth + (e.clientX - startX));
+      th.style.width = newWidth + "px";
+    };
+
+    const onMouseUp = () => {
+      handle.classList.remove("resizing");
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    handle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation(); // don't let the drag bubble up into row-click handlers
+      startX = e.clientX;
+      startWidth = th.offsetWidth;
+      handle.classList.add("resizing");
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+  });
+}
+
+/* ==========================================================================
+   📧 CAMPAIGN HUB: EMAIL ACCOUNTS MANAGER
+   (independent mini-database of sending accounts used with Smart Leads)
+   ========================================================================== */
+
+function renderEmailAccountsView() {
+  // Set up once the view is actually visible — offsetWidth reads 0 while
+  // the panel's ancestor still has the "hidden" (display:none) class, which
+  // would lock every column's captured starting width to zero.
+  makeTableColumnsResizable("email-accounts-table");
+
+  // Status Filter Row (fixed set)
+  const statusRow = document.getElementById("email-account-status-filters-bar");
+  if (statusRow) {
+    const statuses = ["Active", "Warming", "Paused", "Banned"];
+    let statusHtml = `<button class="media-status-filter ${activeEmailAccountFilterStatus === 'all' ? 'active-filter' : ''}" data-status="all">All Statuses</button>`;
+    statuses.forEach(s => {
+      statusHtml += `<button class="media-status-filter ${activeEmailAccountFilterStatus === s ? 'active-filter' : ''}" data-status="${s}">${getEmailAccountStatusIcon(s)} ${s}</button>`;
+    });
+    statusRow.innerHTML = statusHtml;
+    statusRow.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        activeEmailAccountFilterStatus = btn.getAttribute("data-status");
+        renderEmailAccountsView();
+      });
+    });
+  }
+
+  // Provider Filter Row (dynamic, from state.emailProviders)
+  const providerRow = document.getElementById("email-account-provider-filters-bar");
+  if (providerRow) {
+    let providerHtml = `<button class="media-status-filter ${activeEmailAccountFilterProvider === 'all' ? 'active-filter' : ''}" data-provider="all">All Providers</button>`;
+    (state.emailProviders || []).forEach(p => {
+      providerHtml += `<button class="media-status-filter ${activeEmailAccountFilterProvider === p ? 'active-filter' : ''}" data-provider="${escapeHTML(p)}">${escapeHTML(p)}</button>`;
+    });
+    providerRow.innerHTML = providerHtml;
+    providerRow.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        activeEmailAccountFilterProvider = btn.getAttribute("data-provider");
+        renderEmailAccountsView();
+      });
+    });
+  }
+
+  const query = (document.getElementById("email-account-search")?.value || "").toLowerCase().trim();
+  const tableBody = document.getElementById("email-accounts-table-body");
+  if (!tableBody) return;
+
+  let filtered = (state.emailAccounts || []).filter(a => {
+    if (activeEmailAccountFilterStatus !== "all" && (a.status || "Active") !== activeEmailAccountFilterStatus) return false;
+    if (activeEmailAccountFilterProvider !== "all" && (a.provider || "") !== activeEmailAccountFilterProvider) return false;
+    if (query) {
+      const haystack = [a.email, a.provider, a.domain, a.notes].filter(Boolean).join(" ").toLowerCase();
+      if (!haystack.includes(query)) return false;
+    }
+    return true;
+  });
+
+  const sortBy = document.getElementById("email-account-sort-by")?.value || "none";
+  if (sortBy === "email-asc") {
+    filtered.sort((a, b) => (a.email || "").toLowerCase().localeCompare((b.email || "").toLowerCase()));
+  } else if (sortBy === "email-desc") {
+    filtered.sort((a, b) => (b.email || "").toLowerCase().localeCompare((a.email || "").toLowerCase()));
+  } else if (sortBy === "provider-asc") {
+    filtered.sort((a, b) => (a.provider || "").toLowerCase().localeCompare((b.provider || "").toLowerCase()));
+  } else if (sortBy === "status") {
+    filtered.sort((a, b) => (a.status || "").toLowerCase().localeCompare((b.status || "").toLowerCase()));
+  } else if (sortBy === "limit-desc") {
+    filtered.sort((a, b) => (Number(b.dailyLimit) || 0) - (Number(a.dailyLimit) || 0));
+  } else if (sortBy === "date-added-desc") {
+    filtered.sort((a, b) => new Date(b.dateAdded || 0) - new Date(a.dateAdded || 0));
+  } else if (sortBy === "date-added-asc") {
+    filtered.sort((a, b) => new Date(a.dateAdded || 0) - new Date(b.dateAdded || 0));
+  }
+
+  tableBody.innerHTML = "";
+
+  if (filtered.length === 0) {
+    tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--color-text-muted);">No email accounts match this filter. Click "+ Add Email Account" to create one.</td></tr>`;
+    return;
+  }
+
+  filtered.forEach(a => {
+    const tr = document.createElement("tr");
+    const isRevealed = visibleEmailAccountPasswordIds.has(a.id);
+    const maskedPassword = a.password ? "•".repeat(Math.min(a.password.length, 10)) : "—";
+    const statusBadge = `${getEmailAccountStatusIcon(a.status || "Active")} ${a.status || "Active"}`;
+    const dashboardCell = a.dashboardUrl
+      ? `<a href="${escapeHTML(ensureUrlProtocol(a.dashboardUrl))}" target="_blank" rel="noopener" title="Open dashboard" style="text-decoration:none;">🔗</a>`
+      : `<span style="color:var(--color-text-muted);">—</span>`;
+
+    tr.innerHTML = `
+      <td>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <strong class="ea-email-edit-trig" style="cursor:pointer;" title="Click to edit this record">${escapeHTML(a.email || "Untitled Account")}</strong>
+          ${a.email ? `<button type="button" class="text-btn btn-ea-copy-email" title="Copy email address" style="padding:2px 4px;">📋</button>` : ""}
+        </div>
+      </td>
+      <td>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span class="ea-password-display" style="font-family: monospace; font-size:12px;">${a.password ? (isRevealed ? escapeHTML(a.password) : maskedPassword) : "—"}</span>
+          ${a.password ? `
+            <button type="button" class="text-btn btn-ea-toggle-pw" title="${isRevealed ? "Hide" : "Show"} password" style="padding:2px 4px;">${isRevealed ? "🙈" : "👁️"}</button>
+            <button type="button" class="text-btn btn-ea-copy-pw" title="Copy password" style="padding:2px 4px;">📋</button>
+          ` : ""}
+        </div>
+      </td>
+      <td>${escapeHTML(a.provider || "—")}</td>
+      <td>${statusBadge}</td>
+      <td style="text-align:center;">${dashboardCell}</td>
+      <td style="text-align:right;">
+        <button type="button" class="text-btn btn-ea-edit" style="margin-right:8px;">✏️ Edit</button>
+        <button type="button" class="text-btn btn-ea-delete-row" style="color:var(--color-danger);">🗑️</button>
+      </td>
+      <td></td>
+    `;
+
+    if (a.email) {
+      tr.querySelector(".btn-ea-copy-email").addEventListener("click", () => {
+        navigator.clipboard.writeText(a.email).then(() => {
+          alert("Email address copied to clipboard.");
+        }).catch(() => {
+          alert("Couldn't copy to clipboard — your browser may have blocked it.");
+        });
+      });
+    }
+
+    if (a.password) {
+      tr.querySelector(".btn-ea-toggle-pw").addEventListener("click", () => {
+        if (visibleEmailAccountPasswordIds.has(a.id)) {
+          visibleEmailAccountPasswordIds.delete(a.id);
+        } else {
+          visibleEmailAccountPasswordIds.add(a.id);
+        }
+        renderEmailAccountsView();
+      });
+      tr.querySelector(".btn-ea-copy-pw").addEventListener("click", () => {
+        navigator.clipboard.writeText(a.password).then(() => {
+          alert("Password copied to clipboard.");
+        }).catch(() => {
+          alert("Couldn't copy to clipboard — your browser may have blocked it.");
+        });
+      });
+    }
+
+    tr.querySelector(".ea-email-edit-trig").addEventListener("click", () => openEmailAccountModal(a.id));
+    tr.querySelector(".btn-ea-edit").addEventListener("click", () => openEmailAccountModal(a.id));
+    tr.querySelector(".btn-ea-delete-row").addEventListener("click", () => deleteEmailAccount(a.id));
+
+    tableBody.appendChild(tr);
+  });
+}
+
+function openEmailAccountModal(id = null) {
+  const modal = document.getElementById("modal-email-account");
+  const title = document.getElementById("email-account-modal-title");
+  const deleteBtn = document.getElementById("btn-ea-delete");
+
+  editingEmailAccountId = id;
+
+  const providerSelect = document.getElementById("ea-provider");
+  providerSelect.innerHTML = (state.emailProviders || []).map(p => `<option value="${escapeHTML(p)}">${escapeHTML(p)}</option>`).join("");
+
+  document.getElementById("ea-password").type = "password";
+  document.getElementById("btn-ea-toggle-password").textContent = "👁️";
+
+  if (id) {
+    title.textContent = "Edit Email Account";
+    deleteBtn.classList.remove("hidden");
+    const a = state.emailAccounts.find(x => x.id === id);
+    if (a) {
+      document.getElementById("ea-email").value = a.email || "";
+      document.getElementById("ea-password").value = a.password || "";
+      providerSelect.value = a.provider || (state.emailProviders[0] || "");
+      document.getElementById("ea-status").value = a.status || "Active";
+      document.getElementById("ea-dashboard-url").value = a.dashboardUrl || "";
+      document.getElementById("ea-daily-limit").value = a.dailyLimit || "";
+      document.getElementById("ea-domain").value = a.domain || "";
+      document.getElementById("ea-notes").value = a.notes || "";
+    }
+  } else {
+    title.textContent = "Add Email Account";
+    deleteBtn.classList.add("hidden");
+    document.getElementById("ea-email").value = "";
+    document.getElementById("ea-password").value = "";
+    providerSelect.value = state.emailProviders[0] || "";
+    document.getElementById("ea-status").value = "Active";
+    // Pre-fill the dashboard URL from the default Provider selection, same
+    // as if the user had just picked it from the dropdown.
+    document.getElementById("ea-dashboard-url").value = state.emailProviderDefaultUrls[providerSelect.value] || "";
+    document.getElementById("ea-daily-limit").value = "";
+    document.getElementById("ea-domain").value = "";
+    document.getElementById("ea-notes").value = "";
+  }
+
+  modal.classList.remove("hidden");
+}
+
+function saveEmailAccountModal() {
+  const email = document.getElementById("ea-email").value.trim();
+  const password = document.getElementById("ea-password").value;
+  const provider = document.getElementById("ea-provider").value;
+  const status = document.getElementById("ea-status").value;
+  const dashboardUrl = document.getElementById("ea-dashboard-url").value.trim();
+  const dailyLimit = document.getElementById("ea-daily-limit").value.trim();
+  const domain = document.getElementById("ea-domain").value.trim();
+  const notes = document.getElementById("ea-notes").value.trim();
+
+  if (!email) {
+    alert("Email Address is required!");
+    return;
+  }
+
+  if (editingEmailAccountId) {
+    const a = state.emailAccounts.find(x => x.id === editingEmailAccountId);
+    if (a) {
+      a.email = email;
+      a.password = password;
+      a.provider = provider;
+      a.status = status;
+      a.dashboardUrl = dashboardUrl;
+      a.dailyLimit = dailyLimit;
+      a.domain = domain;
+      a.notes = notes;
+    }
+  } else {
+    state.emailAccounts.push({
+      id: `ea-${Date.now()}`,
+      email,
+      password,
+      provider,
+      status,
+      dashboardUrl,
+      dailyLimit,
+      domain,
+      notes,
+      dateAdded: new Date().toISOString().split("T")[0]
+    });
+  }
+
+  saveState();
+  document.getElementById("modal-email-account").classList.add("hidden");
+  renderEmailAccountsView();
+}
+
+function deleteEmailAccount(id) {
+  const a = state.emailAccounts.find(x => x.id === id);
+  if (!a) return;
+  const ok = confirm(`Permanently delete email account "${a.email}"? This cannot be undone.`);
+  if (!ok) return;
+  state.emailAccounts = state.emailAccounts.filter(x => x.id !== id);
+  visibleEmailAccountPasswordIds.delete(id);
+  // Referential integrity: drop this account from any Domain's linked list
+  (state.domains || []).forEach(d => {
+    if (d.linkedEmailAccountIds) {
+      d.linkedEmailAccountIds = d.linkedEmailAccountIds.filter(eid => eid !== id);
+    }
+  });
+  saveState();
+  document.getElementById("modal-email-account").classList.add("hidden");
+  renderEmailAccountsView();
+}
+
+/* ==========================================================================
+   🌐 CAMPAIGN HUB: DOMAIN MANAGEMENT
+   (independent mini-database of domains used with Smart Leads sending)
+   ========================================================================== */
+
+function renderDomainManagementView() {
+  // Set up once the view is actually visible — see the matching note on
+  // renderEmailAccountsView() for why this can't run while still hidden.
+  makeTableColumnsResizable("domains-table");
+
+  // Status Filter Row (fixed set)
+  const statusRow = document.getElementById("domain-status-filters-bar");
+  if (statusRow) {
+    const statuses = ["Active", "Expiring Soon", "Expired", "Parked"];
+    let statusHtml = `<button class="media-status-filter ${activeDomainFilterStatus === 'all' ? 'active-filter' : ''}" data-status="all">All Statuses</button>`;
+    statuses.forEach(s => {
+      statusHtml += `<button class="media-status-filter ${activeDomainFilterStatus === s ? 'active-filter' : ''}" data-status="${s}">${getDomainStatusIcon(s)} ${s}</button>`;
+    });
+    statusRow.innerHTML = statusHtml;
+    statusRow.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        activeDomainFilterStatus = btn.getAttribute("data-status");
+        renderDomainManagementView();
+      });
+    });
+  }
+
+  // Registrar Filter Row (dynamic, from state.domainRegistrars)
+  const registrarRow = document.getElementById("domain-registrar-filters-bar");
+  if (registrarRow) {
+    let registrarHtml = `<button class="media-status-filter ${activeDomainFilterRegistrar === 'all' ? 'active-filter' : ''}" data-registrar="all">All Registrars</button>`;
+    (state.domainRegistrars || []).forEach(r => {
+      registrarHtml += `<button class="media-status-filter ${activeDomainFilterRegistrar === r ? 'active-filter' : ''}" data-registrar="${escapeHTML(r)}">${escapeHTML(r)}</button>`;
+    });
+    registrarRow.innerHTML = registrarHtml;
+    registrarRow.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        activeDomainFilterRegistrar = btn.getAttribute("data-registrar");
+        renderDomainManagementView();
+      });
+    });
+  }
+
+  const query = (document.getElementById("domain-search")?.value || "").toLowerCase().trim();
+  const tableBody = document.getElementById("domains-table-body");
+  if (!tableBody) return;
+
+  let filtered = (state.domains || []).filter(d => {
+    if (activeDomainFilterStatus !== "all" && (d.status || "Active") !== activeDomainFilterStatus) return false;
+    if (activeDomainFilterRegistrar !== "all" && (d.registrar || "") !== activeDomainFilterRegistrar) return false;
+    if (query) {
+      const haystack = [d.url, d.registrar, d.host, d.ip, d.userId, d.notes].filter(Boolean).join(" ").toLowerCase();
+      if (!haystack.includes(query)) return false;
+    }
+    return true;
+  });
+
+  const sortBy = document.getElementById("domain-sort-by")?.value || "none";
+  if (sortBy === "url-asc") {
+    filtered.sort((a, b) => (a.url || "").toLowerCase().localeCompare((b.url || "").toLowerCase()));
+  } else if (sortBy === "url-desc") {
+    filtered.sort((a, b) => (b.url || "").toLowerCase().localeCompare((a.url || "").toLowerCase()));
+  } else if (sortBy === "registrar-asc") {
+    filtered.sort((a, b) => (a.registrar || "").toLowerCase().localeCompare((b.registrar || "").toLowerCase()));
+  } else if (sortBy === "status") {
+    filtered.sort((a, b) => (a.status || "").toLowerCase().localeCompare((b.status || "").toLowerCase()));
+  } else if (sortBy === "expiration-asc") {
+    filtered.sort((a, b) => new Date(a.expirationDate || "9999-12-31") - new Date(b.expirationDate || "9999-12-31"));
+  } else if (sortBy === "expiration-desc") {
+    filtered.sort((a, b) => new Date(b.expirationDate || "0001-01-01") - new Date(a.expirationDate || "0001-01-01"));
+  } else if (sortBy === "cost-desc") {
+    filtered.sort((a, b) => (Number(b.annualCost) || 0) - (Number(a.annualCost) || 0));
+  } else if (sortBy === "date-added-desc") {
+    filtered.sort((a, b) => new Date(b.dateAdded || 0) - new Date(a.dateAdded || 0));
+  }
+
+  tableBody.innerHTML = "";
+
+  if (filtered.length === 0) {
+    tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--color-text-muted);">No domains match this filter. Click "+ Add Domain" to create one.</td></tr>`;
+    return;
+  }
+
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+
+  filtered.forEach(d => {
+    const tr = document.createElement("tr");
+    const statusBadge = `${getDomainStatusIcon(d.status || "Active")} ${d.status || "Active"}`;
+
+    // Highlight the expiration cell independent of the manually-set Status
+    // field, so a stale status doesn't hide an approaching renewal.
+    let expirationColor = "inherit";
+    let expirationSuffix = "";
+    if (d.expirationDate) {
+      const expDate = new Date(d.expirationDate);
+      const daysUntil = Math.round((expDate - now) / (1000 * 60 * 60 * 24));
+      if (daysUntil < 0) {
+        expirationColor = "var(--color-danger)";
+        expirationSuffix = ` (expired)`;
+      } else if (daysUntil <= 30) {
+        expirationColor = "#f59e0b";
+        expirationSuffix = ` (${daysUntil}d)`;
+      }
+    }
+
+    const registrarLinkBtn = d.registrarDashboardUrl
+      ? `<a href="${escapeHTML(ensureUrlProtocol(d.registrarDashboardUrl))}" target="_blank" rel="noopener" title="Open ${escapeHTML(d.registrar || "registrar")} dashboard" class="text-btn" style="padding:2px 4px; text-decoration:none;">🔗</a>`
+      : "";
+    const hostLinkBtn = d.hostDashboardUrl
+      ? `<a href="${escapeHTML(ensureUrlProtocol(d.hostDashboardUrl))}" target="_blank" rel="noopener" title="Open ${escapeHTML(d.host || "host")} dashboard" class="text-btn" style="padding:2px 4px; text-decoration:none;">🔗</a>`
+      : "";
+    const urlLinkBtn = d.url
+      ? `<a href="${escapeHTML(ensureUrlProtocol(d.url))}" target="_blank" rel="noopener" title="Open ${escapeHTML(d.url)}" class="text-btn" style="padding:2px 4px; text-decoration:none;">🔗</a>`
+      : "";
+
+    tr.innerHTML = `
+      <td>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <strong class="dom-url-edit-trig" style="cursor:pointer;" title="Click to edit this record">${escapeHTML(d.url || "Untitled Domain")}</strong>
+          ${urlLinkBtn}
+        </div>
+      </td>
+      <td>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span>${escapeHTML(d.registrar || "—")}</span>
+          ${registrarLinkBtn}
+        </div>
+      </td>
+      <td>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span>${escapeHTML(d.host || "—")}</span>
+          ${hostLinkBtn}
+        </div>
+      </td>
+      <td>${statusBadge}</td>
+      <td style="color:${expirationColor};">${d.expirationDate ? escapeHTML(d.expirationDate) + expirationSuffix : "—"}</td>
+      <td style="text-align:right;">
+        <button type="button" class="text-btn btn-dom-edit" style="margin-right:8px;">✏️ Edit</button>
+        <button type="button" class="text-btn btn-dom-delete-row" style="color:var(--color-danger);">🗑️</button>
+      </td>
+      <td></td>
+    `;
+
+    tr.querySelector(".dom-url-edit-trig").addEventListener("click", () => openDomainModal(d.id));
+    tr.querySelector(".btn-dom-edit").addEventListener("click", () => openDomainModal(d.id));
+    tr.querySelector(".btn-dom-delete-row").addEventListener("click", () => deleteDomain(d.id));
+
+    tableBody.appendChild(tr);
+  });
+}
+
+function renderDomainLinkedAccountsChips() {
+  const container = document.getElementById("dom-linked-accounts-list");
+  if (!container) return;
+
+  if (!state.emailAccounts || state.emailAccounts.length === 0) {
+    container.innerHTML = `<span style="font-size:12px; color:var(--color-text-muted);">No email accounts yet — add one in the Email Accounts tab to link it here.</span>`;
+    return;
+  }
+
+  container.innerHTML = "";
+  state.emailAccounts.forEach(a => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    const isSelected = currentDomainLinkedEmailAccountIds.includes(a.id);
+    chip.className = `tag-filter-btn ${isSelected ? "active-filter" : ""}`;
+    chip.style.marginRight = "6px";
+    chip.style.marginBottom = "6px";
+    chip.textContent = `${isSelected ? "✅" : "➕"} ${a.email}`;
+    chip.addEventListener("click", () => {
+      const idx = currentDomainLinkedEmailAccountIds.indexOf(a.id);
+      if (idx > -1) {
+        currentDomainLinkedEmailAccountIds.splice(idx, 1);
+      } else {
+        currentDomainLinkedEmailAccountIds.push(a.id);
+      }
+      renderDomainLinkedAccountsChips();
+    });
+    container.appendChild(chip);
+  });
+}
+
+function openDomainModal(id = null) {
+  const modal = document.getElementById("modal-domain");
+  const title = document.getElementById("domain-modal-title");
+  const deleteBtn = document.getElementById("btn-dom-delete");
+
+  editingDomainId = id;
+
+  const registrarSelect = document.getElementById("dom-registrar");
+  registrarSelect.innerHTML = (state.domainRegistrars || []).map(r => `<option value="${escapeHTML(r)}">${escapeHTML(r)}</option>`).join("");
+  const hostSelect = document.getElementById("dom-host");
+  hostSelect.innerHTML = (state.domainHosts || []).map(h => `<option value="${escapeHTML(h)}">${escapeHTML(h)}</option>`).join("");
+
+  document.getElementById("dom-password").type = "password";
+  document.getElementById("btn-dom-toggle-password").textContent = "👁️";
+
+  if (id) {
+    title.textContent = "Edit Domain";
+    deleteBtn.classList.remove("hidden");
+    const d = state.domains.find(x => x.id === id);
+    if (d) {
+      document.getElementById("dom-url").value = d.url || "";
+      registrarSelect.value = d.registrar || (state.domainRegistrars[0] || "");
+      hostSelect.value = d.host || (state.domainHosts[0] || "");
+      document.getElementById("dom-ip").value = d.ip || "";
+      document.getElementById("dom-user-id").value = d.userId || "";
+      document.getElementById("dom-password").value = d.password || "";
+      document.getElementById("dom-annual-cost").value = d.annualCost || "";
+      document.getElementById("dom-expiration-date").value = d.expirationDate || "";
+      document.getElementById("dom-status").value = d.status || "Active";
+      document.getElementById("dom-auto-renew").value = d.autoRenew || "No";
+      document.getElementById("dom-dns-health").value = d.dnsHealth || "Not Configured";
+      document.getElementById("dom-registrar-dashboard-url").value = d.registrarDashboardUrl || "";
+      document.getElementById("dom-host-dashboard-url").value = d.hostDashboardUrl || "";
+      document.getElementById("dom-notes").value = d.notes || "";
+      currentDomainLinkedEmailAccountIds = d.linkedEmailAccountIds ? [...d.linkedEmailAccountIds] : [];
+    }
+  } else {
+    title.textContent = "Add Domain";
+    deleteBtn.classList.add("hidden");
+    document.getElementById("dom-url").value = "";
+    registrarSelect.value = state.domainRegistrars[0] || "";
+    hostSelect.value = state.domainHosts[0] || "";
+    document.getElementById("dom-ip").value = "";
+    document.getElementById("dom-user-id").value = "";
+    document.getElementById("dom-password").value = "";
+    document.getElementById("dom-annual-cost").value = "";
+    document.getElementById("dom-expiration-date").value = "";
+    document.getElementById("dom-status").value = "Active";
+    document.getElementById("dom-auto-renew").value = "No";
+    document.getElementById("dom-dns-health").value = "Not Configured";
+    // Pre-fill the dashboard URLs from the default Registrar/Host selection,
+    // same as if the user had just picked them from the dropdowns.
+    document.getElementById("dom-registrar-dashboard-url").value = state.domainRegistrarDefaultUrls[registrarSelect.value] || "";
+    document.getElementById("dom-host-dashboard-url").value = state.domainHostDefaultUrls[hostSelect.value] || "";
+    document.getElementById("dom-notes").value = "";
+    currentDomainLinkedEmailAccountIds = [];
+  }
+
+  renderDomainLinkedAccountsChips();
+  modal.classList.remove("hidden");
+}
+
+function saveDomainModal() {
+  const url = document.getElementById("dom-url").value.trim();
+  const registrar = document.getElementById("dom-registrar").value;
+  const host = document.getElementById("dom-host").value;
+  const ip = document.getElementById("dom-ip").value.trim();
+  const userId = document.getElementById("dom-user-id").value.trim();
+  const password = document.getElementById("dom-password").value;
+  const annualCost = document.getElementById("dom-annual-cost").value.trim();
+  const expirationDate = document.getElementById("dom-expiration-date").value;
+  const status = document.getElementById("dom-status").value;
+  const autoRenew = document.getElementById("dom-auto-renew").value;
+  const dnsHealth = document.getElementById("dom-dns-health").value;
+  const registrarDashboardUrl = document.getElementById("dom-registrar-dashboard-url").value.trim();
+  const hostDashboardUrl = document.getElementById("dom-host-dashboard-url").value.trim();
+  const notes = document.getElementById("dom-notes").value.trim();
+
+  if (!url) {
+    alert("URL is required!");
+    return;
+  }
+
+  if (editingDomainId) {
+    const d = state.domains.find(x => x.id === editingDomainId);
+    if (d) {
+      d.url = url;
+      d.registrar = registrar;
+      d.host = host;
+      d.ip = ip;
+      d.userId = userId;
+      d.password = password;
+      d.annualCost = annualCost;
+      d.expirationDate = expirationDate;
+      d.status = status;
+      d.autoRenew = autoRenew;
+      d.dnsHealth = dnsHealth;
+      d.registrarDashboardUrl = registrarDashboardUrl;
+      d.hostDashboardUrl = hostDashboardUrl;
+      d.notes = notes;
+      d.linkedEmailAccountIds = [...currentDomainLinkedEmailAccountIds];
+    }
+  } else {
+    state.domains.push({
+      id: `dom-${Date.now()}`,
+      url,
+      registrar,
+      host,
+      ip,
+      userId,
+      password,
+      annualCost,
+      expirationDate,
+      status,
+      autoRenew,
+      dnsHealth,
+      registrarDashboardUrl,
+      hostDashboardUrl,
+      linkedEmailAccountIds: [...currentDomainLinkedEmailAccountIds],
+      notes,
+      dateAdded: new Date().toISOString().split("T")[0]
+    });
+  }
+
+  saveState();
+  document.getElementById("modal-domain").classList.add("hidden");
+  renderDomainManagementView();
+}
+
+function deleteDomain(id) {
+  const d = state.domains.find(x => x.id === id);
+  if (!d) return;
+  const ok = confirm(`Permanently delete domain "${d.url}"? This cannot be undone.`);
+  if (!ok) return;
+  state.domains = state.domains.filter(x => x.id !== id);
+  visibleDomainPasswordIds.delete(id);
+  saveState();
+  document.getElementById("modal-domain").classList.add("hidden");
+  renderDomainManagementView();
 }
 
 function renderCampaignDashboard() {
@@ -4467,6 +5707,8 @@ function renderAudienceInspector() {
     if (actionsEl) actionsEl.innerHTML = "";
     const badgeEl = document.getElementById("aud-inspect-status-badge");
     if (badgeEl) badgeEl.textContent = "";
+    const notesContainer = document.getElementById("aud-inspect-notes-container");
+    if (notesContainer) notesContainer.style.display = "none";
     tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--color-text-muted); padding:32px;">Click "View" on any audience list to inspect contacts.</td></tr>`;
     return;
   }
@@ -4493,10 +5735,14 @@ function renderAudienceInspector() {
     } else {
       actionsEl.innerHTML = `
         <button class="header-action-btn secondary-btn" id="btn-inspector-export-aud" style="padding:4px 8px;font-size:11px;height:auto;">⬇️ Export CSV</button>
+        <button class="header-action-btn secondary-btn" id="btn-inspector-tag-all-aud" style="padding:4px 8px;font-size:11px;height:auto;">🏷️ Tag All</button>
+        <button class="header-action-btn secondary-btn" id="btn-inspector-popout-aud" style="padding:4px 8px;font-size:11px;height:auto;" title="Pop out contact list">⤢ Pop Out</button>
         <button class="header-action-btn secondary-btn" id="btn-inspector-rename-aud" style="padding:4px 8px;font-size:11px;height:auto;">✏️ Rename</button>
         <button class="header-action-btn secondary-btn" id="btn-inspector-archive-aud" style="padding:4px 8px;font-size:11px;height:auto;">📦 Archive</button>
       `;
       actionsEl.querySelector("#btn-inspector-export-aud").addEventListener("click", () => exportAudienceContactsCSV(aud.id));
+      actionsEl.querySelector("#btn-inspector-tag-all-aud").addEventListener("click", () => bulkTagAudienceProspects(aud.id));
+      actionsEl.querySelector("#btn-inspector-popout-aud").addEventListener("click", () => openAudiencePopout(aud.id));
       actionsEl.querySelector("#btn-inspector-rename-aud").addEventListener("click", renameSelectedAudienceList);
       actionsEl.querySelector("#btn-inspector-archive-aud").addEventListener("click", () => archiveAudienceList(aud.id));
     }
@@ -4505,6 +5751,20 @@ function renderAudienceInspector() {
     badgeEl.innerHTML = isArchived
       ? `<span style="color:var(--color-text-muted);">📦 Archived</span>`
       : `<span style="color:#10b981;">● Active</span>`;
+  }
+
+  // Notes textarea
+  const notesContainer = document.getElementById("aud-inspect-notes-container");
+  const notesEl = document.getElementById("aud-inspect-notes");
+  if (notesContainer && notesEl) {
+    notesContainer.style.display = "block";
+    notesEl.value = aud.notes || "";
+    const freshNotes = notesEl.cloneNode(true);
+    notesEl.parentNode.replaceChild(freshNotes, notesEl);
+    freshNotes.addEventListener("input", () => {
+      const a = state.audienceLists.find(x => x.id === selectedAudienceListId);
+      if (a) { a.notes = freshNotes.value; saveState(); }
+    });
   }
 
   tbody.innerHTML = "";
@@ -4518,15 +5778,24 @@ function renderAudienceInspector() {
       if (!p) return;
 
       const tr = document.createElement("tr");
+      const compName = getCompanyName(p.companyId) || "—";
       tr.innerHTML = `
-        <td><strong>${escapeHTML(p.firstName)} ${escapeHTML(p.lastName)}</strong></td>
+        <td><button class="text-btn btn-aud-open-prospect" style="font-weight:600; text-align:left;">${escapeHTML(p.firstName)} ${escapeHTML(p.lastName)}</button></td>
         <td>${escapeHTML(p.title || "—")}</td>
-        <td>${escapeHTML(getCompanyName(p.companyId) || "—")}</td>
+        <td><button class="text-btn btn-aud-open-company" style="text-align:left; color:var(--color-text-main);">${escapeHTML(compName)}</button></td>
         <td style="text-align:center;">
           <button class="delete-interaction-btn btn-aud-remove-contact" data-pid="${p.id}" title="Remove contact from list">✕</button>
         </td>
       `;
 
+      tr.querySelector(".btn-aud-open-prospect").addEventListener("click", () => openProspectModal(p.id));
+      const compBtn = tr.querySelector(".btn-aud-open-company");
+      if (p.companyId) {
+        compBtn.addEventListener("click", () => openCompanyModal(p.companyId));
+      } else {
+        compBtn.style.cursor = "default";
+        compBtn.disabled = true;
+      }
       tr.querySelector(".btn-aud-remove-contact").addEventListener("click", () => {
         removeContactFromAudienceList(aud.id, p.id);
       });
@@ -4682,6 +5951,179 @@ function copyAudienceToNewList(audId) {
   alert(`Created "${newName.trim()}" with ${newList.prospectIds.length} contacts.`);
 }
 
+function bulkTagAudienceProspects(audId) {
+  const aud = state.audienceLists.find(x => x.id === audId);
+  if (!aud || !(aud.prospectIds || []).length) {
+    alert("This audience list has no contacts to tag.");
+    return;
+  }
+  // Build a quick prompt with existing tags listed
+  const existingTags = (state.prospect_tags || []).join(", ");
+  const hint = existingTags ? `\n\nExisting tags: ${existingTags}` : "";
+  const tagInput = prompt(`Enter a tag to apply to all ${aud.prospectIds.length} contacts in "${aud.name}":${hint}`);
+  if (!tagInput || !tagInput.trim()) return;
+  const tag = tagInput.trim();
+
+  // Register tag globally if new
+  if (!state.prospect_tags) state.prospect_tags = [];
+  if (!state.prospect_tags.includes(tag)) state.prospect_tags.push(tag);
+
+  // Apply to each prospect in the audience
+  let applied = 0;
+  aud.prospectIds.forEach(pid => {
+    const p = state.prospects.find(x => x.id === pid);
+    if (p) {
+      if (!p.tags) p.tags = [];
+      if (!p.tags.includes(tag)) { p.tags.push(tag); applied++; }
+    }
+  });
+
+  saveState();
+  alert(`Tag "${tag}" added to ${applied} contact${applied === 1 ? "" : "s"}.`);
+}
+
+// Popout state persists across refresh calls so position/size aren't reset
+// ── Audience Pop-out state (persists across refresh calls) ────────────────
+let _popoutInitialized = false;
+let _popoutMaximized   = false;
+let _popoutSaved       = {};   // saved geometry when maximized
+let _popDragging       = false;
+let _popDragOffX       = 0, _popDragOffY = 0;
+
+function _popoutToggleMaximize() {
+  const panel  = document.getElementById("aud-popout-panel");
+  const maxBtn = document.getElementById("btn-aud-popout-maximize");
+  if (!panel) return;
+  if (_popoutMaximized) {
+    panel.style.left          = _popoutSaved.left;
+    panel.style.top           = _popoutSaved.top;
+    panel.style.right         = _popoutSaved.right  || "auto";
+    panel.style.width         = _popoutSaved.width;
+    panel.style.height        = _popoutSaved.height;
+    panel.style.borderRadius  = "12px";
+    panel.style.resize        = "both";
+    if (maxBtn) maxBtn.textContent = "⛶";
+    _popoutMaximized = false;
+  } else {
+    const r = panel.getBoundingClientRect();
+    _popoutSaved = {
+      left:  panel.style.left  || r.left  + "px",
+      top:   panel.style.top   || r.top   + "px",
+      right: panel.style.right,
+      width: panel.style.width  || r.width  + "px",
+      height:panel.style.height || r.height + "px"
+    };
+    panel.style.left         = "2vw";
+    panel.style.top          = "2vh";
+    panel.style.right        = "auto";
+    panel.style.width        = "96vw";
+    panel.style.height       = "96vh";
+    panel.style.borderRadius = "4px";
+    panel.style.resize       = "none";
+    if (maxBtn) maxBtn.textContent = "⊡";
+    _popoutMaximized = true;
+  }
+}
+
+function _initPopout() {
+  if (_popoutInitialized) return;
+  _popoutInitialized = true;
+
+  const panel  = document.getElementById("aud-popout-panel");
+  const header = document.getElementById("aud-popout-header");
+  if (!panel || !header) return;
+
+  document.getElementById("btn-aud-popout-close").addEventListener("click", () => {
+    panel.classList.add("hidden");
+    _popoutMaximized = false;
+  });
+
+  document.getElementById("btn-aud-popout-maximize").addEventListener("click", _popoutToggleMaximize);
+
+  // Drag — mousedown on header (not buttons)
+  header.addEventListener("mousedown", (e) => {
+    if (e.target.closest("button") || _popoutMaximized) return;
+    _popDragging = true;
+    const r = panel.getBoundingClientRect();
+    _popDragOffX = e.clientX - r.left;
+    _popDragOffY = e.clientY - r.top;
+    panel.style.left  = r.left + "px";
+    panel.style.top   = r.top  + "px";
+    panel.style.right = "auto";
+    header.style.cursor = "grabbing";
+    e.preventDefault();
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!_popDragging) return;
+    const newTop = e.clientY - _popDragOffY;
+    panel.style.left = (e.clientX - _popDragOffX) + "px";
+    panel.style.top  = Math.max(0, newTop) + "px";
+    // Snap-to-top glow hint
+    panel.style.outline = (newTop < 8) ? "2px solid var(--color-primary)" : "";
+  });
+
+  document.addEventListener("mouseup", (e) => {
+    if (!_popDragging) return;
+    _popDragging = false;
+    header.style.cursor = "grab";
+    panel.style.outline = "";
+    // Snap maximize when released at very top of screen
+    if ((e.clientY - _popDragOffY) < 8) _popoutToggleMaximize();
+  });
+}
+
+function openAudiencePopout(audId) {
+  const aud   = state.audienceLists.find(x => x.id === audId);
+  const panel = document.getElementById("aud-popout-panel");
+  if (!aud || !panel) return;
+
+  // Wire buttons once
+  _initPopout();
+
+  // Populate header
+  document.getElementById("aud-popout-title").textContent = aud.name;
+  document.getElementById("aud-popout-size").textContent =
+    `${(aud.prospectIds || []).length} contacts`;
+  document.getElementById("btn-aud-popout-maximize").textContent =
+    _popoutMaximized ? "⊡" : "⛶";
+
+  // Populate contacts table
+  const tbody = document.getElementById("aud-popout-contacts-body");
+  tbody.innerHTML = "";
+  const ids = aud.prospectIds || [];
+  if (ids.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--color-text-muted);padding:24px;">No contacts in this list.</td></tr>`;
+  } else {
+    ids.forEach(pid => {
+      const p = state.prospects.find(x => x.id === pid);
+      if (!p) return;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><button class="text-btn" style="font-weight:600;text-align:left;">${escapeHTML(p.firstName)} ${escapeHTML(p.lastName)}</button></td>
+        <td>${escapeHTML(p.title || "—")}</td>
+        <td><button class="text-btn" style="text-align:left;color:var(--color-text-main);">${escapeHTML(getCompanyName(p.companyId) || "—")}</button></td>
+        <td style="text-align:center;"><button class="delete-interaction-btn" title="Remove from list">✕</button></td>
+      `;
+      const [nameBtn, compBtn, removeBtn] = tr.querySelectorAll("button");
+      nameBtn.addEventListener("click", () => openProspectModal(p.id));
+      if (p.companyId) {
+        compBtn.addEventListener("click", () => openCompanyModal(p.companyId));
+      } else {
+        compBtn.disabled = true;
+        compBtn.style.cursor = "default";
+      }
+      removeBtn.addEventListener("click", () => {
+        removeContactFromAudienceList(audId, p.id);
+        openAudiencePopout(audId);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  panel.classList.remove("hidden");
+}
+
 /* --------------------------------------------------------------------------
    Audience CSV Import
    Upload a CSV/Excel exported from the Prospect Hub and build a new audience
@@ -4729,6 +6171,10 @@ function csvRowLookup(row, keys) {
 function openAudienceImportModal() {
   pendingAudienceImport = null;
   document.getElementById("audience-import-name").value = "";
+  const tagNewEl = document.getElementById("audience-import-tag-new");
+  if (tagNewEl) tagNewEl.value = "";
+  const tagSelectEl = document.getElementById("audience-import-tag-select");
+  if (tagSelectEl) tagSelectEl.value = "";
   const fileInput = document.getElementById("audience-import-file-input");
   if (fileInput) fileInput.value = "";
   document.getElementById("modal-audience-import").classList.remove("hidden");
@@ -4811,18 +6257,52 @@ function processAudienceImportRows(rows) {
     return;
   }
 
-  pendingAudienceImport = { prospectIds, skipped };
+  // Detect which prospects are already in other active audience lists
+  const duplicateInAudience = new Set();
+  state.audienceLists.forEach(al => {
+    (al.prospectIds || []).forEach(pid => {
+      if (prospectIds.includes(pid)) duplicateInAudience.add(pid);
+    });
+  });
+
+  pendingAudienceImport = { prospectIds, skipped, duplicateInAudience };
   showAudienceImportReviewStep();
+  populateAudienceImportTagDropdown();
   renderAudienceImportReview();
+}
+
+function populateAudienceImportTagDropdown() {
+  const sel = document.getElementById("audience-import-tag-select");
+  if (!sel) return;
+  sel.innerHTML = `<option value="">-- No tag --</option>`;
+  (state.prospect_tags || []).forEach(tag => {
+    const opt = document.createElement("option");
+    opt.value = tag;
+    opt.textContent = tag;
+    sel.appendChild(opt);
+  });
 }
 
 function renderAudienceImportReview() {
   if (!pendingAudienceImport) return;
-  const { prospectIds, skipped } = pendingAudienceImport;
+  const { prospectIds, skipped, duplicateInAudience } = pendingAudienceImport;
+  const dupSet = duplicateInAudience || new Set();
+
+  const dupCount = [...prospectIds].filter(pid => dupSet.has(pid)).length;
 
   document.getElementById("audience-import-summary").textContent =
     `${prospectIds.length} contact${prospectIds.length === 1 ? "" : "s"} found` +
     (skipped > 0 ? ` · ${skipped} row${skipped === 1 ? "" : "s"} skipped (no longer in Vantage)` : "");
+
+  const dupNotice = document.getElementById("audience-import-duplicates-notice");
+  if (dupNotice) {
+    if (dupCount > 0) {
+      dupNotice.textContent = `⚠️ ${dupCount} contact${dupCount === 1 ? " is" : "s are"} already in one or more existing audience lists (marked below). You can still include them.`;
+      dupNotice.classList.remove("hidden");
+    } else {
+      dupNotice.classList.add("hidden");
+    }
+  }
 
   const body = document.getElementById("audience-import-matched-body");
   body.innerHTML = "";
@@ -4832,9 +6312,13 @@ function renderAudienceImportReview() {
     prospectIds.forEach(pid => {
       const p = state.prospects.find(x => x.id === pid);
       if (!p) return;
+      const isDup = dupSet.has(pid);
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td><strong>${escapeHTML(p.firstName)} ${escapeHTML(p.lastName)}</strong></td>
+        <td>
+          <strong>${escapeHTML(p.firstName)} ${escapeHTML(p.lastName)}</strong>
+          ${isDup ? `<span style="margin-left:6px; font-size:10px; background:rgba(251,191,36,0.2); color:#d97706; padding:1px 5px; border-radius:10px;">already in audience</span>` : ""}
+        </td>
         <td>${escapeHTML(getCompanyName(p.companyId) || "—")}</td>
         <td style="text-align:center;"><button class="delete-interaction-btn btn-aud-import-exclude" title="Exclude from this audience">✕</button></td>
       `;
@@ -4863,8 +6347,25 @@ function saveAudienceImport() {
   const prospectIds = [...pendingAudienceImport.prospectIds];
   if (prospectIds.length === 0) { alert("No contacts to save."); return; }
 
+  // Resolve tag to apply
+  const tagSelectEl = document.getElementById("audience-import-tag-select");
+  const tagNewEl = document.getElementById("audience-import-tag-new");
+  let applyTag = (tagNewEl && tagNewEl.value.trim()) || (tagSelectEl && tagSelectEl.value) || "";
+  if (applyTag) {
+    applyTag = applyTag.trim();
+    if (!state.prospect_tags) state.prospect_tags = [];
+    if (!state.prospect_tags.includes(applyTag)) state.prospect_tags.push(applyTag);
+    prospectIds.forEach(pid => {
+      const p = state.prospects.find(x => x.id === pid);
+      if (p) {
+        if (!p.tags) p.tags = [];
+        if (!p.tags.includes(applyTag)) p.tags.push(applyTag);
+      }
+    });
+  }
+
   const audId = `aud-${Date.now()}`;
-  state.audienceLists.push({ id: audId, name, prospectIds });
+  state.audienceLists.push({ id: audId, name, prospectIds, status: "active", notes: "" });
   addAudienceTagToProspects(prospectIds, name);
 
   saveState();
@@ -5163,6 +6664,10 @@ function openProspectModal(id = null) {
       document.getElementById("pros-location").value = p.location || "";
       document.getElementById("pros-notes").value = p.notes || "";
       document.getElementById("pros-linkedin").value = p.linkedin || "";
+      document.getElementById("pros-conference-name").value = p.conferenceName || "";
+      document.getElementById("pros-conference-start").value = p.conferenceStart || "";
+      document.getElementById("pros-conference-end").value = p.conferenceEnd || "";
+      document.getElementById("pros-conference-venue").value = p.conferenceVenue || "";
       currentProspectTags = p.tags ? [...p.tags] : [];
       
       const btnEditComp = document.getElementById("btn-pros-edit-company");
@@ -5187,6 +6692,10 @@ function openProspectModal(id = null) {
     document.getElementById("pros-location").value = "";
     document.getElementById("pros-notes").value = "";
     document.getElementById("pros-linkedin").value = "";
+    document.getElementById("pros-conference-name").value = "";
+    document.getElementById("pros-conference-start").value = "";
+    document.getElementById("pros-conference-end").value = "";
+    document.getElementById("pros-conference-venue").value = "";
     currentProspectTags = [];
     document.getElementById("btn-pros-edit-company").classList.add("hidden");
   }
@@ -5208,6 +6717,10 @@ function saveProspect() {
   const stateVal = document.getElementById("pros-state").value.trim();
   const loc = document.getElementById("pros-location").value.trim();
   const notesVal = document.getElementById("pros-notes").value.trim();
+  const conferenceNameVal = document.getElementById("pros-conference-name").value.trim();
+  const conferenceStartVal = document.getElementById("pros-conference-start").value.trim();
+  const conferenceEndVal = document.getElementById("pros-conference-end").value.trim();
+  const conferenceVenueVal = document.getElementById("pros-conference-venue").value.trim();
 
   if (!first || !last || !email) {
     alert("First Name, Last Name, and Email are required!");
@@ -5257,6 +6770,10 @@ function saveProspect() {
       p.state = stateVal;
       p.location = loc;
       p.notes = notesVal;
+      p.conferenceName = conferenceNameVal;
+      p.conferenceStart = conferenceStartVal;
+      p.conferenceEnd = conferenceEndVal;
+      p.conferenceVenue = conferenceVenueVal;
       p.tags = currentProspectTags.length ? [...currentProspectTags] : ["No Prospect Tag"];
     }
   } else {
@@ -5274,6 +6791,10 @@ function saveProspect() {
       state: stateVal,
       location: loc,
       notes: notesVal,
+      conferenceName: conferenceNameVal,
+      conferenceStart: conferenceStartVal,
+      conferenceEnd: conferenceEndVal,
+      conferenceVenue: conferenceVenueVal,
       tags: currentProspectTags.length ? [...currentProspectTags] : ["No Prospect Tag"],
       history: []
     };
@@ -5596,13 +7117,8 @@ function deleteCampaign(id) {
 
 // Export complete PRM JSON
 function exportJSONBackup() {
-  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
-  const dlAnchor = document.createElement("a");
-  dlAnchor.setAttribute("href", dataStr);
-  dlAnchor.setAttribute("download", `vantage_prm_backup_${new Date().toISOString().split("T")[0]}.json`);
-  document.body.appendChild(dlAnchor);
-  dlAnchor.click();
-  dlAnchor.remove();
+  const json = JSON.stringify(state, null, 2);
+  saveBackupFile(`vantage_prm_backup_${new Date().toISOString().split("T")[0]}.json`, json);
 }
 
 // Restore PRM JSON
@@ -6652,10 +8168,17 @@ function setupEventListeners() {
   document.getElementById("btn-export-campaigns-csv").addEventListener("click", exportCampaignsCSV);
   document.getElementById("btn-export-audiences-csv").addEventListener("click", exportAudienceListsCSV);
   document.getElementById("btn-export-companies-csv").addEventListener("click", exportCompaniesCSV);
+  document.getElementById("btn-export-email-accounts-csv").addEventListener("click", exportEmailAccountsCSV);
+  document.getElementById("btn-export-domains-csv").addEventListener("click", exportDomainsCSV);
   document.getElementById("btn-export-settings-csv").addEventListener("click", exportSettingsCSV);
 
   document.getElementById("data-restore-input").addEventListener("change", handleRestoreFile);
-  
+
+  const chooseFolderBtn = document.getElementById("btn-choose-backup-folder");
+  if (chooseFolderBtn) chooseFolderBtn.addEventListener("click", chooseBackupFolder);
+  const restoreFromFolderBtn = document.getElementById("btn-restore-from-folder");
+  if (restoreFromFolderBtn) restoreFromFolderBtn.addEventListener("click", restoreFromBackupFolder);
+
   const restoreDropzone = document.getElementById("data-restore-dropzone");
   const restoreInput = document.getElementById("data-restore-input");
   if (restoreDropzone && restoreInput) {
@@ -6744,8 +8267,10 @@ function setupEventListeners() {
     });
   }
 
-  // Media Status filter row
-  document.querySelectorAll(".media-status-filter").forEach(btn => {
+  // Media Status filter row — scoped to #media-status-filters-bar, see note
+  // on the matching sync loop in renderMediaView() for why this can't be a
+  // bare ".media-status-filter" document-wide query.
+  document.querySelectorAll("#media-status-filters-bar .media-status-filter").forEach(btn => {
     btn.addEventListener("click", () => {
       state.activeMediaFilterStatus = btn.getAttribute("data-status");
       renderMediaView();
@@ -6762,6 +8287,87 @@ function setupEventListeners() {
   });
   document.getElementById("subtab-audiences")?.addEventListener("click", () => {
     switchCampaignSubTab("audiences");
+  });
+  document.getElementById("subtab-emailaccounts")?.addEventListener("click", () => {
+    switchCampaignSubTab("emailAccounts");
+  });
+  document.getElementById("subtab-domains")?.addEventListener("click", () => {
+    switchCampaignSubTab("domains");
+  });
+
+  // Email Accounts Manager listeners
+  document.getElementById("btn-add-email-account")?.addEventListener("click", () => openEmailAccountModal());
+  document.getElementById("email-account-search")?.addEventListener("input", renderEmailAccountsView);
+  document.getElementById("email-account-sort-by")?.addEventListener("change", renderEmailAccountsView);
+  document.getElementById("ea-modal-cancel")?.addEventListener("click", () => {
+    document.getElementById("modal-email-account").classList.add("hidden");
+  });
+  document.getElementById("ea-modal-confirm")?.addEventListener("click", saveEmailAccountModal);
+  document.getElementById("btn-ea-delete")?.addEventListener("click", () => {
+    if (editingEmailAccountId) deleteEmailAccount(editingEmailAccountId);
+  });
+  document.getElementById("btn-ea-toggle-password")?.addEventListener("click", () => {
+    const pwInput = document.getElementById("ea-password");
+    const btn = document.getElementById("btn-ea-toggle-password");
+    if (pwInput.type === "password") {
+      pwInput.type = "text";
+      btn.textContent = "🙈";
+    } else {
+      pwInput.type = "password";
+      btn.textContent = "👁️";
+    }
+  });
+  // Auto-fill the dashboard URL from the known default for whatever
+  // Provider is picked. Always overwrites on an actual selection change —
+  // switching providers means the old URL belonged to the old provider
+  // anyway, so it should be replaced with the new one's default (or cleared
+  // if that provider has none configured). A manual edit only survives as
+  // long as the dropdown isn't touched again; re-picking a different
+  // provider intentionally replaces it.
+  document.getElementById("ea-provider")?.addEventListener("change", (e) => {
+    const urlInput = document.getElementById("ea-dashboard-url");
+    if (urlInput) {
+      urlInput.value = state.emailProviderDefaultUrls[e.target.value] || "";
+    }
+  });
+
+  // Domain Management listeners
+  document.getElementById("btn-add-domain")?.addEventListener("click", () => openDomainModal());
+  document.getElementById("domain-search")?.addEventListener("input", renderDomainManagementView);
+  document.getElementById("domain-sort-by")?.addEventListener("change", renderDomainManagementView);
+  document.getElementById("dom-modal-cancel")?.addEventListener("click", () => {
+    document.getElementById("modal-domain").classList.add("hidden");
+  });
+  document.getElementById("dom-modal-confirm")?.addEventListener("click", saveDomainModal);
+  document.getElementById("btn-dom-delete")?.addEventListener("click", () => {
+    if (editingDomainId) deleteDomain(editingDomainId);
+  });
+  document.getElementById("btn-dom-toggle-password")?.addEventListener("click", () => {
+    const pwInput = document.getElementById("dom-password");
+    const btn = document.getElementById("btn-dom-toggle-password");
+    if (pwInput.type === "password") {
+      pwInput.type = "text";
+      btn.textContent = "🙈";
+    } else {
+      pwInput.type = "password";
+      btn.textContent = "👁️";
+    }
+  });
+  // Auto-fill the dashboard URL fields from the known default for whatever
+  // Registrar/Host is picked. Always overwrites on an actual selection
+  // change — see the matching note on the Email Accounts Provider listener
+  // above for why this shouldn't be guarded on "field is currently empty".
+  document.getElementById("dom-registrar")?.addEventListener("change", (e) => {
+    const urlInput = document.getElementById("dom-registrar-dashboard-url");
+    if (urlInput) {
+      urlInput.value = state.domainRegistrarDefaultUrls[e.target.value] || "";
+    }
+  });
+  document.getElementById("dom-host")?.addEventListener("change", (e) => {
+    const urlInput = document.getElementById("dom-host-dashboard-url");
+    if (urlInput) {
+      urlInput.value = state.domainHostDefaultUrls[e.target.value] || "";
+    }
   });
 
   // Standalone Query Launch
@@ -6866,6 +8472,9 @@ function setupEventListeners() {
   document.getElementById("btn-add-company-tag-opt")?.addEventListener("click", () => addSettingOption('company_tags', 'input-add-company-tag'));
   document.getElementById("btn-add-campaign-phase-opt")?.addEventListener("click", () => addSettingOption('campaignPhases', 'input-add-campaign-phase'));
   document.getElementById("btn-add-reachout-type-opt")?.addEventListener("click", () => addSettingOption('reachoutTypes', 'input-add-reachout-type'));
+  document.getElementById("btn-add-email-provider-opt")?.addEventListener("click", () => addSettingOption('emailProviders', 'input-add-email-provider'));
+  document.getElementById("btn-add-domain-registrar-opt")?.addEventListener("click", () => addSettingOption('domainRegistrars', 'input-add-domain-registrar'));
+  document.getElementById("btn-add-domain-host-opt")?.addEventListener("click", () => addSettingOption('domainHosts', 'input-add-domain-host'));
 
   // Inspector Notes Saves
   document.getElementById("inspector-notes")?.addEventListener("input", () => {
@@ -7027,6 +8636,48 @@ function renderSettingsLists() {
       </div>`;
   }
 
+  // Same as buildRow, but with an inline "Default URL" input — used for the
+  // three lists whose entries also carry a lookup URL (Email Providers,
+  // Domain Registrars, Domain Hosts) that auto-fills the matching Dashboard
+  // URL field when that entry is selected elsewhere in the app. The input's
+  // "change" listener is wired separately after each section is built, via
+  // the shared .settings-default-url-input class.
+  function buildRowWithUrl(field, idx, label, totalLen, urlMapField) {
+    const upDisabled = idx === 0 ? 'style="opacity:0.25;pointer-events:none;"' : '';
+    const downDisabled = idx === totalLen - 1 ? 'style="opacity:0.25;pointer-events:none;"' : '';
+    const rawName = state[field][idx];
+    const currentUrl = (state[urlMapField] && state[urlMapField][rawName]) || "";
+    return `
+      <div class="settings-item-row" style="flex-wrap: wrap; row-gap: 6px;">
+        <span onclick="editSettingOption('${field}', ${idx})" style="cursor: pointer; flex: 1 1 auto; min-width: 80px;">${label}</span>
+        <input type="url" class="settings-default-url-input" data-map="${urlMapField}" data-name="${escapeHTML(rawName)}"
+          value="${escapeHTML(currentUrl)}" placeholder="Default dashboard URL, editable"
+          style="flex: 1 1 160px; min-width: 140px; font-size: 12px; background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 5px 8px; border-radius: 6px; outline: none;">
+        <button onclick="moveSettingOption('${field}', ${idx}, -1)" title="Move Up" ${upDisabled}>↑</button>
+        <button onclick="moveSettingOption('${field}', ${idx}, 1)" title="Move Down" ${downDisabled}>↓</button>
+        <button onclick="deleteSettingOption('${field}', ${idx})">✕</button>
+      </div>`;
+  }
+
+  // Wires the "change" (blur/commit) listener for every .settings-default-url-input
+  // inside a just-rebuilt container. Called once per section after its rows
+  // are added, since innerHTML += doesn't retain any previously-attached
+  // listeners.
+  function wireDefaultUrlInputs(container) {
+    container.querySelectorAll(".settings-default-url-input").forEach(input => {
+      input.addEventListener("change", () => {
+        const mapField = input.dataset.map;
+        const name = input.dataset.name;
+        if (!state[mapField]) state[mapField] = {};
+        state[mapField][name] = input.value.trim();
+        saveState();
+      });
+      // Typing/selecting text inside the input shouldn't trigger the row's
+      // click-to-rename handler on the sibling <span>.
+      input.addEventListener("click", (e) => e.stopPropagation());
+    });
+  }
+
   // 1. Media Types
   const typeContainer = document.getElementById("list-settings-types");
   typeContainer.innerHTML = "";
@@ -7099,10 +8750,43 @@ function renderSettingsLists() {
       campaignPhasesContainer.innerHTML += buildRow('campaignPhases', idx, escapeHTML(t), state.campaignPhases.length);
     });
   }
+
+  // 10. Email Providers (each with an editable Default URL, used to
+  // auto-fill an Email Account's Dashboard URL when this provider is picked)
+  const emailProvidersContainer = document.getElementById("list-settings-email-providers");
+  if (emailProvidersContainer) {
+    emailProvidersContainer.innerHTML = "";
+    (state.emailProviders || []).forEach((t, idx) => {
+      emailProvidersContainer.innerHTML += buildRowWithUrl('emailProviders', idx, escapeHTML(t), state.emailProviders.length, 'emailProviderDefaultUrls');
+    });
+    wireDefaultUrlInputs(emailProvidersContainer);
+  }
+
+  // 11. Domain Registrars (each with an editable Default URL, used to
+  // auto-fill a Domain's Registrar Dashboard URL when this registrar is picked)
+  const domainRegistrarsContainer = document.getElementById("list-settings-domain-registrars");
+  if (domainRegistrarsContainer) {
+    domainRegistrarsContainer.innerHTML = "";
+    (state.domainRegistrars || []).forEach((t, idx) => {
+      domainRegistrarsContainer.innerHTML += buildRowWithUrl('domainRegistrars', idx, escapeHTML(t), state.domainRegistrars.length, 'domainRegistrarDefaultUrls');
+    });
+    wireDefaultUrlInputs(domainRegistrarsContainer);
+  }
+
+  // 12. Domain Hosts (each with an editable Default URL, used to auto-fill
+  // a Domain's Host Dashboard URL when this host is picked)
+  const domainHostsContainer = document.getElementById("list-settings-domain-hosts");
+  if (domainHostsContainer) {
+    domainHostsContainer.innerHTML = "";
+    (state.domainHosts || []).forEach((t, idx) => {
+      domainHostsContainer.innerHTML += buildRowWithUrl('domainHosts', idx, escapeHTML(t), state.domainHosts.length, 'domainHostDefaultUrls');
+    });
+    wireDefaultUrlInputs(domainHostsContainer);
+  }
 }
 
 function editSettingOption(field, idx) {
-  const containerId = `list-settings-${field === 'mediaTypes' ? 'types' : field === 'developmentPhases' ? 'phases' : field === 'media_tags' ? 'tags' : field === 'prospect_tags' ? 'prospect-tags' : field === 'campaign_tags' ? 'campaign-tags' : field === 'company_tags' ? 'company-tags' : field === 'reachoutTypes' ? 'reachout-types' : field === 'campaignPhases' ? 'campaign-phases' : field}`;
+  const containerId = `list-settings-${field === 'mediaTypes' ? 'types' : field === 'developmentPhases' ? 'phases' : field === 'media_tags' ? 'tags' : field === 'prospect_tags' ? 'prospect-tags' : field === 'campaign_tags' ? 'campaign-tags' : field === 'company_tags' ? 'company-tags' : field === 'reachoutTypes' ? 'reachout-types' : field === 'campaignPhases' ? 'campaign-phases' : field === 'emailProviders' ? 'email-providers' : field === 'domainRegistrars' ? 'domain-registrars' : field === 'domainHosts' ? 'domain-hosts' : field}`;
   const container = document.getElementById(containerId);
   if (!container) return;
   const row = container.children[idx];
@@ -7199,6 +8883,34 @@ function editSettingOption(field, idx) {
           c.status = newVal;
         }
       });
+    } else if (field === "emailProviders") {
+      (state.emailAccounts || []).forEach(a => {
+        if (a.provider && a.provider.trim().toLowerCase() === cleanOrig) {
+          a.provider = newVal;
+        }
+      });
+    } else if (field === "domainRegistrars") {
+      (state.domains || []).forEach(d => {
+        if (d.registrar && d.registrar.trim().toLowerCase() === cleanOrig) {
+          d.registrar = newVal;
+        }
+      });
+    } else if (field === "domainHosts") {
+      (state.domains || []).forEach(d => {
+        if (d.host && d.host.trim().toLowerCase() === cleanOrig) {
+          d.host = newVal;
+        }
+      });
+    }
+
+    // For the three lists that carry a Default URL lookup keyed by name
+    // (see buildRowWithUrl), move that entry over to the new name so a
+    // rename doesn't silently orphan the URL the user configured.
+    const urlMapFieldByList = { emailProviders: "emailProviderDefaultUrls", domainRegistrars: "domainRegistrarDefaultUrls", domainHosts: "domainHostDefaultUrls" };
+    const urlMapField = urlMapFieldByList[field];
+    if (urlMapField && state[urlMapField] && Object.prototype.hasOwnProperty.call(state[urlMapField], original)) {
+      state[urlMapField][newVal] = state[urlMapField][original];
+      delete state[urlMapField][original];
     }
 
     saveState();
@@ -7331,6 +9043,35 @@ function deleteSettingOption(field, idx) {
         c.status = fallbackPhase;
       }
     });
+  } else if (field === "emailProviders") {
+    const fallbackProvider = state.emailProviders[0] || "";
+    (state.emailAccounts || []).forEach(a => {
+      if (a.provider && a.provider.trim().toLowerCase() === cleanItem) {
+        a.provider = fallbackProvider;
+      }
+    });
+  } else if (field === "domainRegistrars") {
+    const fallbackRegistrar = state.domainRegistrars[0] || "";
+    (state.domains || []).forEach(d => {
+      if (d.registrar && d.registrar.trim().toLowerCase() === cleanItem) {
+        d.registrar = fallbackRegistrar;
+      }
+    });
+  } else if (field === "domainHosts") {
+    const fallbackHost = state.domainHosts[0] || "";
+    (state.domains || []).forEach(d => {
+      if (d.host && d.host.trim().toLowerCase() === cleanItem) {
+        d.host = fallbackHost;
+      }
+    });
+  }
+
+  // Clean up the matching Default URL entry (see buildRowWithUrl) so it
+  // doesn't linger as an orphaned, unreachable key in state.
+  const urlMapFieldByListForDelete = { emailProviders: "emailProviderDefaultUrls", domainRegistrars: "domainRegistrarDefaultUrls", domainHosts: "domainHostDefaultUrls" };
+  const deleteUrlMapField = urlMapFieldByListForDelete[field];
+  if (deleteUrlMapField && state[deleteUrlMapField]) {
+    delete state[deleteUrlMapField][item];
   }
 
   saveState();
@@ -7593,7 +9334,8 @@ function openContentDashboard(id) {
   statusSelect.innerHTML = "";
   state.developmentPhases.forEach(p => {
     const selected = (p === m.status) ? "selected" : "";
-    statusSelect.innerHTML += `<option value="${p}" ${selected}>${p}</option>`;
+    const icon = getDevelopmentPhaseIcon(p);
+    statusSelect.innerHTML += `<option value="${p}" ${selected}>${icon ? icon + " " : ""}${p}</option>`;
   });
 
   document.getElementById("dash-edit-outline").value = m.outline || "";

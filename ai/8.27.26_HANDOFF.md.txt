@@ -1,0 +1,183 @@
+﻿Handoff — Vantage — 2026-08-27
+▶ Start here — paste this into a new conversation
+(Connect the Vantage project folder first, and attach APP_BUILD_WORKFLOW.md.)
+
+
+Read ai/HANDOFF.md, ai/DECISIONS.md, and ai/DIRECTIVES.md first — that's the
+
+
+current state. Phase order and the backup approach are decided; don't re-open
+
+
+them.
+
+
+Two things this session.
+
+
+FIRST — close out the remaining §0 parameters, one at a time, waiting for my
+
+
+answer between each:
+
+
+1. Snapshot frequency and retention for the automated local backup. Propose
+
+
+   2-3 concrete options given that this is my only protection until Firebase
+
+
+   lands in Phase 2, and that snapshots are written via the File System
+
+
+   Access API to a directory I grant once.
+
+
+2. Confirm UX tier (you proposed Polished, not Premium).
+
+
+3. Confirm accessibility target (you proposed `none` now, WCAG 2.2 AA from
+
+
+   the Phase 2 rebuild).
+
+
+Telemetry is a Phase 2 question — skip it.
+
+
+Then update DIRECTIVES.md §0 and log the change in §6.
+
+
+SECOND — execute Phase 0, documents only:
+
+
+- Create ai/phases/, ai/archive/, and ai/BUILD_NOTES.md with an empty MAP
+
+
+  section
+
+
+- Consolidate AI-CONTEXT.md per the workflow: standing sections become
+
+
+  DECLARATIONS.md, the watch-outs become BUILD_NOTES.md organized by topic,
+
+
+  the recent log becomes AIContext.md
+
+
+- Write CLAUDE.md at the repo root as a short pointer
+
+
+- Add a status header to schema_update.sql marking it as a fossil from an
+
+
+  abandoned SQL direction, describing tables that do not exist
+
+
+Then PRODUCE, but do not execute, a keep/archive/delete list for the loose
+
+
+root files (v59, test.js, search.js, patch_app.js, patch_app.py,
+
+
+check_ids.py) for my approval.
+
+
+Do not touch app.js, index.html, style.css, or sw.js. Nothing outside ai/,
+
+
+CLAUDE.md, and that one comment header. No code this session.
+
+
+After that: a fresh conversation, then Prompt 3 from the workflow to plan Phase 1 (sequencing). Note for that planning session — automated local backup is a Phase 1 session and should land early, before real enrollments exist.
+
+
+________________
+
+
+
+
+Session: Read-only review of Vantage, then intake on sequencing and hosting.
+
+
+Nothing was written to C:\01_AppDevelopment\02_Vantage-Master-Folder. These are drafts for review.
+
+
+________________
+
+
+What Vantage is
+Single-user, offline-first PWA. Vanilla JS, no framework, no build step. 10,120 lines in one app.js. State in one localStorage key (vantage_prm_database), binaries in IndexedDB (VantagePRMFiles). Launched by Start_Vantage.bat, which starts npx serve on localhost:5000 and opens Chrome in app mode.
+
+
+Positioned as a Prospecting Relationship Manager — prospects and customers are distinct relationships needing distinct messaging, which most CRMs collapse into one pipeline. Enterprise product is the eventual destination. Prospect → customer conversion is handled manually for now; a companion CRM is a someday-maybe, not a current design constraint.
+Where things stand
+* DECISIONS.md — 12 decisions: phase order, persistence approach, stack, email deferral, and the sequencing rulings.
+* DIRECTIVES.md — recalibrated. The previous file was Onyva's, pasted.
+Phase order — decided
+Phase 0  Retrofit scaffolding — documents only, no deploy   1–2 sessions
+
+
+Phase 1  Sequencing, local, against localStorage            6–8 sessions
+
+
+Phase 2  Hosting: persistence, auth, sync                   6–9 sessions
+
+
+Total 13–19 sessions. Michael's attention across all of it: roughly 4–6 hours, concentrated in the sessions needing a real device or live data. Most individual sessions want under ten minutes from him.
+
+
+Sequencing moved ahead of hosting deliberately — see DECISIONS.md. Development stays local throughout Phase 1; Start_Vantage.bat remains the run method.
+
+
+Michael will be using the sequencer for real prospecting from the moment it works, throughout Phase 2. Two hard constraints follow:
+
+
+* Every Phase 1 and Phase 2 session must leave the app usable, not merely building. He does real outreach in it between sessions; a half-migrated view or a broken modal costs him actual work, not just tidiness.
+* Enrollment data is live from Phase 1 onward. Backup/restore for sequences (Gate 3, second in the spec's own build order) is what stands between him and losing in-flight sequences — treat it as load-bearing, not procedural. And Phase 2's import-and-verify step is migrating real prospects mid-sequence, not test records.
+Pick up here
+Three §0 parameters undecided, and the timing has changed with the phase order:
+
+
+1. Telemetry tool — Gate D activates at hosting, so this is a Phase 2 question now, not a blocker for sequencing.
+2. Recovery objectives — Gate C is blocked on it, and Gate 3 (backup coverage) fires during Phase 1. Needed before sequencing's backup session.
+3. Compliance — see DIRECTIVES §0. Prospecting tools hold personal data on people who never opted in. GDPR if any prospect is in the EU; CAN-SPAM for outreach. Not blocking, but settle it before selling anything.
+
+
+Two to confirm: UX tier (proposed Polished, not Premium) and accessibility target (proposed none now — but adopting WCAG 2.2 AA at the Phase 2 rebuild is the cheapest moment it will ever have).
+
+
+Then: plan Phase 0, or skip straight to Phase 1 planning if the scaffolding can wait. Phase 0 is small and makes everything after it cleaner.
+
+
+________________
+
+
+Traps that must not be lost
+The blob shortcut (Phase 2). Storing whole state as one hosted document is fast and wrong — 1MB ceiling, and concurrent device edits overwrite each other silently. Rejected with reasoning in DECISIONS.md. If a future session proposes it as a quick win, that's the file to read.
+
+
+The origin trap (Phase 2). Current data lives on the localhost:5000 origin. A hosted app opens with an empty database; prospects do not follow. The ZIP/CSV backup is the bridge, and Phase 2 needs an explicit import-and-verify step.
+
+
+The saveState() risk (Phase 2). Making saves granular sounds like it means touching every mutation site across 10,000 lines. It doesn't: keep a shadow copy of last-saved state, diff on save, write only what changed. One function, no call sites touched. This converts the riskiest session in the build into an ordinary one — make sure whoever plans Phase 2 knows it.
+
+
+The Gmail scope cliff (whenever email returns). gmail.send is sensitive; reading mail is restricted and buys a recurring annual third-party security assessment. "Detect the reply and auto-advance the sequence" sounds small and is not.
+
+
+Spec amendments. The sequencing spec document is superseded in three places and still says the old things: currentStepIndex → currentStepId, currentStepBody → a per-step array snapshotted at enrollment, and dates as YYYY-MM-DD strings.
+
+
+________________
+
+
+Structural findings
+* app.js is 10,120 lines in one file. The existing note — "always search for the exact function before editing" — is a workaround for a structural issue. Sequencing alone touches the prospect modal, inspector, CSV export, CSV restore, ensureStateDefaults(), and two new views, all scattered through it.
+* schema_update.sql describes Prospect and Company SQL tables that do not exist. A fossil from an abandoned direction, actively misleading — an agent reading it would believe there's a database.
+* Cruft: v59 (0 bytes), test.js (13 bytes), search.js (14 bytes), patch_app.js and patch_app.py (duplicates), check_ids.py.
+* The workflow's DNA is already here — AI-CONTEXT.md with declarations at the top, AI-CONTEXT-PROTOCOL.md, ai-context-archives/, and a .agents/skills/new-ai-context/ skill. The retrofit is consolidation, not construction.
+Open questions carried forward
+* Sheet/CSV import path for prospects at scale — likely relevant once hosted.
+* Whether Start_Vantage.bat / Stop_Vantage.bat retire at Phase 2 or stay as a local fallback. (Leaning stay — the local dev loop survives hosting.)

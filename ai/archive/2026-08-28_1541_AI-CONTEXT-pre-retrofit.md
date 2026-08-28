@@ -37,7 +37,7 @@ vantage-app/
 - `app.js` is ~8,000 lines — always search for the exact function before editing
 - `index.html` is ~130 KB — modal/section IDs must stay unique
 - `wipeAllData()` must clear both `localStorage` and IndexedDB
-- **SW cache rule**: bump `CACHE_NAME` in `sw.js` any time `index.html`, `app.js`, or `style.css` changes so the PWA picks up the new assets without a manual cache wipe. Current version: `vantageprm-cache-v36`.
+- **SW cache rule**: bump `CACHE_NAME` in `sw.js` any time `index.html`, `app.js`, or `style.css` changes so the PWA picks up the new assets without a manual cache wipe. Current version: `vantageprm-cache-v42`.
 - **Audience view layout pattern**: The Campaign Hub Audience view reuses `.prospects-layout-container` but does NOT use the absolutely-positioned overlay panel pattern the Prospect Hub uses — `#audience-inspector` is a direct grid child. Its container has an inline `grid-template-columns: 1.2fr 0.9fr; gap: 16px` override. Do NOT remove that inline style or "fix" it to match the Prospect Hub overlay pattern.
 
 ---
@@ -55,6 +55,11 @@ vantage-app/
 * **ProspectHub Inspector — Add to Audience (2026-07-19)**: Added a quick "Add to Audience" row in the prospect inspector memberships section. Renders a dropdown of active audiences the prospect isn't already in, with an Add button. Built using `createElement` + `appendChild` (not `innerHTML +=`) to preserve event listener on the Add button. Calls `addAudienceTagToProspects()` + `saveState()` + `renderProspectsView()` on click.
 * **MediaHub Publish Event — Campaign Field (2026-07-19)**: Added `pub-campaign` select (populated with Launch-status campaigns) side-by-side with `pub-platform` in a `form-row` in the Add Publish Event modal. Selecting a campaign auto-sets Platform to "Campaign"; switching Platform away from "Campaign" clears the campaign. Bidirectional sync via `addEventListener("change")` listeners in `openPublishEventModal()`. `savePublishEvent()` saves `campaignId` on the event object. Publish events table shows a campaign name badge in a new Campaign column.
 * **Start_Vantage.bat Rewrite (2026-07-19)**: Fully rewrote to use `powershell -WindowStyle Hidden` so the CMD window closes immediately after launching the browser. Kills any existing process on port 5000 before starting. Checks `PATH`, `%ProgramFiles%\nodejs`, `%APPDATA%\npm` for npx; `%LOCALAPPDATA%\Programs\Python` for Python fallback.
+* **Audience Notes Field (2026-07-28)**: Added `notes` textarea (`#aud-inspect-notes`) to the audience inspector header. Auto-saves on `input`. Migration adds `notes: ""` to existing records. Included in CSV/ZIP export (new "Notes" column) and restore.
+* **Audience Import — Tag Assignment + Duplicate Check (2026-07-28)**: Import review step now shows a tag selector (existing prospect tags) + new tag text field. On save, the tag is registered globally and applied to all imported prospect records. `processAudienceImportRows()` now builds a `duplicateInAudience` Set of prospects already in any existing audience list; the review table marks those with an "already in audience" badge and shows a yellow notice with the count.
+* **Bulk Tag Audience Prospects (2026-07-28)**: Added "🏷️ Tag All" button to active audience inspector actions. `bulkTagAudienceProspects(audId)` prompts for a tag (shows existing tags as hint), registers it globally, and applies it to all prospect records in the audience.
+* **Pop-Out Audience Contact List (2026-07-28)**: Added "⤢ Pop Out" button to active audience inspector. `openAudiencePopout(audId)` populates `#aud-popout-panel` (fixed-position floating div) with the audience contact table. Panel is draggable via its header. X button closes it. Contact names and company names in the popout are clickable (open prospect/company modals).
+* **Prospect + Company Popups from Audience Inspector (2026-07-28)**: Prospect names in the audience inspector contacts table are now `<button>` elements that call `openProspectModal(pid)`. Company names call `openCompanyModal(companyId)`. Same pattern applied in the pop-out panel.
 
 ---
 
