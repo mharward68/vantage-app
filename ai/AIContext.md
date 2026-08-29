@@ -49,8 +49,22 @@ Feature work through July 2026, condensed from the superseded log (full copy in 
 - **Audience view fixes** — inspector layout override and a null guard in `renderAudienceInspector()`. Both recorded in `BUILD_NOTES.md`.
 - **Audience quality-of-life** — notes field, import tag assignment with duplicate detection, bulk tagging, pop-out contact list, clickable prospect/company popups.
 
+## Direction change, same day — TaskHub
+
+After Phase 0 closed, the roadmap changed shape. Tasks became a first-class entity rather than a projection of sequence enrollments, and sequencing demoted to something built on top of them. Full reasoning in `DECISIONS.md` (four entries dated 2026-08-28); scopes in `ai/spec/`.
+
+**Revised phase order:** Phase 1 TaskHub · Phase 2 Prospect Detail View · Phase 3 Sequencing · Phase 4 Hosting. Each delivers something usable on its own.
+
+- `ai/spec/taskhub-scope.md` — approved, ready to plan.
+- `ai/spec/prospect-detail-view-scope.md` — direction approved, needs its own intake pass before planning.
+- `claude/sequence-feature-scope.md` and `claude/sequence-build-plan.md` in the Claude project are now **partly superseded** — the derived-task-queue ruling is reversed, sequencing has moved to Phase 3, and their ready-to-paste session prompts still tell agents to read `AI-CONTEXT.md` and `StatementOfDirective.md`, both of which are gone.
+
+**Two things a Phase 1 session must verify against `app.js` before building**, because they were scoped from documentation rather than code: the exact shape of a prospect history entry and how `state.reachoutTypes` is registered; and whether anything besides the Prospect Hub opens the prospect inspector (`openProspectModal(pid)` is called from the audience inspector and pop-out).
+
+**Still open in the TaskHub scope:** hub color (teal proposed), and whether bulk selection needs "select all N matching" across pages or only page-level select-all.
+
 ## Next step
 
-Start a **new conversation** and run Prompt 3 from the workflow to plan **Phase 1 — Sequencing**.
+Start a **new conversation** and run Prompt 3 from the workflow to plan **Phase 1 — TaskHub**, against `ai/spec/taskhub-scope.md`.
 
-Carry into that planning session: the automated local backup is a Phase 1 session and must land **early**, before real enrollments exist. Its Done-when includes an actual restore from a snapshot, not just a successful write.
+Carry into that planning session: backup/restore for `state.tasks` and `state.taskSettings` is session 2, before any UI, per DIRECTIVES §4. The automated local snapshot backup is also a Phase 1 deliverable and must land early. Both have Done-whens that include an actual restore, not just a successful write.

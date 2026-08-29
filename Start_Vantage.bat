@@ -18,10 +18,13 @@ if not defined NPX (
     if exist "%APPDATA%\npm\npx.cmd" set NPX="%APPDATA%\npm\npx.cmd"
 )
 
+:: Make sure node.exe resolves even if PATH hasn't refreshed since Node was installed
+if exist "%ProgramFiles%\nodejs\node.exe" set "PATH=%ProgramFiles%\nodejs;%PATH%"
+
 if defined NPX (
-    powershell -WindowStyle Hidden -Command "Start-Process cmd -ArgumentList '/c cd /d ""%~dp0"" && %NPX% serve -l 5000 .' -WindowStyle Hidden"
+    powershell -WindowStyle Hidden -Command "Start-Process cmd -ArgumentList '/c cd /d ""%~dp0"" && %NPX% --yes serve -l 5000 .' -WindowStyle Hidden"
     timeout /t 3 >nul
-    start http://localhost:5000
+    call :launch_app
     exit /b
 )
 
@@ -40,7 +43,7 @@ if not defined PYTHON (
 if defined PYTHON (
     powershell -WindowStyle Hidden -Command "Start-Process %PYTHON% -ArgumentList '-m http.server 5000' -WorkingDirectory '%~dp0' -WindowStyle Hidden"
     timeout /t 3 >nul
-    start http://localhost:5000
+    call :launch_app
     exit /b
 )
 
@@ -50,3 +53,18 @@ echo.
 echo Install Node.js from https://nodejs.org  OR  Python from https://python.org
 echo Then run this file again.
 pause
+exit /b
+
+:launch_app
+:: Open Vantage in a chrome-less app window (no tabs/address bar) instead of a normal browser tab
+set CHROME="%ProgramFiles%\Google\Chrome\Application\chrome.exe"
+if not exist %CHROME% set CHROME="%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
+if not exist %CHROME% set CHROME="%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
+if not exist %CHROME% set CHROME="%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
+
+if exist %CHROME% (
+    start "" %CHROME% --app=http://localhost:5000 --window-size=1400,900
+) else (
+    start http://localhost:5000
+)
+goto :eof

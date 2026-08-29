@@ -988,6 +988,47 @@ body {
   box-shadow: inset 3px 0 0 var(--color-primary);
 }
 
+/* Click-and-drag column resizing, opt-in via .col-resizable-table so it
+   doesn't change layout behavior for every other .premium-table in the app.
+   table-layout:fixed is required for per-column pixel widths to stick.
+   width:auto (overriding .premium-table's width:100%) means the table is
+   only as wide as its columns actually add up to — no min-width:100% here
+   on purpose, since that would force leftover space to stretch across every
+   column instead of collecting in the trailing spacer column. */
+.col-resizable-table {
+  table-layout: fixed;
+  width: auto;
+}
+
+.col-resizable-table th {
+  position: relative;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col-resizable-table td {
+  overflow: hidden;
+}
+
+.col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  background: transparent;
+}
+
+.col-resize-handle:hover,
+.col-resize-handle.resizing {
+  background: var(--color-primary);
+  opacity: 0.5;
+}
+
 .tag-badge {
   display: inline-block;
   padding: 3px 8px;
@@ -1635,7 +1676,7 @@ body {
 #modal-prospect,
 #modal-company,
 #modal-choose-tags {
-  z-index: 210;
+  z-index: 999999;
 }
 
 .modal-card {
@@ -2553,5 +2594,12 @@ body {
   min-height: 300px;
   max-width: 95vw;
   max-height: 95vh;
+}
+
+/* Audience pop-out panel — light theme override */
+.light-theme #aud-popout-panel {
+  background: #ffffff;
+  border-color: var(--color-border-hover);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
 }
 

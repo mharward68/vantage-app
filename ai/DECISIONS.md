@@ -215,3 +215,91 @@ The genuinely cheap moment is Phase 1, which authors three new UI surfaces (Sequ
 **Rejected:** adopting AA now — Gate F would activate and every Phase 1 UI session would carry real verification cost for one user who is also the developer. **Rejected:** `none` with no guidance — same savings, larger retrofit later, for no gain.
 
 **Revisit if:** external launch is scheduled, or anyone other than Michael is given an account.
+
+---
+
+## 2026-08-28 — TaskHub: tasks become a first-class entity
+
+**Chose:** a sixth top-level hub, backed by `state.tasks` — a stored entity, one prospect per task, created manually from the Prospect Hub inspector or from TaskHub itself. Full scope in `ai/spec/taskhub-scope.md`.
+
+**Supersedes:** `sequence-feature-scope.md` §3, "the task queue is derived, not stored." That ruling bought one real thing — an enrollment and its task could never disagree, because only one record existed. A stored task row can drift from whatever produced it, and most of the TaskHub scope's coupling rules exist to prevent that.
+
+**Because:** the requirement changed shape. Tasks are wanted for their own sake — ad-hoc follow-ups with no sequence behind them, bulk due-date shifts across a week out of the office, a cross-prospect work queue. None of that is expressible as a projection of enrollments, and bulk-editing the due date of a derived row means writing back into the enrollment, which is the two-sources-of-truth problem arriving anyway with none of the benefits.
+
+**Consequence for phase order:** sequencing is now built *around* TaskHub rather than the reverse. Proposed renumbering — Phase 1 TaskHub, Phase 2 Sequencing, Phase 3 Hosting. This is an improvement in shape, not just a reshuffle: manual tasks plus TaskHub is independently useful before a single sequence exists, so Phase 1 delivers working value much earlier than the previous plan did.
+
+**Revisit if:** nothing foreseeable. This is the more general model; the derived version is a special case of it.
+
+---
+
+## 2026-08-28 — Completing a task writes prospect history
+
+**Chose:** completing a task appends an entry to that prospect's history, individually and in bulk.
+
+**Because:** `getLastReachoutDate()` derives "last reachout" from history entries and feeds the Advanced Query date filters. The moment TaskHub becomes where work actually happens, those filters silently stop reflecting reality unless completions land in history. The failure is invisible — the filters keep returning results, just wrong ones.
+
+**Rejected:** keeping tasks and history separate. Simpler to build, and it quietly breaks a feature already shipped. **Rejected:** a per-task "log as reachout" checkbox — more faithful, since an internal to-do isn't contact, but it puts a decision on every task created and the accuracy gain does not pay for that friction at one user.
+
+**Cost if wrong:** history gains entries for internal to-dos that weren't really outreach, slightly skewing "last reachout" early. Recoverable by filtering on reachout type later. The opposite error — discovering months of completed work never logged — is a migration.
+
+---
+
+## 2026-08-28 — Business-day setting governs arithmetic only
+
+**Chose:** the global All Days / Business Days setting changes how `±N days` counts. It does not validate, snap, or warn on a date typed or picked by hand. Changing it is never retroactive.
+
+**Because:** a deliberate weekend due date is a legitimate thing to want, and a control that silently rewrites what you entered is worse than one that trusts you. Snapping also fights the date picker, which has no idea about the setting.
+
+**Rejected:** snapping manual picks forward to the next weekday, and warning-but-allowing. The first overrides intent silently; the second adds permanent UI to a control used constantly, to prevent something that isn't a mistake.
+
+**Recorded so it isn't "fixed" later:** flipping the setting must not move existing tasks. It is a preference for future arithmetic, not a migration.
+
+---
+
+## 2026-08-28 — Three TaskHub rulings taken independently
+
+**Task `source` / `sourceRef` fields exist from day one, defaulted `"manual"` and `null`.** Deliberately unused. Gate B: without them, adding sequence-produced tasks later migrates every task in the system; with them it is additive. Two lines.
+
+**Orphaned tasks survive a restore.** A task whose `prospectId` doesn't resolve is kept and rendered "(missing prospect)", with a count reported after the restore. Silently discarding user data during a restore is the worst failure mode a backup system has, and Gate C exists to prevent exactly that class of thing.
+
+**TaskHub defaults to all open tasks, overdue first.** Not "upcoming," despite that being the literal request — past-due work hidden behind a filter click is the one thing that can least afford to be hidden.
+
+---
+
+## 2026-08-28 — Phase order revised: TaskHub first, sequencing third
+
+**Chose:**
+
+| Phase | Scope |
+| --- | --- |
+| Phase 0 | Retrofit scaffolding — done |
+| Phase 1 | **TaskHub** — task entity, hub, backup/restore, bulk editing |
+| Phase 2 | **Prospect Detail View** — full-screen record view with tabs |
+| Phase 3 | **Sequencing** — built as a producer of tasks |
+| Phase 4 | **Hosting** — persistence migration, auth, sync |
+
+**Supersedes:** the 2026-08-27 order (sequencing → hosting).
+
+**Because:** tasks turned out to be the foundation and sequencing the thing built on top, not the reverse. Each phase now delivers something usable on its own — manual tasks are valuable before any sequence exists, and the detail view improves daily work whether or not sequencing has landed.
+
+The detail view sits at Phase 2 rather than being folded into Phase 1 deliberately. It rewrites shipped Prospect Hub UI, and Phase 1 is already introducing a new entity and its backup wiring. Keeping those apart means TaskHub isn't blocked on an inspector rework, and the rework isn't rushed inside a data-layer phase. TaskHub ships against the existing inspector with Tasks as an interim subsection, which becomes a tab in Phase 2.
+
+**Cost accepted:** the interim Tasks subsection is built once and then migrated into a tab. That is roughly half a session of rework, bought in exchange for not putting a rewrite of the surface used for daily outreach inside the phase that introduces the data model.
+
+---
+
+## 2026-08-28 — One editing surface for prospects
+
+**Chose:** the Phase 2 full-screen detail view **replaces** the Prospect Hub overlay inspector and becomes the single place prospect information is entered or edited. The Advanced Query results drawer becomes a **read-only quick preview** — click a contact, see who they are, no editing.
+
+**Because:** prospect detail already renders in two places, and adding a third guarantees drift — three implementations of the same record that diverge feature by feature until they disagree about what a prospect is. Advanced Query's purpose is *selecting* prospects, primarily to place them in an audience; editing there was convenience that now costs consistency.
+
+**Note this is a narrowing of shipped behavior.** The AQ drawer currently carries quick-edit, notes editing, tag editing and delete. Those go away. Stated here so it is planned rather than discovered as a regression.
+
+---
+
+## 2026-08-28 — No files or media attached to prospects
+
+**Chose:** the `VantagePRMFiles` IndexedDB store is not extended to prospect records. No Files tab in the detail view.
+
+**Because:** decided outright rather than deferred, so a future session doesn't propose it as an obvious gap. Media lives in the Media Hub against media records; prospects carry notes and history, not attachments.
