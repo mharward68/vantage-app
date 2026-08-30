@@ -514,8 +514,15 @@ That one row is the whole of its DIRECTIVES §4 coverage, and it reaches every p
   2. `wipeAllData()` → restore → verify counts, notes, completion state, orphan count, `dateMode`, `reachoutTypes`, **and `columnLayouts` (C15/C17 — a resized and reordered layout must come back identical; confirm `columnLayouts` is in `wipeAllData()`'s explicit clear list, which is the thing that gets missed)**.
   3. Restore from a **snapshot** as well as from the ZIP — the two paths are different code.
   4. Final `CACHE_NAME` bump; confirm the installed PWA picks up the new build.
-  5. `DECLARATIONS.md`: add `tasks` and `taskSettings` to the state array list, add TaskHub cyan to the hub-colors line, correct `data` → `data-management` in the routing line.
-  6. `BUILD_NOTES.md`: populate MAP; record the two-inspector duplication (Assumption 2), the wholesale `reachoutTypes` replacement on settings restore, and the real router function names — the scope's `processSingleCSVContent()` does not exist and the next agent will look for it.
+  5. `DECLARATIONS.md` — the drift audit. **Seven items, re-checked against the file on 2026-08-30 after Session 1.11.** Every one is a line that is now factually wrong, not a preference:
+     - **State array list:** add `tasks`, `taskSettings` **and `columnLayouts`.** Three new top-level stores landed in Phase 1 and none of them is in that list; `columnLayouts` is the one most likely to be forgotten, because it arrived last and is UI layout rather than user records.
+     - **Routing line:** it names five views and omits `tasks`. TaskHub is the sixth, and it is the whole point of this phase. Also correct `data` → `data-management`: the section id is `#view-data-management` and a session that trusts the declared name looks for an element that does not exist.
+     - **Hub colors line:** add TaskHub cyan. Five hubs are listed, six exist.
+     - **Backup line:** it declares the restore router as `handleRestoreFile()` / **`processSingleCSVContent()`**. That second function **does not exist and never has** — the real router is `processRestoreFile()`. This fossil is usually blamed on the superseded sequencing scope, but it is in DECLARATIONS itself, which is the standard of truth, so correcting it in `BUILD_NOTES` alone leaves the wrong name in the authoritative file.
+     - **Stack line:** `app.js` is declared as "~10,000 lines". It is ~13,000 (`index.html` ~3,200, `style.css` ~3,100). The number matters only because it is what a session uses to size a change, so keep it approximate but true.
+     - **Environment line:** it says `AI-CONTEXT-PROTOCOL.md`, `ai-context-archives/` and `.agents/skills/new-ai-context/` are "retained as history; not live." **They are not retained — they are gone.** Either delete the line or say they were removed, but do not leave a standing file pointing at three paths that are not there.
+     - Confirm nothing else drifted: read the whole file against the tree rather than only fixing this list. This item is the audit; the six above are what it found last time it was run.
+  6. `BUILD_NOTES.md`: populate MAP; record the two-inspector duplication (Assumption 2), the wholesale `reachoutTypes` replacement on settings restore, and the real router function names — `processSingleCSVContent()` does not exist and the next agent will look for it. (Task 5 corrects the same fossil in `DECLARATIONS.md`; this records *why* it is wrong, so the two are not redundant.)
   7. `AIContext.md`: rewrite for the phase close.
 - **Inputs needed from me:** confirmation that live data is backed up before the drill runs. **Gathered before the session starts.**
 - **Done when:**
@@ -681,6 +688,8 @@ That one row is the whole of its DIRECTIVES §4 coverage, and it reaches every p
 6. **Compliance (DIRECTIVES §0).** Still undecided, and TaskHub's `notes` field will now hold outreach copy addressed to named third parties alongside their contact data. Not blocking this phase; the surface area it covers grows in it.
 
 ---
+
+**Amended 2026-08-30** after Session 1.11, at Michael's request. **Session 1.8 task 5 only.** The DECLARATIONS audit listed three drift items; the file was re-read against the tree and has seven, including the `processSingleCSVContent()` fossil sitting in DECLARATIONS itself rather than only in the superseded scope. No session's goal, contract, size or done-criteria changed, and no frozen contract was touched — this makes an existing task complete instead of leaving 1.8 to rediscover the rest.
 
 **Amended 2026-08-29** after Session 1.5, from Michael's review pass. Added §13 to `ai/spec/taskhub-scope.md`, contracts C14–C17, sessions 1.9 / 1.10 / 1.11, a non-numeric run order with 1.8 last, and revisions to 1.6 (three tasks landed early in 1.5; select-all becomes a header checkbox) and 1.8 (the drill now covers `columnLayouts`).
 
