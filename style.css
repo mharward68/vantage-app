@@ -302,11 +302,57 @@ thead.task-table-head th {
   overflow-wrap: anywhere;
 }
 
-/* C16 first hit zone: the 5px strip at a column's right edge. The cursor is
-   the only thing that advertises it, so it is set from the mousemove handler
-   rather than by a :hover rule, which cannot know the pointer's x. */
+/* C16 first hit zone: the 12px band STRADDLING a column's right edge (6px
+   either side, amended 2026-08-30). The cursor is set from the mousemove
+   handler rather than by a :hover rule, which cannot know the pointer's x. */
 #taskhub-table th.taskhub-col-resizing {
   user-select: none;
+}
+
+/* ==========================================================================
+   Column dividers — added 2026-08-30 with the C16 amendment, not decoration.
+
+   The wider hit zone made the target easier to hit; these lines are what tell
+   the eye WHERE to aim. A resize affordance you cannot see is still a hunt,
+   just a shorter one, so the two changes only finish the job together.
+
+   Two weights on purpose:
+     - The HEADER line is the grab target, so it is drawn to be found.
+       var(--color-border) is rgba(255,255,255,0.07) in dark — correct for a
+       body grid and far too faint for something you are meant to aim at.
+       Literal hexes with a .light-theme sibling, following
+       .taskhub-row-overdue / .taskhub-row-today and the §15.3 header rule.
+       Do NOT swap these for a custom property: var(--color-danger) is read by
+       renderDomainsView() and defined nowhere, and that highlight is silently
+       dead as a result.
+     - The BODY line is structure, not a target, so it stays on
+       var(--color-border) — which IS defined, in both themes. It should read
+       as a grid without competing with the contact data in it.
+
+   Specificity is deliberate, per the source-order trap this file has already
+   sprung twice: .premium-table th and .premium-table td are declared ~1000
+   lines BELOW this block, so an equal-specificity rule here would lose on
+   source order alone and the symptom would never point at CSS. Both selectors
+   below lead with the id, so they win regardless of where they sit.
+
+   The trailing spacer is excluded — its right edge is the table's edge, not a
+   junction between two columns — and so is the empty-state row's colspan cell.
+   The checkbox column KEEPS its divider: it is a real column boundary, and
+   omitting the line there reads as a missing line rather than as "this one
+   cannot be dragged".
+
+   Borders only. No position, no transform: `position: relative` on the table
+   or its th is exactly what silently un-stuck the sticky header in 1.10.
+   ========================================================================== */
+#taskhub-thead th:not(.taskhub-col-spacer) {
+  border-right: 1px solid #1e5a63;
+}
+.light-theme #taskhub-thead th:not(.taskhub-col-spacer) {
+  border-right-color: #7ba7b0;
+}
+
+#taskhub-table tbody td:not([aria-hidden]):not([colspan]) {
+  border-right: 1px solid var(--color-border);
 }
 
 /* C16 second hit zone — the column being dragged sideways (Session 1.11).

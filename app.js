@@ -4835,7 +4835,7 @@ const TASKHUB_COLUMNS = [
 // C16 hit zones and the resize floor. All three zones are implemented in
 // Session 1.10 even though only resize is built, so 1.11 adds a branch rather
 // than rewriting the handler.
-const TASKHUB_RESIZE_EDGE_PX = 5;        // C16 row 1 — resize
+const TASKHUB_RESIZE_EDGE_PX = 6;        // C16 row 1 — resize. EACH SIDE of the divider (amended 1.8)
 const TASKHUB_REORDER_THRESHOLD_PX = 4;  // C16 row 2 — reorder (Session 1.11)
 const TASKHUB_MIN_COL_PX = 60;
 
@@ -5241,8 +5241,50 @@ function taskHubHeaderCell(target) {
   return (target && target.closest) ? target.closest("#taskhub-thead th[data-col-key]") : null;
 }
 
-function taskHubInResizeZone(th, clientX) {
-  return (th.getBoundingClientRect().right - clientX) <= TASKHUB_RESIZE_EDGE_PX;
+/* C16 row 1, amended 2026-08-30 (Session 1.8) — the zone STRADDLES the divider.
+
+   It used to be `right - clientX <= EDGE`: a band lying entirely INSIDE the
+   left-hand column. That makes half of every divider dead. Overshoot the line
+   by one pixel and you are inside the next th, where the test asks "are you
+   near MY right edge?" — the answer is no, so nothing happens, and the half
+   you overshot into is exactly where a cursor aimed AT the line tends to land.
+   Michael reported it as "very difficult to find"; the difficulty was the
+   geometry, not the 5px.
+
+   Now: within EDGE px inside a th's right edge resizes THAT column; within
+   EDGE px inside a th's LEFT edge resizes its LEFT NEIGHBOUR. Symmetrical
+   around the line you can actually see, and the extra half comes from the
+   neighbour rather than from the column you are on.
+
+   Returns the th to resize, or null. Two edges stay correctly dead with no
+   special case: the first data column's left neighbour is the checkbox th and
+   the last one's right neighbour is the trailing spacer, and neither carries
+   data-col-key, so the dataset guard below and taskHubHeaderCell() reject
+   them respectively.
+
+   Zones cannot overlap: TASKHUB_MIN_COL_PX is 60 and 2 * EDGE is 12. */
+function taskHubResizeTarget(th, clientX) {
+  const rect = th.getBoundingClientRect();
+  if ((rect.right - clientX) <= TASKHUB_RESIZE_EDGE_PX && th.dataset.colKey) return th;
+  if ((clientX - rect.left) <= TASKHUB_RESIZE_EDGE_PX) {
+    const prev = th.previousElementSibling;
+    if (prev && prev.dataset && prev.dataset.colKey) return prev;
+  }
+  return null;
+}
+
+/* Resize hit-tests against EVERY th, including the two structural ones, while
+   sort and reorder keep using taskHubHeaderCell() and stay data-columns-only.
+
+   The reason is the LAST column. Its right-hand neighbour is the trailing
+   spacer, which carries no data-col-key — so with taskHubHeaderCell() as the
+   hit test the straddle simply cannot reach across that divider, and the
+   widest column on the table ends up the one hardest to grab: 6 live pixels
+   against 12 everywhere else. Widening the hit test fixes that without making
+   the spacer or the checkbox column resizable in their own right, because
+   taskHubResizeTarget() returns a th only when it carries a data-col-key. */
+function taskHubResizeHitCell(target) {
+  return (target && target.closest) ? target.closest("#taskhub-thead th") : null;
 }
 
 /* --------------------------------------------------------------------------
@@ -5322,18 +5364,22 @@ function initTaskHubHeaderDrag() {
   if (!thead || taskHeaderDragInit) return;
   taskHeaderDragInit = true;
 
-  // The cursor is the only thing that advertises the 5px zone, and a :hover
-  // rule cannot know the pointer's x — so it is set from mousemove.
+  /* The cursor is the only thing that advertises the resize zone, and a :hover
+     rule cannot know the pointer's x — so it is set from mousemove. It reads
+     the SAME predicate the mousedown branch below does, which is what stops
+     the cursor promising a resize the click will not perform. The cursor goes
+     on the th under the pointer even when the column that would resize is its
+     left neighbour: the pointer is what the user sees. */
   thead.addEventListener("mousemove", (e) => {
-    const th = taskHubHeaderCell(e.target);
-    if (!th) return;
-    th.style.cursor = taskHubInResizeZone(th, e.clientX) ? "col-resize" : "";
+    const hitTh = taskHubResizeHitCell(e.target);
+    if (!hitTh) return;
+    hitTh.style.cursor = taskHubResizeTarget(hitTh, e.clientX) ? "col-resize" : "";
   });
 
   thead.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
-    const th = taskHubHeaderCell(e.target);
-    if (!th) return;
+    const hitTh = taskHubResizeHitCell(e.target);
+    if (!hitTh) return;
 
     /* A new gesture starting means the previous gesture's trailing click has
        already been and gone — a click always precedes the next mousedown. So
@@ -5344,26 +5390,35 @@ function initTaskHubHeaderDrag() {
        leaked flag would mean. */
     taskSuppressNextHeaderClick = false;
 
-    /* --- Zone 1: resize --- */
-    if (taskHubInResizeZone(th, e.clientX)) {
+    /* --- Zone 1: resize ---
+       Tested FIRST and against the wider hit cell, so a grab on the trailing
+       spacer's left edge still resizes the last real column.
+
+       `resizeTh` is NOT always the th under the pointer. On the left-edge half
+       of the zone the column being resized is the previous sibling, so every
+       line below reads resizeTh — the key it persists, the width it starts
+       from, the class it flags and the element it sizes live. Mixing the two
+       would resize one column while measuring another. */
+    const resizeTh = taskHubResizeTarget(hitTh, e.clientX);
+    if (resizeTh) {
       e.preventDefault();     // no text selection while dragging
       e.stopPropagation();
-      const key = th.dataset.colKey;
+      const key = resizeTh.dataset.colKey;
       const startX = e.clientX;
-      const startWidth = th.getBoundingClientRect().width;
+      const startWidth = resizeTh.getBoundingClientRect().width;
       let finalWidth = startWidth;
 
-      th.classList.add("taskhub-col-resizing");
+      resizeTh.classList.add("taskhub-col-resizing");
       document.body.style.cursor = "col-resize";
 
       const onMove = (ev) => {
         finalWidth = Math.max(TASKHUB_MIN_COL_PX, Math.round(startWidth + (ev.clientX - startX)));
-        th.style.width = finalWidth + "px";   // live and cheap: no render, no save
+        resizeTh.style.width = finalWidth + "px";   // live and cheap: no render, no save
       };
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
-        th.classList.remove("taskhub-col-resizing");
+        resizeTh.classList.remove("taskhub-col-resizing");
         document.body.style.cursor = "";
         taskSuppressNextHeaderClick = true;   // a drag is not a sort
         setTaskHubColumnWidth(key, finalWidth);   // persisted ONCE, here
@@ -5373,7 +5428,14 @@ function initTaskHubHeaderDrag() {
       return;
     }
 
-    /* --- Zones 2 and 3: distance decides, not the element --- */
+    /* --- Zones 2 and 3: distance decides, not the element ---
+       Past the resize branch, sort and reorder are data-columns-only again, so
+       the wider hit cell is narrowed back to a real column here. A mousedown
+       on the checkbox th or the trailing spacer that was not a resize is not a
+       sort and not a drag: it ends the gesture. */
+    const th = taskHubHeaderCell(e.target);
+    if (!th) return;
+
     const startX = e.clientX;
     const dragTh = th;
     let passedThreshold = false;

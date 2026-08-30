@@ -311,6 +311,33 @@ One `mousedown` handler on the header row owns three outcomes, decided by where 
 
 **The third row is the one that breaks.** Sorting is existing, verified behavior and a drag implementation that swallows the click kills it silently. It is in both sessions' Done-when.
 
+> ### ⚠️ C16 ROW 1 AMENDED 2026-08-30 (Session 1.8) — the zone straddles the divider
+>
+> The table above is **superseded for row 1 only** and kept so the change is legible. Rows 2 and 3 are untouched, and the three-outcome structure — one handler, distance decides — is untouched.
+>
+> **Amended by Michael mid-session**, after using the resize and reporting the handle as "very difficult" to find. Authorized explicitly; this is a plan revision, recorded rather than applied silently.
+>
+> **Now true:**
+>
+> | Condition | Outcome |
+> | --- | --- |
+> | `mousedown` within **6px INSIDE a `th`'s right edge** | **Resize** that column |
+> | `mousedown` within **6px INSIDE a `th`'s left edge** | **Resize its LEFT NEIGHBOUR** |
+>
+> A 12px band centred on each divider, versus 5px lying entirely inside the left-hand column.
+>
+> **Why the geometry and not just the number.** The old test was `right - clientX <= 5`, so half of every divider was dead: overshoot the line by one pixel and the pointer is inside the *next* `th`, whose own test asks "are you near MY right edge?" — no — and nothing happens. The dead half is exactly where a cursor aimed at the visible line tends to land. Raising 5 to 10 would have widened the live half and left the dead half dead.
+>
+> **New identifiers:** `taskHubResizeTarget(th, clientX)` returns the `th` to resize or `null`, replacing `taskHubInResizeZone()`. `taskHubResizeHitCell(target)` matches **every** `th` including the two structural ones, and is used **only** by the resize branch — sort and reorder still narrow to `taskHubHeaderCell()` and stay data-columns-only. That wider hit test exists for the last column, whose right-hand neighbour is the trailing spacer: without it the widest column on the table is the hardest to grab, at 6 live pixels against 12 everywhere else.
+>
+> **Still structurally dead, with no special case:** the checkbox column and the trailing spacer carry no `data-col-key`, and `taskHubResizeTarget()` returns a `th` only when it has one.
+>
+> `TASKHUB_RESIZE_EDGE_PX` is now **6, per side**. `TASKHUB_MIN_COL_PX` is 60, so `2 × EDGE = 12` cannot make two zones overlap.
+>
+> **Also added, same session:** visible column dividers (`#taskhub-thead th:not(.taskhub-col-spacer)` and `#taskhub-table tbody td:not([aria-hidden]):not([colspan])` in `style.css`). Two weights on purpose — the header line is the grab target and is drawn to be found; the body line is structure and stays on `var(--color-border)`. The wider zone and the visible line only finish the job together: a target you cannot see is still a hunt.
+>
+> ~~*Superseded:*~~ `mousedown` within **5px of the `th`'s right edge** → resize that column.
+
 ### C17 — Column layout backup coverage (Session 1.10)
 
 Rides in `prm_settings.csv` as one row, following the `Custom Sort Order` precedent:
