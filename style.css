@@ -29,6 +29,9 @@
   --border-radius-sm: 6px;
   --transition-smooth: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   --transition-elastic: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+  /* Calendar glyph for native date inputs. See the date-input block below. */
+  --calendar-glyph: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cpath d='M16 2v4M8 2v4M3 10h18'/%3E%3C/svg%3E");
 }
 
 /* ==========================================================================
@@ -109,6 +112,185 @@ body.module-data-management.light-theme {
   --color-primary: #dc2626;
   --color-secondary: #be123c;
 }
+
+/* 6. TaskHub Module (Cyan) */
+body.module-tasks {
+  --color-primary: #06b6d4;
+  --color-primary-glow: rgba(6, 182, 212, 0.15);
+  --color-secondary: #0ea5e9;
+  --color-secondary-glow: rgba(14, 165, 233, 0.15);
+}
+body.module-tasks.light-theme {
+  --color-primary: #0891b2;
+  --color-secondary: #0284c7;
+}
+
+/* ==========================================================================
+   ✅ TASKHUB ROW STATE (Phase 1 / Session 1.5)
+   Overdue red, due today green, completed dimmed and struck through.
+   Defined as classes rather than inline styles so the light theme can carry
+   its own darker values — the same pattern the module colors above use.
+   NOTE: var(--color-danger) is NOT defined anywhere in this file; do not
+   reach for it here.
+   ========================================================================== */
+.taskhub-row-overdue td { color: #f87171; }
+.taskhub-row-overdue .taskhub-due { font-weight: 700; }
+.taskhub-row-today td { color: #34d399; }
+.taskhub-row-today .taskhub-due { font-weight: 700; }
+.taskhub-row-done td { opacity: 0.55; text-decoration: line-through; }
+
+.light-theme .taskhub-row-overdue td { color: #b91c1c; }
+.light-theme .taskhub-row-today td { color: #047857; }
+
+.taskhub-orphan-chip {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  padding: 8px 14px;
+  border-radius: var(--border-radius-md);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+.taskhub-orphan-chip:hover { background: rgba(239, 68, 68, 0.2); }
+.light-theme .taskhub-orphan-chip { color: #b91c1c; }
+
+.taskhub-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.taskhub-sortable:hover { color: var(--color-primary); }
+
+/* --------------------------------------------------------------------------
+   ✅ BULK DUE DATE MODAL (Phase 1 / Session 1.7)
+   The generic `.form-group input` rule below pads and boxes every input, which
+   turns a radio button into a padded rectangle. These two mode radios are the
+   only radios in the app, so the override is scoped to this modal rather than
+   loosened globally.
+   -------------------------------------------------------------------------- */
+#modal-task-due-date .form-group > label {
+  color: var(--color-text-main);
+  font-size: 13px;
+}
+#modal-task-due-date input[type="radio"] {
+  appearance: auto;
+  -webkit-appearance: auto;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  accent-color: var(--color-primary);
+}
+
+/* --------------------------------------------------------------------------
+   ✅ TASK EDITOR — search, checkboxes, prospect link (Phase 1 / Session 1.9)
+
+   Same trap as the radios above: `.form-group input` pads and boxes EVERY
+   input, so a checkbox placed in a form group renders as a rectangle with a
+   tick lost inside it. Scoped to this modal rather than loosening the global
+   rule, which every existing form depends on.
+   -------------------------------------------------------------------------- */
+#modal-task input[type="checkbox"] {
+  appearance: auto;
+  -webkit-appearance: auto;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  accent-color: var(--color-primary);
+}
+#modal-task .task-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--color-text-main);
+  font-size: 13px;
+  font-weight: 600;
+}
+#modal-task .task-reachout-block {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--color-primary);
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.light-theme #modal-task .task-reachout-block { background: rgba(0, 0, 0, 0.04); }
+#modal-task .task-reachout-note {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+/* Search results. Capped at 20 rows in code (C14), so the max-height here is
+   a comfort bound, not the cap — do not treat it as one. */
+.task-prospect-results {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.task-prospect-results:empty { display: none; }
+.task-prospect-result {
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: var(--border-radius-md);
+  color: var(--color-text-main);
+}
+.task-prospect-result:hover,
+.task-prospect-result.is-active { background: rgba(139, 92, 246, 0.18); }
+.task-prospect-result-empty,
+.task-prospect-result-more {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+.task-prospect-chosen {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+/* The fixed prospect text is a LINK when it resolves (scope §13.8) and plain
+   text when it does not — the class is toggled in openTaskEditor(), so an
+   orphan's "(missing prospect)" never looks clickable. */
+.task-prospect-fixed {
+  padding: 8px 0;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+.task-prospect-fixed.task-prospect-link {
+  color: var(--color-primary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  width: fit-content;
+}
+.task-prospect-fixed.task-prospect-link:hover { opacity: 0.8; }
+
+.task-orphan-warning {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  border-radius: var(--border-radius-md);
+  color: #f87171;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.light-theme .task-orphan-warning { color: #b91c1c; }
 
 /* ==========================================================================
    RESET & SYSTEM WRAPPERS
@@ -1672,10 +1854,19 @@ body {
 /* Record-level edit modals must always render above the Advanced Query
    results window (and its tag chooser), even though they appear earlier in
    the DOM, since they can be opened from the inspector drawer while the
-   results box is still open. */
+   results box is still open.
+
+   #modal-task joined them 2026-08-30. Same defect, same cause: the orphan
+   resolution window opens it, but #modal-task sits EARLIER in index.html
+   than #modal-task-orphans, so at equal z-index the picker painted on top
+   and the editor opened behind it — open, correct, and completely
+   unreachable. Every `.modal-overlay` is z-index 200, so ANY modal that can
+   be opened from another modal belongs in this list. Check DOM order before
+   assuming a new one is safe; it is a coin flip otherwise. */
 #modal-prospect,
 #modal-company,
-#modal-choose-tags {
+#modal-choose-tags,
+#modal-task {
   z-index: 999999;
 }
 
@@ -2603,3 +2794,124 @@ body {
   box-shadow: 0 8px 32px rgba(0,0,0,0.15);
 }
 
+
+/* ==========================================================================
+   📸 Snapshot health chip (sidebar)
+   Ambient, always-visible statement of whether Vantage is actually backing
+   your data up. Red is a claim about the filesystem, not about an error
+   handler — see app.js contract C13.
+   ========================================================================== */
+.snapshot-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 10px 0;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  line-height: 1.2;
+  cursor: pointer;
+  border-radius: var(--border-radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.snapshot-chip:hover { filter: brightness(1.12); }
+.snapshot-chip:disabled { cursor: progress; opacity: 0.7; }
+.snapshot-chip:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.snapshot-chip-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06);
+}
+.snapshot-chip-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.snapshot-chip-green {
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+}
+.snapshot-chip-amber {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.10);
+}
+.snapshot-chip-red {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.12);
+}
+/* Red is the one state that should be hard to look past. */
+.snapshot-chip-red .snapshot-chip-dot {
+  animation: snapshot-chip-pulse 1.8s ease-in-out infinite;
+}
+@keyframes snapshot-chip-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.10); }
+  50%      { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.22); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .snapshot-chip-red .snapshot-chip-dot { animation: none; }
+}
+
+/* Light theme: the tinted fills wash out on white, so darken the ink and
+   firm up the borders rather than relying on the fill for contrast. */
+.light-theme .snapshot-chip-green {
+  color: #047857;
+  border-color: rgba(4, 120, 87, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+}
+.light-theme .snapshot-chip-amber {
+  color: #b45309;
+  border-color: rgba(180, 83, 9, 0.4);
+  background: rgba(245, 158, 11, 0.16);
+}
+.light-theme .snapshot-chip-red {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.5);
+  background: rgba(239, 68, 68, 0.14);
+}
+.light-theme .snapshot-chip-dot {
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+}
+
+/* ==========================================================================
+   📅 NATIVE DATE INPUT — CALENDAR INDICATOR
+   Chrome's ::-webkit-calendar-picker-indicator ships a near-black glyph, which
+   on this app's dark canvas is invisible — the picker is there and looks like
+   it isn't. Found 2026-08-29: Michael missed it entirely and asked for a date
+   picker that already existed.
+
+   Tinted with the live hub token rather than a literal cyan, so it follows
+   whichever hub the field is rendered in — cyan in TaskHub, purple in the
+   Prospect Hub, and correct in both themes without a second rule.
+
+   The glyph is replaced via mask rather than `filter`. A filter chain that
+   lands on a specific hue is six magic numbers nobody can maintain or retheme;
+   a mask takes the color straight from the variable.
+   ========================================================================== */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  background: var(--color-primary);
+  -webkit-mask: var(--calendar-glyph) center / 15px 15px no-repeat;
+  mask: var(--calendar-glyph) center / 15px 15px no-repeat;
+  opacity: 1;
+  transition: var(--transition-smooth);
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  background: var(--color-secondary);
+}

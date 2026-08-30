@@ -1,70 +1,63 @@
 # AI Context
 
-**Updated:** 2026-08-28 15:41
-**Last run:** Phase 0 / Session 0.1 — §0 close-out and documentation retrofit  **Compartment(s):** none — documents only
-**State:** builds ✅ (no code touched)  tests n/a  deployed n/a
-**Estimate vs actual:** Phase 0 planned at 1–2 sessions; the document half took 1. Loose-file cleanup is pending approval and is minutes, not a session.
+**Updated:** 2026-08-30 07:12 (America/New_York) — review-pass fix appended
+**Last run:** Phase 1 / Session 1.9 — Orphan window becomes a list; contact search replaces every prospect dropdown  **Compartment(s):** UI, with LOGIC
+**State:** `node --check app.js` clean · `check_ids.py` at its known baseline of two · console errors character-identical to the unmodified tree (diffed, both trees booted with the same seeded database) · `CACHE_NAME` v77 (v76 shipped, v77 for the review fix) · deployed n/a
+**Estimate vs actual:** planned **M** / ~10 min of Michael's time. Actual **M**, and ~**5 min** of his — none on the session itself, all of it on the review pass that found the stacking defect below. No three-strikes situation; nothing escalated; no frozen contract modified.
 
 ## Done
 
-- Closed the three open §0 parameters in `DIRECTIVES.md` and logged the change in §6.
-  - **Recovery objectives** — local snapshots debounced ~2 min after last mutation, plus tab-hide and close. Retention: last 10 rolling + newest-of-day ×14 + newest-of-week ×8. State JSON every snapshot; IndexedDB binaries mirrored daily, deduped by id, never pruned. Gate C moved from blocked to active.
-  - **UX tier** — Polished, confirmed. Raise before external launch.
-  - **Accessibility** — `none`, Gate F stays inert. Three authoring habits added for new markup (labeled inputs, keyboard-operable controls, visible focus). AA anchor moved from "the Phase 2 rebuild" to "before external launch."
-  - **Telemetry** — restated as deferred to Phase 2 by decision rather than left open.
-- Retrofitted the `ai/` workflow structure. `AI-CONTEXT.md` split three ways: standing sections → `DECLARATIONS.md`, watch-outs → `BUILD_NOTES.md` organized by topic, log → here.
-- Wrote `CLAUDE.md` at the repo root as a pointer, not a copy.
-- Marked `schema_update.sql` as a fossil with a status header. No other code file touched.
+- **The orphan window is a list and nothing more (§13.1).** `renderTaskOrphanWindow()` lost the per-row `<select>`, Assign and Delete; the Resolve column is gone from `#modal-task-orphans` in `index.html`. The whole row is the click target and calls `openTaskEditor(t.id)`. Rows still show due date, title, and the stored `prospectId` **verbatim** — that string is the only forensic evidence of where the task came from.
+- **Contact search per contract C14 (§13.2).** `#task-prospect` changed from `<select>` to `<input type="hidden">`, **keeping its id and its value**, so `saveTaskFromEditor()` reads exactly what it read before and the save path did not move. `#task-prospect-search` + `#task-prospect-results` are the query and the matches. Matching is case-insensitive substring on `firstName`, `lastName`, the joined `"first last"`, and the resolved company name. **An empty query renders nothing** (verified: 0 rows, `innerHTML.length === 0`, against 306 contacts). Matches cap at 20 with a "…N more — keep typing" line (verified: 35 matches → 20 rows + "…15 more"). ↑/↓ move, Enter selects, Esc clears the query and `stopPropagation()`s so it does not also close the modal. On select the field shows the chosen contact with a **Change** button back to searching.
+- **The `isOrphan` repair branch is back (§13.1), keyed on `isOrphan` only.** `needsPicker = isOrphan || (isNew && !prospectId)`. The comment block in `openTaskEditor()` was updated rather than deleted and still says not to widen it to "editing" — that is the surviving half of §12.1 and it is load-bearing. `#task-orphan-warning` is restored and renders **only** for an orphan. The **full-list population loop is deleted**; nothing builds a list of every contact for this field any more.
+- **`refreshAfterTaskChange()` now also repaints the orphan window**, guarded on the window already being visible so it can never re-open one the user closed. Verified: repairing `task-orph-1` dropped the count 2 → 1, the window stayed open, its rows re-rendered, and the chip re-read "⚠️ 1 Missing Prospect"; deleting `task-orph-2` took it to 0, closed the window and emptied the chip slot.
+- **Mark-complete checkbox (§13.5).** `#task-status` and `#task-status-group` are gone; `#task-complete` sits at the **top** of the modal, hidden on create. `saveTaskFromEditor()` reads `.checked`. **C1 unchanged** — verified both directions: check → `status:"completed"`, `completedDate:"2026-08-30"`; reopen (box correctly pre-checked) and uncheck → `status:"open"`, `completedDate:null`.
+- **§14.4 transposition, as ONE BRANCH in `logTaskCompletionHistory(task, reachoutType)`.** No second history writer. `completeTask(id, reachoutType = null)` passes it through. The UI is a "log this as a reachout" checkbox plus a contact-type `<select>`, revealed only at the point of completion (the task was open when the editor opened **and** Mark complete is now ticked), **unchecked by default**, offering contact types only — the same `NON_REACHOUT_TYPES` filter `openInteractionModal()` uses. Verified: an `Email` entry landed with the task title as content and `isRealReachout()` true, alongside an earlier `Task Completed` entry with `isRealReachout()` false.
+- **§13.8 prospect link.** `#task-prospect-fixed` carries `.task-prospect-link` **only when the id resolves** — "(missing prospect)" is not clickable. The handler saves first: `saveTaskFromEditor()` now returns `true`/`false`, and on `false` it does not navigate. Verified both ways: a typed title committed to state before landing on the inspector with `activeView:"prospects"` / `selectedProspectId:"pros-zeta"`; a blanked title alerted "A task needs a title.", stayed in the editor, and left `activeView:"tasks"`.
+- `CACHE_NAME` bumped **v75 → v76**.
+
+### Review pass, same day — stacking defect found and fixed (v77)
+
+- **Michael found the task editor opening BEHIND the orphan resolution window.** Every `.modal-overlay` is `z-index: 200`, and `#modal-task` sits *earlier* in `index.html` than `#modal-task-orphans`, so the picker painted on top. The editor was open, correctly populated, and completely unreachable — the user had to close the picker by hand to get at it.
+- **Fixed by adding `#modal-task` to the existing `z-index: 999999` list** beside `#modal-prospect` / `#modal-company` / `#modal-choose-tags`, which carry a comment describing this exact failure against the Advanced Query window. One line, existing precedent, no new pattern. `CACHE_NAME` **v76 → v77**.
+- **Verified with `document.elementFromPoint()` at screen centre and a screenshot**, before and after: `whatTheMouseHitsAtScreenCentre` went `"modal-task-orphans"` → `"modal-task"`, `editorIsReachable` `false` → `true`.
+- **This got through because the Done-when checked state, not reachability.** Class toggles and field values all passed while the editor was invisible behind another card. Recorded in BUILD_NOTES.
 
 ## Files changed
 
-**Created:** `ai/DECLARATIONS.md`, `ai/BUILD_NOTES.md`, `ai/AIContext.md`, `ai/phases/`, `ai/archive/`, `ai/archive/2026-08-28_1541_AI-CONTEXT-pre-retrofit.md`, `CLAUDE.md`
-**Created from the dated drafts:** `ai/DIRECTIVES.md`, `ai/DECISIONS.md`, `ai/HANDOFF.md`
-**Modified:** `schema_update.sql` (comment header only)
-**Untouched, as instructed:** `app.js`, `index.html`, `style.css`, `sw.js`
+**Modified:** `app.js` (`openTaskEditor` rewritten; new contact-search block and §14.4 block after it — `taskProspectMatches` / `renderTaskProspectResults` / `highlightTaskSearchRow` / `chooseTaskProspect` / `syncTaskProspectSearchUI` / `clearTaskProspectChoice` / `resetTaskReachoutBlock` / `syncTaskReachoutBlock` / `taskReachoutTypeFromEditor`; `saveTaskFromEditor` returns a boolean; `refreshAfterTaskChange`; `logTaskCompletionHistory` and `completeTask` take `reachoutType`; `renderTaskOrphanWindow` stripped to a list; seven listeners in `setupEventListeners`), `index.html` (the `#modal-task` complete/transposition block, the C14 search markup, `#task-orphan-warning`, `#task-status-group` removed, the orphan window's Resolve column removed), `style.css` (`✅ TASK EDITOR` block, plus `#modal-task` added to the `z-index: 999999` list in the review pass), `sw.js` (`CACHE_NAME`, twice).
+**Untouched:** everything outside the task editor and the orphan window. No frozen contract modified — C14 was implemented, not changed.
+
+## Backup coverage (DIRECTIVES §4)
+
+**No new store of user-writable data.** Three already-covered things are written. `state.tasks[].prospectId` / `.status` / `.completedDate` are covered by Session 1.3 — columns of `prm_tasks.csv`, in the ZIP and in all three `processRestoreFile()` paths, plus the state JSON in every snapshot. `p.history[]` is covered by the existing prospect history export/restore, unchanged since before Phase 1; §14.4 writes a different **value** into the existing `type` field, not a new field. **No export or restore code was added, deliberately** — per BUILD_NOTES, a feature that only mutates already-covered fields needs none. Nothing here is uncovered.
 
 ## Assumptions made
 
-- Normalized the dated draft filenames (`8.27.26_*.md.txt`) to `DIRECTIVES.md` / `DECISIONS.md` / `HANDOFF.md`. Content preserved; formatting cleaned from the Google Doc export. **The dated originals still sit in `ai/` — they could not be deleted from this session.**
-- `DECLARATIONS.md` §Hard limits points to DIRECTIVES §4 rather than restating it, to avoid maintaining one list in two places.
-- Added the 2026-08-28 reasoning to `DECISIONS.md` as well as the §6 amendment row, per DIRECTIVES §5.4. Revert if the §6 entry alone was intended.
-- MAP in `BUILD_NOTES.md` left deliberately empty, as instructed.
+- **§14.4 settled: bulk Mark Complete does NOT offer transposition.** The scope left this open and named single-only the safe default; I took it. `bulkCompleteTasks()` calls `completeTask()` with no type, so every bulk entry stays "Task Completed". DIRECTIVES §5: all gates hold either way, and options first differ at rung 1 (stability) — a selection of twelve rarely shares one contact type, and one wrong pick writes twelve wrong reachouts into the very math §14 reversed §8 to protect. Reversible: it is an argument, not a structure.
+- **The reachout block is revealed only when the task was OPEN when the editor opened.** Re-opening a completed task and re-completing it in the same sitting is not a fresh completion, and `completeTask()` skips already-completed tasks anyway, so offering the control there would be a checkbox that does nothing. Reversible.
+- **"Change" clears the hidden input as well as showing the search again.** A half-made change must not leave the old id saveable under a field that reads as empty. Reversible.
+- **Enter with nothing highlighted takes the first match.** The common case is typing until one row is left; requiring ↓ first would be a keystroke that buys nothing. Reversible.
+- **Company name is in the search haystack**, not just the person's name — "who was the person at Acme" is how an orphan is usually remembered. C14 requires it; noting it because it is the reason a query can match someone whose own name does not contain it.
+- **Verification ran in headless Chromium via Playwright in the cloud sandbox, against a copy of the repo** seeded with 306 scripted contacts and four scripted tasks — **not** Michael's production database and not his browser profile. Nothing was written to his data. Console output was diffed against the unmodified tree booted the same way, rather than asserted clean.
 
 ## Open items
 
-- **Loose root files** — keep/archive/delete list produced for approval, not executed. Includes the superseded `AI-CONTEXT.md` and the dated `.txt` drafts.
-- **Compliance obligations** (§0) — still undecided. Not blocking; settle before Vantage is sold or shown to anyone.
-- **Telemetry tool** (§0) — deferred to Phase 2 by decision.
-- **Contradiction resolved, worth knowing:** §0's original accessibility note assumed Phase 2 rebuilds the UI. `DECISIONS.md` (persistence) says it explicitly does not. Anything else resting on "the Phase 2 rebuild touches everything anyway" should be re-checked against that.
-- Sheet/CSV import path for prospects at scale — carried forward, likely relevant once hosted.
-- Whether `Start_Vantage.bat` / `Stop_Vantage.bat` retire at Phase 2 or stay as a local fallback. Leaning stay.
-
-## Recent history before this retrofit
-
-Feature work through July 2026, condensed from the superseded log (full copy in `ai/archive/`):
-
-- **Advanced Query** (Prospect Hub) — full query modal with prospect/company toggle, field and date filters, AND/OR parsing, pagination, multi-select, bulk tag / add-to-audience, plus a floating results window with an inspector drawer.
-- **Company fields overhaul** — `industry` and `employees` replaced `employeeRange`, with migration and CSV coverage; employee-range bucketing added to Campaign Hub query.
-- **Audience list active/archive status** — `status` field with migration, tab toggle, status-dependent action buttons, full CSV coverage. This is the precedent Sequences follows.
-- **Audience view fixes** — inspector layout override and a null guard in `renderAudienceInspector()`. Both recorded in `BUILD_NOTES.md`.
-- **Audience quality-of-life** — notes field, import tag assignment with duplicate detection, bulk tagging, pop-out contact list, clickable prospect/company popups.
-
-## Direction change, same day — TaskHub
-
-After Phase 0 closed, the roadmap changed shape. Tasks became a first-class entity rather than a projection of sequence enrollments, and sequencing demoted to something built on top of them. Full reasoning in `DECISIONS.md` (four entries dated 2026-08-28); scopes in `ai/spec/`.
-
-**Revised phase order:** Phase 1 TaskHub · Phase 2 Prospect Detail View · Phase 3 Sequencing · Phase 4 Hosting. Each delivers something usable on its own.
-
-- `ai/spec/taskhub-scope.md` — approved, ready to plan.
-- `ai/spec/prospect-detail-view-scope.md` — direction approved, needs its own intake pass before planning.
-- `claude/sequence-feature-scope.md` and `claude/sequence-build-plan.md` in the Claude project are now **partly superseded** — the derived-task-queue ruling is reversed, sequencing has moved to Phase 3, and their ready-to-paste session prompts still tell agents to read `AI-CONTEXT.md` and `StatementOfDirective.md`, both of which are gone.
-
-**Two things a Phase 1 session must verify against `app.js` before building**, because they were scoped from documentation rather than code: the exact shape of a prospect history entry and how `state.reachoutTypes` is registered; and whether anything besides the Prospect Hub opens the prospect inspector (`openProspectModal(pid)` is called from the audience inspector and pop-out).
-
-**Still open in the TaskHub scope:** hub color (teal proposed), and whether bulk selection needs "select all N matching" across pages or only page-level select-all.
+- **Unchanged and still the most urgent: two stale copies of this repo exist and both look real.** `E:\01_AppDevelopment\02_Vantage-Master-Folder\vantage-app` is six weeks behind and follows the retired context protocol. The GitHub remote `mharward68/vantage-app` is still at `a1e4a34`, Phase 0 close, with an empty `ai/phases/` — **nothing from Phase 1 has been pushed**, so sessions 1.1–1.7 and now 1.9 exist only in the working tree on `C:`, as does the only copy of `ai/phases/phase-1-taskhub.md`. **Needs Michael's eyes:** delete or clearly mark the `E:` copy, and push `C:`. A disk failure loses the entire phase; the Tier 1 snapshots protect the database, not the source.
+- **Deferred by Michael's decision, 2026-08-30 — the orphan picker as a split pane.** He asked for the picker to become a two-part window: orphan list on top with its own scrollbar, the selected task opening into a pane below it, edited and saved or deleted there, then on to the next one. **Deferred, not rejected:** the stacking fix delivers the same *workflow* (click → edit → save → picker refreshed underneath → next), so he chose to use it on real orphans first and only build the pane if the stacked-modal shape actually annoys him. **If it is revived it needs a C8 amendment and a §13.1 amendment**, and the honest implementation is making the ONE editor hostable in two places — never a second inline editor, which is BUILD_NOTES open risk 3 repeating on purpose. The list-scroll half of it reuses whatever Session 1.10 builds for TaskHub.
+- **Needs Michael's eyes (small):** the 20-row search cap and the results list's 220px max-height are both guesses that are only right or wrong under a real hand with a real database. The cap is C14-frozen; the max-height is one line of CSS.
+- **Carried forward from 1.2, unchanged:** three drill attachments in `snapshots/files/` (`file-drill12-1..3`), safe to delete once snapshot `2026-08-29_101616.json` ages out.
+- **Still unverified from here:** whether the *production* profile has its own backup folder and a green chip. No session has checked it yet.
+- **Backlog (found, not done — out of compartment):** `parseCSVRow()` (app.js ~8770) does not handle escaped `""` inside a quoted field — carried from 1.3, look in 1.8. `var(--color-danger)` is used in `renderDomainsView()` but defined nowhere in `style.css`, so the expired-domain highlight is silently dead — Media/Domain compartment, look in 1.8. **Nothing new was found this session.**
+- Carried forward, untouched: compliance obligations (§0), telemetry deferred to Phase 2, sheet/CSV import at scale, `Start_Vantage.bat` retirement, the two-inspector duplication (`renderInspector` vs `renderAqInspectorDrawer` — BUILD_NOTES open risk 3, resolved or made permanent in Phase 2).
+- **Closed, do not re-raise:** the history backfill (scope §14.3); §14.4's open question about bulk (settled above, single-only); TaskHub's cyan and its full-row overdue/due-today coloring; snapshot cadence; chip placement; AQ drawer inconsistency; the task editor's prospect picker; §13.6's date picker; §13.8's hoisted inspector panel.
 
 ## Next step
 
-Start a **new conversation** and run Prompt 3 from the workflow to plan **Phase 1 — TaskHub**, against `ai/spec/taskhub-scope.md`.
+Run **Session 1.10** (stationary header block, column layout store, drag-to-resize) from `ai/phases/phase-1-taskhub.md`, in a **new conversation**. It depends only on 1.5 and is unaffected by this session — it touches the panel layout and the header, not the editor. Contracts **C15, C16, C17** and scope **§13.3** / **§13.4** (resize half) govern it, **plus new scope §15.1 / §15.2 / §15.3**, added 2026-08-30 from Michael's review of the shipped hub: **§15.1** the bulk action bar moves to the top block with its height reserved; **§15.2** TaskHub becomes exactly one screen tall with only the list scrolling; **§15.3** the column header takes the hub's cyan at a chosen 18% tint (exact hexes in the scope, one shared class across TaskHub's and the orphan window's `<thead>`); **§15.4** "+ New Task" is removed from TaskHub — tasks are created in the Prospect Hub inspector only, which retires the C14 search's create path and leaves it serving orphan repair alone. **Read §15 before §13.3.** The session block carries all four as tasks 1–4 with six new Done-whens; its size is still **L**. **§15.4 settled by Michael, 2026-08-30:** removing the button retires the only caller of `openTaskEditor()`'s `isNew && !prospectId` branch, and **the branch is deleted** — creating a task without a prospect is to be prevented on purpose, so `saveTaskFromEditor()`'s refusal is the guard, not a gap. The picker test becomes **`isOrphan` alone**, and is still never widened to "editing". **The distinction that must survive:** create-time prospect-less tasks are forbidden, but a task can still *become* prospect-less through a restore — those orphans are preserved, chip-surfaced and repairable, and reading §15.4 as license to blank or drop them would turn orphan preservation into silent orphan loss. §15.4 carries the two-row table. **1.11 must follow 1.10**; **1.8 is the phase close and is always last.**
 
-Carry into that planning session: backup/restore for `state.tasks` and `state.taskSettings` is session 2, before any UI, per DIRECTIVES §4. The automated local snapshot backup is also a Phase 1 deliverable and must land early. Both have Done-whens that include an actual restore, not just a successful write.
+**Already answered for 1.10, so it does not need rediscovering:** the app's scroll owner is `#canvas-body` (`flex-grow: 1; overflow-y: auto`), shared by all six hubs — that is the cascade risk 1.10's own note warned about. Leave it alone; make `#view-tasks` fill it and own its overflow.
+
+**Read the C16 note before writing any drag code:** 1.10 must implement all three hit zones — including the 4px reorder threshold it does not use — so that 1.11 adds a branch rather than rewriting the handler. And 1.10's own risk note says to check what currently scrolls `.view-panel` **before** writing the drag code, because that is the part that could cascade into other hubs.
+
+Carry into 1.10 and later: `#task-prospect` is a **hidden input** now, not a select — anything reading it still gets the prospect id, but do not call `.options` on it. `logTaskCompletionHistory(task, reachoutType)` is still the only history writer for a completion; a third completion surface routes through `completeTask()` and passes a type or `null`, never writes an entry itself.

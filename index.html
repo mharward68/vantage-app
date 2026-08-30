@@ -75,6 +75,12 @@
           <span class="tab-label">Campaign Hub</span>
         </button>
 
+        <!-- TaskHub View Tab (Phase 1 / Session 1.5, contract C9) -->
+        <button id="nav-tasks" class="nav-tab" data-view="tasks">
+          <span class="tab-icon">✅</span>
+          <span class="tab-label">TaskHub</span>
+        </button>
+
         <!-- Data Management View Tab -->
         <button id="nav-data-management" class="nav-tab" data-view="data-management">
           <span class="tab-icon">🗄️</span>
@@ -84,6 +90,14 @@
 
       <!-- Sidebar Settings & Actions -->
       <div id="sidebar-settings">
+        <!-- Snapshot health chip. Visible from every hub. Clicking it re-grants
+             folder permission and forces an immediate snapshot — the only thing
+             that can report the problem is the only thing that can fix it. -->
+        <button type="button" id="snapshot-health-chip" class="snapshot-chip snapshot-chip-red"
+          title="Checking snapshot protection…">
+          <span class="snapshot-chip-dot" aria-hidden="true"></span>
+          <span class="snapshot-chip-label">Checking…</span>
+        </button>
         <button id="sandbox-reset-btn" class="sidebar-action-btn"
           style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444; font-weight: 600; width: 100%; margin: 0 0 4px 0;"
           title="Reset Sandbox">
@@ -366,15 +380,18 @@
                 </div>
               </div>
 
-              <!-- Audience Lists & Campaigns Membership Section -->
+              <!-- Memberships & Tasks Section (Phase 1 / Session 1.4).
+                   #inspector-memberships holds three labeled subsections —
+                   Campaigns, Audiences, Tasks — all built in renderInspector()
+                   with createElement/appendChild. -->
               <div class="inspector-history-section"
                 style="margin-top: 16px; border-top: 1px solid var(--color-border); padding-top: 16px;">
                 <div class="section-title-bar">
-                  <h4>Audience Lists & Campaigns</h4>
+                  <h4>Memberships &amp; Tasks</h4>
                 </div>
                 <div id="inspector-memberships"
                   style="font-size: 13px; display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
-                  <!-- Dynamically populated audience lists and campaigns -->
+                  <!-- Dynamically populated campaigns, audiences and tasks -->
                 </div>
               </div>
             </div>
@@ -984,7 +1001,75 @@
           </div>
         </section>
 
-        <!-- 5. DATA MANAGEMENT VIEW PANEL -->
+        <!-- 5. TASKHUB VIEW PANEL (Phase 1 / Session 1.5, contract C9) -->
+        <section id="view-tasks" class="view-panel">
+          <div class="dashboard-list-card" style="display:flex; flex-direction:column; gap:16px;">
+
+            <!-- Top bar: orphan chip (rendered only when count > 0) + New Task -->
+            <div class="view-intro-actions">
+              <div id="taskhub-orphan-chip-slot" style="flex:1; display:flex; align-items:center; gap:10px;"></div>
+              <div class="action-btn-group" style="margin:0;">
+                <button id="btn-tasks-settings" class="header-action-btn secondary-btn">⚙️ Settings</button>
+                <button id="taskhub-new-btn" class="header-action-btn primary-btn">+ New Task</button>
+              </div>
+            </div>
+
+            <!-- Filter strip. Same tab-button component as audience status. -->
+            <div id="taskhub-filter-tabs" class="media-filter-bar" style="flex-wrap:wrap; gap:6px;"></div>
+
+            <!-- Date Range inputs, revealed only by the Date Range filter -->
+            <div id="taskhub-range-group" class="hidden"
+              style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+              <label style="font-size:12px; color:var(--color-text-muted); display:flex; align-items:center; gap:6px;">
+                From <input type="date" id="taskhub-range-start">
+              </label>
+              <label style="font-size:12px; color:var(--color-text-muted); display:flex; align-items:center; gap:6px;">
+                To <input type="date" id="taskhub-range-end">
+              </label>
+            </div>
+
+            <!-- Per page + result summary -->
+            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:14px;">
+              <label style="font-size:12px; color:var(--color-text-muted); display:flex; align-items:center; gap:4px;">
+                Per Page:
+                <select id="taskhub-per-page">
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+              <p id="taskhub-summary" style="margin:0; font-size:13px; color:var(--color-text-muted);">No tasks yet.</p>
+            </div>
+
+            <div class="table-scroll-container"
+              style="border:1px solid var(--color-border); border-radius:6px; background:rgba(0,0,0,0.15);">
+              <table class="premium-table">
+                <thead id="taskhub-thead"></thead>
+                <tbody id="taskhub-body"></tbody>
+              </table>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <button id="btn-taskhub-prev-page" class="text-btn">← Prev</button>
+              <span id="taskhub-page-indicator"
+                style="font-size:12px; color:var(--color-text-muted);">Page 1 of 1</span>
+              <button id="btn-taskhub-next-page" class="text-btn">Next →</button>
+            </div>
+
+            <!-- Bulk action bar (Session 1.6). Hidden at zero selected.
+                 Clear Selection stays because the selection can span pages,
+                 which the header checkbox cannot reach. Edit Due Date joined
+                 it in Session 1.7 — same bar, not a second one. -->
+            <div id="taskhub-bulk-actions" class="hidden"
+              style="flex-shrink:0; border-top:1px solid var(--color-border); padding-top:16px; display:flex; align-items:center; flex-wrap:wrap; gap:12px;">
+              <p style="margin:0; font-size:13px; font-weight:600;"><span id="taskhub-selected-count">0</span> selected</p>
+              <button id="btn-taskhub-bulk-complete" class="header-action-btn primary-btn">✅ Mark Complete</button>
+              <button id="btn-taskhub-bulk-duedate" class="header-action-btn secondary-btn">📅 Edit Due Date</button>
+              <button id="btn-taskhub-clear-selection" class="text-btn">Clear Selection</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. DATA MANAGEMENT VIEW PANEL -->
         <section id="view-data-management" class="view-panel">
           <div class="welcome-banner"
             style="background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(6, 182, 212, 0.1)); padding: 24px;">
@@ -1053,6 +1138,29 @@
                 </span>
                 <button type="button" id="btn-choose-backup-folder" class="header-action-btn secondary-btn"
                   style="font-size: 12px; padding: 6px 10px;">Choose Folder</button>
+              </div>
+
+              <!-- Automatic local snapshots — desktop Chrome/Edge/Opera only -->
+              <div id="snapshot-section" class="hidden"
+                style="display: flex; flex-direction: column; gap: 8px; background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); border-radius: var(--border-radius-md); padding: 10px 12px;">
+                <span style="font-size: 12px; color: var(--color-text-muted);">📸 Automatic Snapshots</span>
+                <span id="snapshot-status-summary" style="font-size: 12px; color: var(--color-text-primary);">—</span>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <label for="snapshot-restore-select" class="hidden">Snapshot to restore</label>
+                  <select id="snapshot-restore-select"
+                    style="flex: 1; min-width: 0; font-size: 12px; padding: 6px 8px; background: var(--color-bg-elevated, rgba(255,255,255,0.04)); color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--border-radius-md);">
+                    <option value="">No snapshots yet</option>
+                  </select>
+                  <button type="button" id="btn-restore-from-snapshot" class="header-action-btn secondary-btn"
+                    style="font-size: 12px; padding: 6px 10px; white-space: nowrap;">Restore</button>
+                  <button type="button" id="btn-snapshot-now" class="header-action-btn secondary-btn"
+                    style="font-size: 12px; padding: 6px 10px; white-space: nowrap;">Snapshot Now</button>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; justify-content: space-between;">
+                  <span id="snapshot-mirror-summary" style="flex: 1; min-width: 0; font-size: 12px; color: var(--color-text-muted);">📎 Attachments not mirrored yet this session.</span>
+                  <button type="button" id="btn-mirror-now" class="header-action-btn secondary-btn"
+                    style="font-size: 12px; padding: 6px 10px; white-space: nowrap;">Mirror Now</button>
+                </div>
               </div>
 
               <!-- Button trigger opens option modal window -->
@@ -2003,6 +2111,205 @@
     </div>
   </div>
 
+  <!-- Task Editor Modal (Phase 1 / Session 1.4).
+       One editor serves both call sites per contract C8: the Prospect Hub
+       inspector's Tasks subsection and (from Session 1.5) TaskHub row clicks.
+       openTaskEditor(taskId, prospectId) fills it; saveTaskFromEditor() commits. -->
+  <div id="modal-task" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 560px;">
+      <h3 id="task-modal-heading">New Task</h3>
+
+      <!-- Mark complete (Session 1.9, scope §13.5). Replaces the two-value
+           #task-status <select> that sat at the BOTTOM of this modal — a
+           dropdown doing a checkbox's job, in the least prominent place in
+           the form. The data model is unchanged: contract C1's status stays
+           "open" | "completed" and completedDate behaves exactly as before.
+           Hidden on create; a task being created is not being completed. -->
+      <div class="form-group" id="task-complete-group">
+        <label class="task-check-row" for="task-complete">
+          <input type="checkbox" id="task-complete">
+          <span>Mark complete</span>
+        </label>
+
+        <!-- §14.4 transposition. Revealed only when the box above is being
+             ticked on a task that is currently OPEN — i.e. at the point of
+             completion. Unchecked by default: most completions are internal
+             prep, not contact, and scope §14 is explicit that counting prep
+             as a reachout is the failure it exists to prevent. -->
+        <div id="task-log-reachout-block" class="task-reachout-block hidden">
+          <label class="task-check-row" for="task-log-reachout">
+            <input type="checkbox" id="task-log-reachout">
+            <span>Log this as a reachout</span>
+          </label>
+          <select id="task-reachout-type" class="hidden">
+            <!-- contact types only, populated in openTaskEditor() -->
+          </select>
+          <p id="task-reachout-note" class="task-reachout-note">
+            Off by default. Leave it off unless completing this task <em>was</em> contact with
+            the person — an email sent, a call made. Otherwise it logs a timeline entry only.
+          </p>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="task-due-date">Due Date</label>
+        <input type="date" id="task-due-date">
+      </div>
+
+      <!-- The prospect is WIRED to the task, not chosen (amended 2026-08-29).
+           #task-prospect-fixed is what you normally see, and from Session 1.9
+           it is a LINK to that contact (scope §13.8). The search group below
+           is hidden; #task-prospect is a hidden input that always carries the
+           value, so the save path is identical either way. It is revealed
+           only in repair mode (an orphaned task) or when creating with no
+           implied prospect. See openTaskEditor(). -->
+      <div class="form-group" id="task-prospect-fixed-group">
+        <label>Prospect</label>
+        <div id="task-prospect-fixed" class="task-prospect-fixed"></div>
+      </div>
+
+      <!-- Orphan repair warning. Deleted in Session 1.5 when repair moved to
+           the resolution window; RESTORED in 1.9 (scope §13.1) when the window
+           became a list and repair moved back into this editor. It renders only
+           for an orphan — never for an ordinary edit. -->
+      <div id="task-orphan-warning" class="task-orphan-warning hidden">
+        ⚠️ This task points at a contact that no longer exists. Search for the right person
+        below, or delete the task.
+      </div>
+
+      <!-- Contact search, contract C14 (Session 1.9, scope §13.2). Replaces a
+           <select> that was populated with EVERY contact in the database.
+           #task-prospect keeps its id and keeps carrying the prospect id, so
+           saveTaskFromEditor() is untouched — it just stopped being a select.
+           An empty query renders NOTHING; that is the requirement, not an
+           optimization. Revealed on isOrphan, and on create-with-no-implied-
+           prospect. NEVER on an ordinary edit — see openTaskEditor(). -->
+      <div class="form-group" id="task-prospect-group">
+        <label for="task-prospect-search">Prospect</label>
+        <input type="hidden" id="task-prospect">
+        <input type="text" id="task-prospect-search" autocomplete="off"
+          placeholder="Type a name or company to search…">
+        <div id="task-prospect-results" class="task-prospect-results"></div>
+        <div id="task-prospect-chosen" class="task-prospect-chosen hidden">
+          <span id="task-prospect-chosen-name"></span>
+          <button type="button" id="task-prospect-change" class="text-btn">Change</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="task-title">Task Title</label>
+        <input type="text" id="task-title" placeholder="e.g. Send follow-up email">
+      </div>
+
+      <div class="form-group">
+        <label for="task-notes">Notes</label>
+        <textarea id="task-notes" rows="6"
+          placeholder="Free text. May hold a full multi-paragraph email body."></textarea>
+      </div>
+
+      <div class="modal-actions" style="justify-content: space-between;">
+        <button id="task-modal-delete" class="header-action-btn danger-btn">Delete</button>
+        <div style="display:flex; gap:8px;">
+          <button id="task-modal-cancel" class="header-action-btn secondary-btn">Cancel</button>
+          <button id="task-modal-save" class="header-action-btn primary-btn">Save Task</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Orphaned-task resolution window (Phase 1 / Session 1.5, scope §12.2,
+       amended by §13.1 in Session 1.9). Reached only from the Missing Prospect
+       chip in TaskHub, which renders only when the orphan count is above zero.
+       THE WINDOW IS A LIST AND NOTHING MORE — no per-row Assign, Delete or
+       select. The whole row opens the ordinary task editor, which is where
+       repair happens. §12.2's per-row controls were removed because a list row
+       cannot show a task's notes, and deciding whether to reattach or discard
+       means reading the task. Rows are built in renderTaskOrphanWindow(). -->
+  <div id="modal-task-orphans" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 760px; max-height: 85vh; overflow-y: auto;">
+      <h3>⚠️ Tasks with a missing contact</h3>
+      <p style="font-size:13px; color:var(--color-text-muted); line-height:1.5; margin:8px 0 18px;">
+        These tasks point at a contact that no longer exists — usually restored from a backup taken
+        before that contact was created, or after they were deleted. They were kept rather than
+        discarded. <strong>Click a task to open it</strong>, then search for the right contact, or
+        delete it.
+      </p>
+
+      <div class="table-scroll-container"
+        style="border:1px solid var(--color-border); border-radius:6px; background:rgba(0,0,0,0.15);">
+        <table class="premium-table">
+          <thead>
+            <tr>
+              <th style="width:96px;">Due Date</th>
+              <th>Task Title</th>
+              <th style="width:200px;">Stored Prospect ID</th>
+            </tr>
+          </thead>
+          <tbody id="task-orphans-body"></tbody>
+        </table>
+      </div>
+
+      <div class="modal-actions" style="justify-content: flex-end;">
+        <button id="task-orphans-close" class="header-action-btn secondary-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk Due Date Modal (Session 1.7, scope §6). One modal, two modes.
+       The global counting setting lives in Application Settings → TaskHub;
+       this modal only reports which one is active. A date picked in mode B
+       is honored exactly as entered — nothing snaps, nothing warns. -->
+  <div id="modal-task-due-date" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 520px;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 20px;">
+        <h3 style="margin: 0;">📅 Edit Due Date</h3>
+        <button id="btn-bulk-due-close-x"
+          style="background: none; border: none; color: var(--color-text-muted); font-size: 20px; cursor: pointer;">✕</button>
+      </div>
+
+      <p id="bulk-due-summary" style="margin: 0 0 18px; font-size: 13px; font-weight: 600; color: var(--color-text-main);">
+        0 tasks will move</p>
+
+      <div class="form-group">
+        <label style="display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer;">
+          <input type="radio" name="bulk-due-mode" id="bulk-due-mode-shift" value="shift" checked>
+          Shift by N days
+        </label>
+        <div id="bulk-due-shift-group"
+          style="display: flex; align-items: center; gap: 8px; margin: 10px 0 0 26px;">
+          <label for="bulk-due-direction" class="hidden">Direction</label>
+          <select id="bulk-due-direction" style="width: 72px;">
+            <option value="1">+</option>
+            <option value="-1">−</option>
+          </select>
+          <label for="bulk-due-days" class="hidden">Number of days</label>
+          <input type="number" id="bulk-due-days" min="1" step="1" value="1" style="width: 96px;">
+          <span style="font-size: 12px; color: var(--color-text-muted);">days</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label style="display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer;">
+          <input type="radio" name="bulk-due-mode" id="bulk-due-mode-set" value="set">
+          Set to a specific date
+        </label>
+        <div id="bulk-due-set-group" class="hidden" style="margin: 10px 0 0 26px;">
+          <label for="bulk-due-date" class="hidden">Due date</label>
+          <input type="date" id="bulk-due-date">
+        </div>
+      </div>
+
+      <p id="bulk-due-mode-note"
+        style="margin: 4px 0 0; font-size: 12px; color: var(--color-text-muted); line-height: 1.5;">—</p>
+
+      <div class="modal-actions" style="margin-top: 24px; justify-content: flex-end; gap: 10px;">
+        <button id="btn-bulk-due-cancel" class="header-action-btn secondary-btn">Cancel</button>
+        <button id="btn-bulk-due-apply" class="header-action-btn primary-btn">Apply</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Media Manager Settings Modal -->
   <div id="modal-media-settings" class="modal-overlay hidden">
     <div class="modal-card" style="max-width: 600px; max-height: 85vh; overflow-y: auto;">
@@ -2155,6 +2462,26 @@
             <input type="text" id="input-add-domain-host" placeholder="e.g. AWS Route 53">
             <button class="header-action-btn primary-btn" id="btn-add-domain-host-opt">+</button>
           </div>
+        </div>
+
+        <!-- ============ TASKHUB ============ -->
+        <h3 class="settings-group-heading" style="color: #06b6d4; grid-column: 1 / -1; margin: 0;">TaskHub</h3>
+
+        <!-- Not a list — a scalar setting. It governs COUNTING and nothing
+             else (scope §7): it never snaps a hand-picked date, and changing
+             it is NEVER retroactive. Existing tasks do not move. -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #06b6d4; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #06b6d4;">Due Date Counting</h4>
+          <label for="setting-task-date-mode" class="hidden">Due date counting mode</label>
+          <select id="setting-task-date-mode" style="width: 100%;">
+            <option value="business">Business days (Mon–Fri)</option>
+            <option value="all">Calendar days (every day)</option>
+          </select>
+          <p style="margin: 8px 0 0; font-size: 11px; color: var(--color-text-muted); line-height: 1.5;">
+            Used when you shift a task's due date by N days. Changing this never moves an
+            existing task, and a date you pick by hand is always honored — weekend or not.
+            No holiday calendar.</p>
         </div>
 
       </div>
@@ -2733,6 +3060,10 @@
             <button id="btn-export-domains-csv" class="header-action-btn secondary-btn"
               style="justify-content: flex-start; padding: 10px; width: 100%;">
               🌐 Domain Management Database (CSV)
+            </button>
+            <button id="btn-export-tasks-csv" class="header-action-btn secondary-btn"
+              style="justify-content: flex-start; padding: 10px; width: 100%;">
+              ✅ Tasks Database (CSV)
             </button>
             <button id="btn-export-settings-csv" class="header-action-btn secondary-btn"
               style="justify-content: flex-start; padding: 10px; width: 100%;">

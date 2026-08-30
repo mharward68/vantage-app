@@ -378,6 +378,794 @@ async function restoreFromBackupFolder() {
   processRestoreFile(file, null);
 }
 
+/* ==========================================================================
+   📸 LOCAL SNAPSHOTS (Tier 1 recovery) — phase-1 contracts C12 / C13
+   --------------------------------------------------------------------------
+   Automatic, debounced state snapshots written into <backup folder>/snapshots/.
+
+   Three rules this code exists to enforce, all from DIRECTIVES §0 / C13:
+
+     1. A write is confirmed by READ-BACK, never by close() resolving.
+        lastConfirmedAt is stamped in exactly one place — writeSnapshotNow().
+     2. The WATCHDOG decides the health state, not the error handler. Red is
+        derived from staleness, so it fires for causes nobody anticipated
+        (a cleared debounce, an exception upstream of the try block, a hook
+        lost in a later refactor). An error handler cannot catch "it simply
+        never ran."
+     3. There is NO DOWNLOAD FALLBACK. This path must never call
+        saveBackupFile() (which degrades to downloadBlob()) and must never
+        read backupFolderSessionDisabled (one failed manual export would
+        otherwise silently disable snapshots for the rest of the session).
+        A failed snapshot writes nothing and goes red.
+
+   state.snapshotHealth is deliberately NOT covered by backup/restore. It
+   describes this machine's filesystem, not the user's data — restoring a
+   stale lastConfirmedAt would make the app claim protection it does not
+   have. It is stripped on write and recomputed from the directory on boot.
+   ========================================================================== */
+
+const SNAPSHOT_DIR = "snapshots";
+const SNAPSHOT_FILES_DIR = "files";    // <backup folder>/snapshots/files/ — C12.
+                                       // NEVER touched by the pruner.
+const SNAPSHOT_KEEP_ROLLING = 10;      // C12 rule 1 — last 10 rolling
+const SNAPSHOT_KEEP_DAYS = 14;         // C12 rule 2 — newest-of-day × 14
+const SNAPSHOT_KEEP_WEEKS = 8;         // C12 rule 3 — newest-of-week × 8
+const SNAPSHOT_DEBOUNCE_MS = 120000;   // ~2 min after the last mutation
+const SNAPSHOT_RED_GRACE_MS = 300000;  // 5 min = 2 min debounce + 3 min grace
+const SNAPSHOT_AMBER_MS = 86400000;    // 24 h with no confirmed snapshot
+const SNAPSHOT_WATCHDOG_MS = 60000;    // re-evaluate every 60 s
+
+let snapshotDebounceHandle = null;     // exposed at module scope on purpose:
+                                       // clearTimeout(snapshotDebounceHandle)
+                                       // from the console is the "silent
+                                       // non-execution" drill.
+let snapshotWatchdogHandle = null;
+let snapshotWriteInFlight = false;
+let snapshotRedModalArmed = false;
+let snapshotRedModalShownThisSession = false;
+let snapshotLastRenderedState = null;
+let snapshotLastEmptyCount = 0;
+let snapshotLastPruneReport = null;    // last pruneSnapshots() result, for the
+                                       // Data Management panel and for drills.
+let snapshotLastMirrorDay = null;      // "YYYY-MM-DD" of the last mirror run.
+                                       // Deliberately module scope, not state:
+                                       // like snapshotHealth it describes this
+                                       // machine's filesystem, and unlike
+                                       // snapshotHealth it needs no storage at
+                                       // all — the mirror is idempotent, so a
+                                       // forgotten run costs one directory
+                                       // listing and writes nothing.
+let snapshotMirrorStats = null;        // { at, added, skipped, total } | null
+
+function freshSnapshotHealth() {
+  return {
+    lastConfirmedAt: null,  // epoch ms of the last READ-BACK-CONFIRMED snapshot
+    lastMutationAt: null,   // epoch ms, stamped by saveState()
+    lastError: null,        // { at, kind, message } | null
+    failed: false           // sticky — only a confirmed write clears it
+  };
+}
+
+// C12: <backup folder>/snapshots/vantage_snapshot_<YYYY-MM-DD>_<HHmm><ss>.json
+function snapshotFileName(d = new Date()) {
+  const p = n => String(n).padStart(2, "0");
+  return `vantage_snapshot_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+       + `_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.json`;
+}
+
+// The inverse of snapshotFileName(). Returns { at, day } or null when the name
+// is not a snapshot name this code wrote.
+//
+// The FILENAME is the authority on when a snapshot was taken, not the file's
+// mtime. C12 encodes the timestamp in the name precisely because it is the one
+// field that survives being copied, synced or restored — a backup folder pulled
+// down from cloud storage arrives with every mtime set to the copy time, which
+// would otherwise make a ten-week-old snapshot look like it was written just
+// now. That is the exact lie C13 exists to prevent, so retention and the boot
+// freshness check both read the name.
+function parseSnapshotName(name) {
+  const m = /^vantage_snapshot_(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(\d{2})\.json$/.exec(name);
+  if (!m) return null;
+  const t = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  if (isNaN(t.getTime())) return null;
+  return { at: t.getTime(), day: `${m[1]}-${m[2]}-${m[3]}` };
+}
+
+function snapshotDayKey(ms) {
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// Monday-anchored week bucket, expressed as that Monday's date key.
+function snapshotWeekKey(ms) {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));   // getDay(): Sun=0 → Mon=0
+  return snapshotDayKey(d.getTime());
+}
+
+// Reuses the existing persisted directory handle and its re-permission check
+// (assumption 7), but NOT saveBackupFile() and NOT backupFolderSessionDisabled.
+async function getSnapshotDirHandle(create = false) {
+  if (!SUPPORTS_FS_ACCESS) return null;
+  const root = await getStoredBackupFolderHandle();
+  if (!root) return null;
+  const ok = await ensureFolderWritePermission(root);
+  if (!ok) return null;
+  try {
+    return await root.getDirectoryHandle(SNAPSHOT_DIR, { create });
+  } catch (err) {
+    return null;
+  }
+}
+
+// Returns an array newest-first, or null when the directory cannot be read
+// at all — null is itself a red state, per C13.
+//
+// ZERO-BYTE FILES ARE NOT SNAPSHOTS and are skipped here. This is not
+// defensive tidiness — it is the same confirmation standard writeSnapshotNow()
+// applies, enforced on the read side. A beforeunload write that the page dies
+// in the middle of leaves a real, zero-byte, correctly-named file on disk;
+// without this filter the next boot reads it as the newest snapshot, stamps
+// lastConfirmedAt from it, and reports GREEN while the newest snapshot on disk
+// is empty. Observed 2026-08-29, Session 1.1. Do not remove this check.
+async function listSnapshotFiles() {
+  const dir = await getSnapshotDirHandle(false);
+  if (!dir) return null;
+  const out = [];
+  let empties = 0;
+  for await (const [name, handle] of dir.entries()) {
+    if (handle.kind !== "file") continue;
+    if (!name.startsWith("vantage_snapshot_") || !name.endsWith(".json")) continue;
+    const f = await handle.getFile();
+    if (f.size === 0) { empties++; continue; }
+    const parsed = parseSnapshotName(name);
+    out.push({
+      name,
+      size: f.size,
+      lastModified: f.lastModified,
+      // `at` is when the snapshot was TAKEN, per the filename. mtime is only a
+      // fallback for a name this code did not write. See parseSnapshotName().
+      at: parsed ? parsed.at : f.lastModified
+    });
+  }
+  if (empties !== snapshotLastEmptyCount) {
+    if (empties) console.warn(`[Snapshot] Ignoring ${empties} zero-byte snapshot file(s) — truncated writes, not snapshots.`);
+    snapshotLastEmptyCount = empties;
+  }
+  out.sort((a, b) => b.at - a.at);
+  return out;
+}
+
+// snapshotHealth never rides in a snapshot — see the header comment.
+function buildSnapshotPayload() {
+  const { snapshotHealth, ...rest } = state;
+  return JSON.stringify(rest);
+}
+
+function markSnapshotFailure(kind, message) {
+  if (!state.snapshotHealth) state.snapshotHealth = freshSnapshotHealth();
+  state.snapshotHealth.failed = true;
+  state.snapshotHealth.lastError = { at: Date.now(), kind, message };
+  console.error(`[Snapshot] FAILED (${kind}): ${message}`);
+  evaluateSnapshotHealth();
+}
+
+// The ONLY place lastConfirmedAt is stamped, and only after read-back.
+async function writeSnapshotNow(reason = "debounce") {
+  if (!SUPPORTS_FS_ACCESS) return false;
+  if (!state.snapshotHealth) state.snapshotHealth = freshSnapshotHealth();
+  if (snapshotWriteInFlight) return false;
+  snapshotWriteInFlight = true;
+  const name = snapshotFileName();
+  try {
+    const dir = await getSnapshotDirHandle(true);
+    if (!dir) {
+      markSnapshotFailure("no-folder", "Backup folder is not set, unreachable, or write permission was refused.");
+      return false;
+    }
+    const fileHandle = await dir.getFileHandle(name, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(new Blob([buildSnapshotPayload()], { type: "application/json" }));
+    await writable.close();
+
+    // close() resolving means the call did not throw. It does not mean the
+    // file exists. Look it up again and confirm a non-zero size.
+    const verifyHandle = await dir.getFileHandle(name);
+    const verifyFile = await verifyHandle.getFile();
+    if (!verifyFile || verifyFile.size === 0) {
+      markSnapshotFailure("empty-readback", `${name} read back as ${verifyFile ? verifyFile.size : "missing"} bytes.`);
+      return false;
+    }
+
+    state.snapshotHealth.lastConfirmedAt = verifyFile.lastModified || Date.now();
+    state.snapshotHealth.failed = false;
+    state.snapshotHealth.lastError = null;
+    console.log(`[Snapshot] Confirmed ${name} — ${verifyFile.size} bytes (${reason})`);
+
+    // Housekeeping runs on the back of a confirmed write, which is the only
+    // moment we know the folder is reachable and writable. Both feed the same
+    // health state on failure (C13 rule 4), so neither can fail quietly.
+    await pruneSnapshots(dir);
+    await mirrorSnapshotBlobs(dir);
+
+    evaluateSnapshotHealth();
+    return true;
+  } catch (err) {
+    markSnapshotFailure("write-error", (err && err.message) ? err.message : String(err));
+    return false;
+  } finally {
+    snapshotWriteInFlight = false;
+  }
+}
+
+function scheduleSnapshot() {
+  if (!SUPPORTS_FS_ACCESS) return;
+  if (snapshotDebounceHandle) clearTimeout(snapshotDebounceHandle);
+  snapshotDebounceHandle = setTimeout(() => {
+    snapshotDebounceHandle = null;
+    writeSnapshotNow("debounce");
+  }, SNAPSHOT_DEBOUNCE_MS);
+}
+
+/* --- Retention (C12) ------------------------------------------------------
+   Three overlapping keep-rules: last 10 rolling, newest-of-day for 14 days,
+   newest-of-week for 8 weeks. A file surviving ANY ONE rule is kept — the
+   rules are a union, never an intersection, so the arithmetic can only ever
+   err toward keeping too much.
+
+   Two things this must never do:
+
+     1. Touch snapshots/files/. That directory is the attachment mirror and is
+        excluded by C12. It is skipped three times over: entries whose kind is
+        not "file", entries whose name does not match the snapshot pattern, and
+        an explicit name guard. Deleting it would silently strip every
+        attachment from every snapshot that references one.
+     2. Delete a file it does not understand. An unparseable name is left
+        alone rather than swept — if something else is writing into this
+        folder, that is the user's business, not the pruner's.
+
+   Zero-byte snapshot files ARE swept. They are the corpses of a beforeunload
+   write the page died in the middle of (see listSnapshotFiles) — correctly
+   named, entirely empty, already ignored everywhere else, and otherwise
+   accumulating one console warning per boot forever.
+
+   The day and week buckets are the most recent buckets that CONTAIN snapshots,
+   not the last 14 calendar days counted back from today. After a fortnight
+   away from the app, the calendar reading would keep nothing under rules 2 and
+   3 and collapse retention to the rolling 10 on the very first run back —
+   pruning history precisely when it is least replaceable.                    */
+// The retention rules themselves, as a pure function over
+// [{ name, at, day, week }] → Map(name → [reasons kept]). Pure and separate
+// from the directory walk on purpose: this is the one piece of Phase 1 with no
+// precedent anywhere in app.js, and a function that only takes an array can be
+// exercised against a decade of fabricated dates without touching a disk.
+// A name absent from the returned map survived no rule and is deletable.
+function planSnapshotRetention(files) {
+  const sorted = files.slice().sort((a, b) => b.at - a.at);   // newest first
+  const reasons = new Map();
+  const mark = (name, why) => {
+    if (!reasons.has(name)) reasons.set(name, []);
+    reasons.get(name).push(why);
+  };
+
+  // Rule 1 — the N newest, whatever their dates.
+  sorted.slice(0, SNAPSHOT_KEEP_ROLLING).forEach(f => mark(f.name, "rolling-10"));
+
+  // Rules 2 and 3 — the newest file in each of the N most recent buckets.
+  // sorted is newest-first, so the first file seen for a bucket IS its newest.
+  const firstPerBucket = (key) => {
+    const seen = new Set();
+    const out = [];
+    for (const f of sorted) {
+      if (seen.has(f[key])) continue;
+      seen.add(f[key]);
+      out.push(f);
+    }
+    return out;
+  };
+  firstPerBucket("day").slice(0, SNAPSHOT_KEEP_DAYS).forEach(f => mark(f.name, "newest-of-day"));
+  firstPerBucket("week").slice(0, SNAPSHOT_KEEP_WEEKS).forEach(f => mark(f.name, "newest-of-week"));
+
+  return reasons;
+}
+
+async function pruneSnapshots(dirHandle = null) {
+  const dir = dirHandle || await getSnapshotDirHandle(false);
+  if (!dir) {
+    markSnapshotFailure("prune-error", "Snapshots folder unreachable — retention did not run.");
+    return null;
+  }
+
+  const files = [];
+  const empties = [];
+  try {
+    for await (const [name, handle] of dir.entries()) {
+      if (name === SNAPSHOT_FILES_DIR) continue;      // C12: never the mirror
+      if (handle.kind !== "file") continue;
+      const parsed = parseSnapshotName(name);
+      if (!parsed) continue;                          // not ours — leave it
+      const f = await handle.getFile();
+      if (f.size === 0) { empties.push(name); continue; }
+      files.push({ name, at: parsed.at, day: parsed.day, week: snapshotWeekKey(parsed.at) });
+    }
+  } catch (err) {
+    markSnapshotFailure("prune-error", `Could not read the snapshots folder: ${(err && err.message) || err}`);
+    return null;
+  }
+
+  files.sort((a, b) => b.at - a.at);                  // newest first
+
+  const reasons = planSnapshotRetention(files);
+  const doomed = files.filter(f => !reasons.has(f.name)).map(f => f.name);
+  const removed = [];
+  const failures = [];
+  for (const name of doomed.concat(empties)) {
+    try {
+      await dir.removeEntry(name);
+      removed.push(name);
+    } catch (err) {
+      failures.push(`${name}: ${(err && err.message) || err}`);
+    }
+  }
+
+  snapshotLastPruneReport = {
+    at: Date.now(),
+    scanned: files.length,
+    kept: files.filter(f => reasons.has(f.name))
+               .map(f => ({ name: f.name, why: reasons.get(f.name) })),
+    removed,
+    emptiesRemoved: empties.length,
+    failures
+  };
+
+  if (removed.length || empties.length) {
+    console.log(`[Snapshot] Pruned ${removed.length} file(s) — ${empties.length} zero-byte, `
+      + `${removed.length - empties.length} aged out. ${snapshotLastPruneReport.kept.length} kept.`);
+  }
+  // C13 rule 4: a retention failure is not given a quieter path than a write
+  // failure. It goes red like anything else.
+  if (failures.length) {
+    markSnapshotFailure("prune-error", `Could not delete ${failures.length} snapshot file(s): ${failures[0]}`);
+  }
+  return snapshotLastPruneReport;
+}
+
+/* --- Binary mirror (C12) --------------------------------------------------
+   A snapshot is state JSON. Attachments live in IndexedDB and are not in it,
+   so a snapshot restored without them is text-only: every media record still
+   lists its files and not one of them opens. The mirror is what makes a
+   restored snapshot complete.
+
+   Deduped by blob id, which is safe because ids are unique-per-upload and a
+   blob is never rewritten under an existing id — a file already in the mirror
+   is byte-identical to the one in IndexedDB. Mirrored files are never deleted,
+   including when the attachment is deleted in the app: an older snapshot may
+   still reference it, and a recovery mirror that forgets in step with the live
+   database is not a recovery mirror.                                          */
+function listAllFileBlobIds() {
+  return new Promise((resolve, reject) => {
+    if (!fileDB) return resolve([]);
+    try {
+      const tx = fileDB.transaction(["files"], "readonly");
+      const req = tx.objectStore("files").getAllKeys();
+      req.onsuccess = (e) => resolve((e.target.result || []).map(String));
+      req.onerror = (e) => reject(e.target.error);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+async function getSnapshotFilesDirHandle(dir, create = false) {
+  return dir.getDirectoryHandle(SNAPSHOT_FILES_DIR, { create });
+}
+
+async function mirrorSnapshotBlobs(dirHandle = null, opts = {}) {
+  const today = snapshotDayKey(Date.now());
+  if (!opts.force && snapshotLastMirrorDay === today) return snapshotMirrorStats;
+
+  const dir = dirHandle || await getSnapshotDirHandle(true);
+  if (!dir) {
+    markSnapshotFailure("mirror-error", "Backup folder unreachable — attachments were not mirrored.");
+    return null;
+  }
+
+  try {
+    const filesDir = await getSnapshotFilesDirHandle(dir, true);
+    const alreadyMirrored = new Set();
+    for await (const [name, h] of filesDir.entries()) {
+      if (h.kind === "file") alreadyMirrored.add(name);
+    }
+
+    const ids = await listAllFileBlobIds();
+    let added = 0, skipped = 0, absent = 0;
+    for (const id of ids) {
+      if (alreadyMirrored.has(id)) { skipped++; continue; }
+      const blob = await getFileBlob(id);
+      if (!blob) { absent++; continue; }
+      const fh = await filesDir.getFileHandle(id, { create: true });
+      const writable = await fh.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      // Same read-back standard the snapshot writer uses (C13 D). close()
+      // resolving is not evidence that the file exists.
+      const back = await (await filesDir.getFileHandle(id)).getFile();
+      if (!back || back.size === 0) throw new Error(`${id} mirrored as ${back ? back.size : "missing"} bytes`);
+      added++;
+    }
+
+    snapshotLastMirrorDay = today;
+    snapshotMirrorStats = {
+      at: Date.now(),
+      added,
+      skipped,
+      absent,
+      total: alreadyMirrored.size + added
+    };
+    console.log(`[Snapshot] Mirror (${opts.force ? "forced" : "daily"}): ${added} added, `
+      + `${skipped} already mirrored, ${snapshotMirrorStats.total} blob(s) in ${SNAPSHOT_DIR}/${SNAPSHOT_FILES_DIR}/`);
+    renderSnapshotStatusPanel();
+    return snapshotMirrorStats;
+  } catch (err) {
+    // C13 rule 4 again: same health state, same red, no quieter path.
+    markSnapshotFailure("mirror-error", `Attachment mirror failed: ${(err && err.message) || err}`);
+    return null;
+  }
+}
+
+// Pulls back every attachment the restored state references but IndexedDB no
+// longer holds. Called after a snapshot restore — this is the half of "restore"
+// that applyJSONBackupText() cannot do, because state JSON has no blobs in it.
+async function restoreBlobsFromMirror() {
+  const empty = { recovered: 0, alreadyPresent: 0, missing: 0, mirrored: 0, unreachable: true };
+  const dir = await getSnapshotDirHandle(false);
+  if (!dir) return empty;
+  let filesDir;
+  try {
+    filesDir = await getSnapshotFilesDirHandle(dir, false);
+  } catch (err) {
+    return empty;   // no mirror directory yet — nothing to recover from
+  }
+
+  const mirrored = new Set();
+  for await (const [name, h] of filesDir.entries()) {
+    if (h.kind === "file") mirrored.add(name);
+  }
+
+  const referenced = new Set();
+  (state.media || []).forEach(m => {
+    (m.files || []).forEach(f => { if (f && f.id) referenced.add(String(f.id)); });
+    (m.masterFiles || []).forEach(f => { if (f && f.id) referenced.add(String(f.id)); });
+  });
+
+  let present;
+  try { present = new Set(await listAllFileBlobIds()); }
+  catch (err) { present = new Set(); }
+
+  let recovered = 0, alreadyPresent = 0, missing = 0;
+  for (const id of referenced) {
+    if (present.has(id)) { alreadyPresent++; continue; }
+    if (!mirrored.has(id)) { missing++; continue; }
+    try {
+      const blob = await (await filesDir.getFileHandle(id)).getFile();
+      await saveFileBlob(id, blob);
+      recovered++;
+    } catch (err) {
+      console.error(`[Snapshot] Could not recover attachment ${id}:`, err);
+      missing++;
+    }
+  }
+  return { recovered, alreadyPresent, missing, mirrored: mirrored.size, unreachable: false };
+}
+
+/* --- Watchdog -------------------------------------------------------------
+   Red is derived from staleness rather than from a caught exception. The
+   contract line "lastMutationAt > lastConfirmedAt by more than 5 minutes" is
+   implemented as BOTH readings, OR'd: the snapshot is more than 5 min behind
+   the mutation, or an unprotected mutation has been sitting for 5 min. The
+   second is what makes the "clearTimeout the debounce and wait" drill go red;
+   the first is the literal text. OR'ing them can only over-report risk, never
+   claim protection that isn't there.                                        */
+function computeSnapshotState() {
+  const h = state.snapshotHealth;
+  if (!h) return "red";
+  const now = Date.now();
+  if (h.failed) return "red";
+  if (!h.lastConfirmedAt) return "red";
+  const pending = h.lastMutationAt && h.lastMutationAt > h.lastConfirmedAt;
+  if (pending && (h.lastMutationAt - h.lastConfirmedAt) > SNAPSHOT_RED_GRACE_MS) return "red";
+  if (pending && (now - h.lastMutationAt) > SNAPSHOT_RED_GRACE_MS) return "red";
+  if ((now - h.lastConfirmedAt) > SNAPSHOT_AMBER_MS) return "amber";
+  return "green";
+}
+
+function snapshotStateCopy() {
+  const s = computeSnapshotState();
+  const h = state.snapshotHealth || {};
+  if (s === "green") {
+    return {
+      label: "Protected",
+      detail: `Last confirmed snapshot ${formatSnapshotAge(h.lastConfirmedAt)}.`
+    };
+  }
+  if (s === "amber") {
+    return {
+      label: "Snapshot stale",
+      detail: `No confirmed snapshot in over 24 hours (last: ${formatSnapshotAge(h.lastConfirmedAt)}). `
+            + "The snapshot mechanism may have stopped working and nothing has tested it."
+    };
+  }
+  let why;
+  if (!h.lastConfirmedAt && !h.failed) why = "No snapshot has ever been confirmed on this machine.";
+  else if (h.lastError && h.lastError.kind === "no-folder") why = "Vantage cannot reach your backup folder.";
+  else if (h.lastError && h.lastError.kind === "dir-unreadable") why = "The snapshots folder could not be read.";
+  else if (h.lastError && h.lastError.kind === "no-snapshots") why = "The snapshots folder is empty.";
+  else if (h.failed) why = `The last snapshot attempt failed: ${h.lastError ? h.lastError.message : "unknown error"}`;
+  else why = "Changes you have made are newer than the last confirmed snapshot.";
+  return {
+    label: "Not protected",
+    detail: `${why} Your recent changes are not backed up. `
+          + "Clicking here re-grants folder access and writes a snapshot immediately."
+  };
+}
+
+function formatSnapshotAge(ts) {
+  if (!ts) return "never";
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  return `${Math.floor(hrs / 24)} d ago`;
+}
+
+function renderSnapshotHealthChip() {
+  const chip = document.getElementById("snapshot-health-chip");
+  if (!chip) return;
+  const s = computeSnapshotState();
+  const copy = snapshotStateCopy();
+  chip.classList.remove("snapshot-chip-green", "snapshot-chip-amber", "snapshot-chip-red");
+  chip.classList.add(`snapshot-chip-${s}`);
+  const label = chip.querySelector(".snapshot-chip-label");
+  if (label) label.textContent = copy.label;
+  chip.title = copy.detail;
+}
+
+function evaluateSnapshotHealth() {
+  const s = computeSnapshotState();
+  renderSnapshotHealthChip();
+  renderSnapshotStatusPanel();
+  if (s === "red" && snapshotLastRenderedState !== "red" && !snapshotRedModalShownThisSession) {
+    snapshotRedModalArmed = true;   // fires on the next user interaction
+  }
+  snapshotLastRenderedState = s;
+  return s;
+}
+
+function armSnapshotRedModalListener() {
+  const fire = () => {
+    if (!snapshotRedModalArmed || snapshotRedModalShownThisSession) return;
+    if (computeSnapshotState() !== "red") { snapshotRedModalArmed = false; return; }
+    snapshotRedModalArmed = false;
+    snapshotRedModalShownThisSession = true;
+    const copy = snapshotStateCopy();
+    setTimeout(() => {
+      alert("⚠️ Vantage is not backing up your data.\n\n"
+        + copy.detail.replace("Clicking here", 'Clicking the red "Not protected" chip in the sidebar')
+        + "\n\nNothing has been lost. Until a snapshot is confirmed, changes exist only in this browser.");
+    }, 0);
+  };
+  document.addEventListener("pointerdown", fire, true);
+  document.addEventListener("keydown", fire, true);
+}
+
+async function handleSnapshotChipClick() {
+  const chip = document.getElementById("snapshot-health-chip");
+  const label = chip ? chip.querySelector(".snapshot-chip-label") : null;
+  const restore = label ? label.textContent : null;
+  if (chip) chip.disabled = true;
+  if (label) label.textContent = "Snapshotting…";
+  try {
+    // The click is the user gesture the File System Access API needs, which is
+    // why the thing that reports the problem is also the thing that fixes it.
+    let root = await getStoredBackupFolderHandle();
+    if (!root) {
+      await chooseBackupFolder();
+      root = await getStoredBackupFolderHandle();
+    }
+    if (root) await ensureFolderWritePermission(root);
+    await writeSnapshotNow("chip-click");
+  } finally {
+    if (chip) chip.disabled = false;
+    if (label && restore) label.textContent = restore;
+    evaluateSnapshotHealth();
+  }
+}
+
+/* --- Data Management panel ------------------------------------------------ */
+
+async function renderSnapshotStatusPanel() {
+  const summary = document.getElementById("snapshot-status-summary");
+  if (!summary) return;
+  // This panel lists the snapshots directory, which means a getFile() per
+  // entry. evaluateSnapshotHealth() runs on every saveState() and every
+  // watchdog tick, so rendering it while the panel is off-screen would put a
+  // directory walk behind every keystroke-level mutation in the app. The
+  // sidebar chip is the always-on surface; this one only refreshes when the
+  // Data Management view is actually showing.
+  if (state.activeView !== "data-management") return;
+  const h = state.snapshotHealth || {};
+  const s = computeSnapshotState();
+  const dot = { green: "🟢", amber: "🟡", red: "🔴" }[s];
+  let files = null;
+  try { files = await listSnapshotFiles(); } catch (err) { files = null; }
+  const count = files === null ? "—" : files.length;
+  summary.textContent = `${dot} ${snapshotStateCopy().label} · last confirmed: `
+    + (h.lastConfirmedAt ? new Date(h.lastConfirmedAt).toLocaleString() : "never")
+    + ` · ${count} snapshot${count === 1 ? "" : "s"} on disk`;
+
+  const mirrorEl = document.getElementById("snapshot-mirror-summary");
+  if (mirrorEl) {
+    if (!snapshotMirrorStats) {
+      mirrorEl.textContent = "📎 Attachments not mirrored yet this session.";
+    } else {
+      const m = snapshotMirrorStats;
+      // Kept to two facts deliberately. The retention numbers live in
+      // snapshotLastPruneReport for drills; on screen they only pushed this
+      // line past the panel width, and a status line that truncates is a
+      // status line that can mislead.
+      mirrorEl.textContent = `📎 ${m.total} attachment${m.total === 1 ? "" : "s"} mirrored`
+        + ` · ${formatSnapshotAge(m.at)}`
+        + (m.added ? ` (+${m.added})` : "");
+    }
+  }
+
+  const select = document.getElementById("snapshot-restore-select");
+  if (select) {
+    const prev = select.value;
+    select.innerHTML = "";
+    if (!files || files.length === 0) {
+      const o = document.createElement("option");
+      o.value = "";
+      o.textContent = files === null ? "Snapshots folder unreadable" : "No snapshots yet";
+      select.appendChild(o);
+      select.disabled = true;
+    } else {
+      select.disabled = false;
+      files.forEach(f => {
+        const o = document.createElement("option");
+        o.value = f.name;
+        o.textContent = `${new Date(f.at).toLocaleString()} — ${formatFileSize(f.size)}`;
+        select.appendChild(o);
+      });
+      if (prev && files.some(f => f.name === prev)) select.value = prev;
+    }
+  }
+}
+
+// Routed through the same JSON restore engine the manual .json backup uses.
+// Callable from the console with an explicit filename — no dialog in the way.
+async function restoreFromSnapshotFile(name) {
+  const dir = await getSnapshotDirHandle(false);
+  if (!dir) { alert("Can't reach the snapshots folder."); return false; }
+  let text;
+  try {
+    const fh = await dir.getFileHandle(name);
+    text = await (await fh.getFile()).text();
+  } catch (err) {
+    alert(`Couldn't read snapshot "${name}".`);
+    return false;
+  }
+  if (!applyJSONBackupText(text, `snapshot ${name}`)) return false;
+
+  // State JSON carries no binaries. Without this step a restored snapshot is
+  // text-only: every media record lists its attachments and none of them open.
+  const blobs = await restoreBlobsFromMirror();
+  console.log(`[Snapshot] Attachment recovery: ${blobs.recovered} recovered, `
+    + `${blobs.alreadyPresent} already present, ${blobs.missing} unrecoverable `
+    + `(${blobs.mirrored} blob(s) in ${SNAPSHOT_DIR}/${SNAPSHOT_FILES_DIR}/)`);
+  if (blobs.recovered || blobs.missing) {
+    alert(`Attachments: ${blobs.recovered} recovered from the snapshot mirror.`
+      + (blobs.missing
+          ? `\n\n⚠️ ${blobs.missing} attachment${blobs.missing === 1 ? " is" : "s are"} referenced by this snapshot `
+            + `but ${blobs.missing === 1 ? "was" : "were"} not in the mirror. `
+            + `The record${blobs.missing === 1 ? "" : "s"} restored; the file${blobs.missing === 1 ? "" : "s"} did not.`
+          : ""));
+  }
+  renderApp();
+  return true;
+}
+
+// The manual escape hatch for the daily gate: a user who has just added
+// attachments should not have to wait for midnight to see them mirrored.
+async function handleMirrorNowClick() {
+  const btn = document.getElementById("btn-mirror-now");
+  if (btn) { btn.disabled = true; btn.textContent = "Mirroring…"; }
+  try {
+    await mirrorSnapshotBlobs(null, { force: true });
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Mirror Now"; }
+    renderSnapshotStatusPanel();
+  }
+}
+
+function handleRestoreFromSnapshotClick() {
+  const select = document.getElementById("snapshot-restore-select");
+  const name = select ? select.value : "";
+  if (!name) { alert("No snapshot selected."); return; }
+  if (!confirm(`Replace the entire current database with the snapshot taken ${select.options[select.selectedIndex].textContent}?\n\nThis cannot be undone.`)) return;
+  restoreFromSnapshotFile(name);
+}
+
+async function initSnapshotSystem() {
+  if (!state.snapshotHealth) state.snapshotHealth = freshSnapshotHealth();
+
+  // C13 D: the stored timestamp is NOT trusted on boot. The filesystem is the
+  // source of truth and lastConfirmedAt is a cache of it.
+  state.snapshotHealth.lastConfirmedAt = null;
+  state.snapshotHealth.failed = false;
+  state.snapshotHealth.lastError = null;
+
+  if (SUPPORTS_FS_ACCESS) {
+    let files = null;
+    let threw = null;
+    try { files = await listSnapshotFiles(); } catch (err) { threw = err; files = null; }
+    if (files === null) {
+      markSnapshotFailure("dir-unreadable",
+        threw ? String(threw.message || threw) : "No backup folder set, or the snapshots folder could not be read.");
+    } else if (files.length === 0) {
+      markSnapshotFailure("no-snapshots", "No snapshot files found in the snapshots folder.");
+    } else {
+      state.snapshotHealth.lastConfirmedAt = files[0].at;
+      console.log(`[Snapshot] Boot: newest on disk is ${files[0].name} (${new Date(files[0].at).toLocaleString()})`);
+      // Only once the folder has proven readable. Both are fire-and-forget:
+      // boot must not wait on a directory walk, and both report through the
+      // health state rather than through this call site.
+      pruneSnapshots().then(() => mirrorSnapshotBlobs());
+    }
+  }
+
+  const chip = document.getElementById("snapshot-health-chip");
+  if (chip) chip.addEventListener("click", handleSnapshotChipClick);
+  armSnapshotRedModalListener();
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      if (snapshotDebounceHandle) { clearTimeout(snapshotDebounceHandle); snapshotDebounceHandle = null; }
+      writeSnapshotNow("visibilitychange");   // never alert() from here
+    }
+  });
+  window.addEventListener("beforeunload", () => {
+    // Best effort. Browsers suppress dialogs here and the page usually dies
+    // mid-write — visibilitychange is the reliable one. Only attempt it when
+    // there is actually an unprotected mutation to save: an unconditional
+    // write here leaves a zero-byte file on disk after every single reload.
+    // (Those are filtered out by listSnapshotFiles(), so they cannot lie about
+    // protection, but there is no reason to manufacture them.)
+    const h = state.snapshotHealth;
+    if (!h || !h.lastMutationAt) return;
+    if (h.lastConfirmedAt && h.lastMutationAt <= h.lastConfirmedAt) return;
+    writeSnapshotNow("beforeunload");
+  });
+
+  if (snapshotWatchdogHandle) clearInterval(snapshotWatchdogHandle);
+  snapshotWatchdogHandle = setInterval(snapshotWatchdogTick, SNAPSHOT_WATCHDOG_MS);
+  evaluateSnapshotHealth();
+}
+
+// The watchdog tick, not evaluateSnapshotHealth() itself, is where the daily
+// mirror rolls over. evaluateSnapshotHealth() runs on every single saveState()
+// — anything expensive hung off it lands behind every mutation in the app.
+function snapshotWatchdogTick() {
+  evaluateSnapshotHealth();
+  if (!SUPPORTS_FS_ACCESS) return;
+  if (snapshotLastMirrorDay && snapshotLastMirrorDay !== snapshotDayKey(Date.now())) {
+    mirrorSnapshotBlobs();
+  }
+}
+
 function formatFileSize(bytes) {
   if (bytes === 0) return "0 B";
   const k = 1024;
@@ -440,6 +1228,11 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // 4. Initial Render & Header Title/Subtitle Load
   switchView("dashboard");
+
+  // 5. Snapshot health — recomputed from the snapshots directory, never from
+  //    the cached timestamp. Runs after setupEventListeners() so the sidebar
+  //    chip exists to bind to.
+  await initSnapshotSystem();
 });
 
 function deriveSeniority(title) {
@@ -453,11 +1246,34 @@ function deriveSeniority(title) {
 }
 
 function ensureStateDefaults() {
+  // Snapshot health describes this machine's filesystem, not the user's data.
+  // It is never carried in a backup, so a restored state arrives without it and
+  // gets a fresh one here; initSnapshotSystem() then recomputes it from disk.
+  if (!state.snapshotHealth || typeof state.snapshotHealth !== "object") {
+    state.snapshotHealth = freshSnapshotHealth();
+  }
   if (!state.companies) state.companies = [];
   if (!state.prospects) state.prospects = [];
   if (!state.media) state.media = [];
   if (!state.campaigns) state.campaigns = [];
   if (!state.audienceLists) state.audienceLists = [];
+  // Phase 1 / C1 + C2. Tasks are a first-class stored entity, not derived.
+  if (!state.tasks) state.tasks = [];
+  if (!state.taskSettings || typeof state.taskSettings !== "object") {
+    state.taskSettings = { dateMode: "business" };
+  }
+  if (state.taskSettings.dateMode !== "business" && state.taskSettings.dateMode !== "all") {
+    state.taskSettings.dateMode = "business";
+  }
+  // Field-level defaults so records predating a field read "" / null, never undefined.
+  state.tasks.forEach(t => {
+    if (t.notes === undefined || t.notes === null) t.notes = "";
+    if (!t.status) t.status = "open";
+    if (t.completedDate === undefined) t.completedDate = null;
+    if (t.createdAt === undefined) t.createdAt = "";
+    if (t.source === undefined) t.source = "manual";
+    if (t.sourceRef === undefined) t.sourceRef = null;
+  });
   // Migrate: ensure all audience lists have a status field
   state.audienceLists.forEach(al => {
     if (!al.status) al.status = "active";
@@ -550,13 +1366,21 @@ function ensureStateDefaults() {
     state.company_tags = ["Enterprise", "SMB", "Agency", "Startup"];
   }
   if (!state.reachoutTypes || state.reachoutTypes.length === 0) {
-    state.reachoutTypes = ["Email", "Call", "Campaign", "LinkedIn", "In-Person", "Entered into Vantage", "Added to Vantage"];
+    state.reachoutTypes = ["Email", "Call", "Campaign", "LinkedIn", "In-Person", "Entered into Vantage", "Added to Vantage", "Task Completed"];
   } else {
     if (!state.reachoutTypes.includes("Entered into Vantage")) {
       state.reachoutTypes.push("Entered into Vantage");
     }
     if (!state.reachoutTypes.includes("Added to Vantage")) {
       state.reachoutTypes.push("Added to Vantage");
+    }
+    // Phase 1 / C6. Both this push AND the first-run literal above are required:
+    // restoreSettingsFromCSV() replaces state.reachoutTypes wholesale whenever a
+    // settings CSV carries any "Reachout Type" row, so restoring a backup taken
+    // before Phase 1 would otherwise silently drop the type. ensureStateDefaults()
+    // always runs after a restore, which is what makes this push the fix.
+    if (!state.reachoutTypes.includes("Task Completed")) {
+      state.reachoutTypes.push("Task Completed");
     }
   }
 
@@ -831,6 +1655,14 @@ async function fetchFreshSeed() {
 
 function saveState() {
   localStorage.setItem("vantage_prm_database", JSON.stringify(state));
+  // Every mutation stamps the watchdog and restarts the snapshot debounce.
+  // Guarded because saveState() also runs during boot seeding, before
+  // initSnapshotSystem() has created the health object.
+  if (state.snapshotHealth) {
+    state.snapshotHealth.lastMutationAt = Date.now();
+    scheduleSnapshot();
+    evaluateSnapshotHealth();
+  }
 }
 
 function wipeIndexedDB() {
@@ -868,6 +1700,7 @@ async function wipeAllData() {
   state.audienceLists = [];
   state.emailAccounts = [];
   state.domains = [];
+  state.tasks = [];   // Phase 1 / Session 1.3 — a new store must be wiped too.
   state.selectedProspectId = null;
   state.activeView = "dashboard";
 
@@ -916,6 +1749,9 @@ function renderDataManagementView() {
     if (folderSection) folderSection.classList.remove("hidden");
     if (restoreFolderBtn) restoreFolderBtn.classList.remove("hidden");
     updateBackupFolderUI();
+    const snapSection = document.getElementById("snapshot-section");
+    if (snapSection) snapSection.classList.remove("hidden");
+    renderSnapshotStatusPanel();
   }
 }
 
@@ -997,6 +1833,41 @@ function exportAudienceListsCSV() {
     al => [al.id, al.name, (al.prospectIds || []).join(";"), al.status || "active", al.notes || ""]
   );
   saveBackupFile(`vantage_data_backup_audience_lists_${getBackupTimestamp()}.csv`, csv);
+}
+
+// Phase 1 / C3. First Name, Last Name and Company are EXPORT-ONLY columns —
+// they exist so a human can read the file. They are never stored on the task
+// record and restoreTasksFromCSV() ignores all three, keying on Prospect ID.
+const TASKS_CSV_HEADERS = [
+  "Task ID", "Prospect ID", "First Name", "Last Name", "Company", "Task Title", "Notes",
+  "Due Date", "Status", "Completed Date", "Created At", "Source", "Source Ref"
+];
+
+function taskCSVRow(t) {
+  const p = state.prospects.find(x => x.id === t.prospectId);
+  return [
+    t.id,
+    t.prospectId || "",
+    p ? (p.firstName || "") : "",
+    p ? (p.lastName || "") : "",
+    p ? getCompanyName(p.companyId) : "",
+    t.title || "",
+    t.notes || "",
+    t.dueDate || "",
+    t.status || "open",
+    t.completedDate || "",
+    t.createdAt || "",
+    t.source || "manual",
+    t.sourceRef || ""
+  ];
+}
+
+function generateTasksCSV() {
+  return convertToCSV(state.tasks || [], TASKS_CSV_HEADERS, taskCSVRow);
+}
+
+function exportTasksCSV() {
+  saveBackupFile(`vantage_data_backup_tasks_${getBackupTimestamp()}.csv`, generateTasksCSV());
 }
 
 function exportCompaniesCSV() {
@@ -1144,7 +2015,11 @@ function generateSettingsCSV() {
   if (state.customSortOrder && state.customSortOrder.length > 0) {
     rows.push(["Custom Sort Order", state.customSortOrder.join(";")]);
   }
-  
+  // Phase 1 / C4. A scalar setting rides in the settings CSV alongside
+  // Custom Sort Order rather than in a file of its own. This is what gives
+  // state.taskSettings its DIRECTIVES §4 backup coverage.
+  rows.push(["Task Date Mode", (state.taskSettings && state.taskSettings.dateMode) || "business"]);
+
   return convertToCSV(rows, ["Option Type", "Option Value"], r => r);
 }
 
@@ -1230,6 +2105,8 @@ async function exportZIPBackup() {
 
   const settingsCSV = generateSettingsCSV();
 
+  const tasksCSV = generateTasksCSV();
+
   zip.file("prm_prospects.csv", prospectsCSV);
   zip.file("prm_media_content.csv", mediaCSV);
   zip.file("prm_campaigns.csv", campaignsCSV);
@@ -1238,6 +2115,7 @@ async function exportZIPBackup() {
   zip.file("prm_email_accounts.csv", emailAccountsCSV);
   zip.file("prm_domains.csv", domainsCSV);
   zip.file("prm_settings.csv", settingsCSV);
+  zip.file("prm_tasks.csv", tasksCSV);
 
   const filesFolder = zip.folder("files");
   const fileIds = new Map();
@@ -1619,6 +2497,8 @@ function restoreSettingsFromCSV(text) {
   let sawEmailProviderDefaultUrls = false;
   let sawDomainRegistrarDefaultUrls = false;
   let sawDomainHostDefaultUrls = false;
+  let sawTaskDateMode = false;
+  let taskDateMode = "business";
 
   const headers = rows[0];
   let typeIdx = 0;
@@ -1694,6 +2574,10 @@ function restoreSettingsFromCSV(text) {
       }
     } else if (typeLower === "custom sort order") {
       state.customSortOrder = val ? val.split(";").map(id => id.trim()).filter(Boolean) : [];
+    } else if (typeLower === "task date mode") {
+      // Phase 1 / C4.
+      sawTaskDateMode = true;
+      taskDateMode = val.toLowerCase() === "all" ? "all" : "business";
     }
   }
 
@@ -1712,6 +2596,67 @@ function restoreSettingsFromCSV(text) {
   if (sawEmailProviderDefaultUrls) state.emailProviderDefaultUrls = emailProviderDefaultUrls;
   if (sawDomainRegistrarDefaultUrls) state.domainRegistrarDefaultUrls = domainRegistrarDefaultUrls;
   if (sawDomainHostDefaultUrls) state.domainHostDefaultUrls = domainHostDefaultUrls;
+  if (sawTaskDateMode) {
+    if (!state.taskSettings || typeof state.taskSettings !== "object") state.taskSettings = {};
+    state.taskSettings.dateMode = taskDateMode;
+  }
+}
+
+// Phase 1 / C3. The CSV carries First Name, Last Name and Company as
+// EXPORT-ONLY columns so a human can read the file. This function IGNORES all
+// three and keys on Prospect ID — the only stored link to the prospect.
+// Returns { total, orphans } so the caller can report the orphan count.
+// An orphan (a Prospect ID that resolves to nothing) is KEPT, never discarded.
+function restoreTasksFromCSV(text) {
+  const rows = parseCSV(text);
+  if (rows.length <= 1) return { total: 0, orphans: 0 };
+  state.tasks = [];
+  const headers = rows[0];
+  let orphans = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const cols = rows[i];
+    if (cols.length === 0 || cols.every(c => !c.trim())) continue;
+    const obj = {};
+    headers.forEach((h, idx) => {
+      // Header trimmed and BOM-stripped; the VALUE is not trimmed — Notes may
+      // legitimately hold a multi-paragraph body whose whitespace is content.
+      obj[h.trim().replace(/^\ufeff/, "")] = cols[idx] === undefined ? "" : cols[idx];
+    });
+    const pick = (...keys) => {
+      for (const k of keys) if (obj[k] !== undefined) return obj[k];
+      return "";
+    };
+    const prospectId = pick("Prospect ID", "prospectid", "ProspectID").trim();
+    const status = pick("Status", "status").trim().toLowerCase() === "completed" ? "completed" : "open";
+    const completedDate = pick("Completed Date", "completeddate").trim();
+    const sourceRef = pick("Source Ref", "sourceref").trim();
+    if (!prospectId || !state.prospects.some(p => p.id === prospectId)) orphans++;
+    state.tasks.push({
+      id: pick("Task ID", "taskid", "ID", "id").trim() || `task-${Date.now()}-${i}`,
+      prospectId: prospectId,
+      title: pick("Task Title", "Title", "tasktitle").trim(),
+      notes: pick("Notes", "notes"),
+      dueDate: pick("Due Date", "duedate").trim(),
+      status: status,
+      completedDate: completedDate || null,
+      createdAt: pick("Created At", "createdat").trim(),
+      source: pick("Source", "source").trim() || "manual",
+      sourceRef: sourceRef || null
+    });
+  }
+  return { total: state.tasks.length, orphans: orphans };
+}
+
+// Phase 1 / Session 1.3. Appended to the restore alert whenever tasks were
+// part of the restore. Orphans are KEPT — this reports them, it never
+// discards them, because the prospect may be restored in a later step.
+function describeTaskRestore(result) {
+  if (!result) return "";
+  let msg = `\n\nTasks restored: ${result.total}`;
+  if (result.orphans > 0) {
+    msg += `\n⚠️ ${result.orphans} task${result.orphans === 1 ? " references" : "s reference"} a Prospect ID that is not in this database. Kept, not discarded.`;
+  }
+  return msg;
 }
 
 function handleRestoreFile(e) {
@@ -1782,6 +2727,16 @@ function processRestoreFile(file, resetInputEl) {
           restoredModules.push("Domain Management 🌐");
         }
 
+        // Phase 1 / C7. Tasks restore before settings so that a settings CSV
+        // in the same ZIP still gets the last word on Task Date Mode.
+        let zipTaskResult = null;
+        const tasksFile = findFileInZip(zip, "tasks.csv");
+        if (tasksFile) {
+          const text = await tasksFile.async("string");
+          zipTaskResult = restoreTasksFromCSV(text);
+          restoredModules.push("Tasks ✅");
+        }
+
         const settingsFile = findFileInZip(zip, "settings.csv");
         if (settingsFile) {
           const text = await settingsFile.async("string");
@@ -1804,7 +2759,7 @@ function processRestoreFile(file, resetInputEl) {
         if (restoredModules.length > 0) {
           ensureStateDefaults();
           saveState();
-          alert(`Successfully cleared and restored tables from ZIP:\n- ${restoredModules.join("\n- ")}`);
+          alert(`Successfully cleared and restored tables from ZIP:\n- ${restoredModules.join("\n- ")}${describeTaskRestore(zipTaskResult)}`);
           if (resetInputEl) resetInputEl.value = "";
           renderApp();
         } else {
@@ -1821,6 +2776,7 @@ function processRestoreFile(file, resetInputEl) {
     reader.onload = function(evt) {
       const text = evt.target.result;
       let restoredName = "";
+      let csvTaskResult = null;
       if (fileName.includes("prospect") || fileName.includes("apollo") || fileName.includes("apolllo")) {
         restoreProspectsFromCSV(text, fileName);
         restoredName = "Prospects 👥";
@@ -1842,17 +2798,21 @@ function processRestoreFile(file, resetInputEl) {
       } else if (fileName.includes("domain")) {
         restoreDomainsFromCSV(text);
         restoredName = "Domain Management 🌐";
+      } else if (fileName.includes("task")) {
+        // Phase 1 / C7. "task" collides with none of the other branches.
+        csvTaskResult = restoreTasksFromCSV(text);
+        restoredName = "Tasks ✅";
       } else if (fileName.includes("setting")) {
         restoreSettingsFromCSV(text);
         restoredName = "Media Hub Settings ⚙️";
       } else {
-        alert("Unable to detect target table from CSV filename. Name file 'prospects.csv', 'media.csv', 'campaigns.csv', 'audience_lists.csv', 'companies.csv', 'email_accounts.csv', 'domains.csv', or 'settings.csv'.");
+        alert("Unable to detect target table from CSV filename. Name file 'prospects.csv', 'media.csv', 'campaigns.csv', 'audience_lists.csv', 'companies.csv', 'email_accounts.csv', 'domains.csv', 'tasks.csv', or 'settings.csv'.");
         return;
       }
-      
+
       ensureStateDefaults();
       saveState();
-      alert(`Successfully cleared and restored table: ${restoredName}`);
+      alert(`Successfully cleared and restored table: ${restoredName}${describeTaskRestore(csvTaskResult)}`);
       if (resetInputEl) resetInputEl.value = "";
       renderApp();
     };
@@ -1875,6 +2835,7 @@ function processRestoreFile(file, resetInputEl) {
         }).join(",")).join("\n");
 
         let restoredName = "";
+        let xlsxTaskResult = null;
         if (fileName.includes("prospect") || fileName.includes("apollo") || fileName.includes("apolllo")) {
           restoreProspectsFromCSV(csvText, fileName);
           restoredName = "Prospects 👥";
@@ -1896,17 +2857,21 @@ function processRestoreFile(file, resetInputEl) {
         } else if (fileName.includes("domain")) {
           restoreDomainsFromCSV(csvText);
           restoredName = "Domain Management 🌐";
+        } else if (fileName.includes("task")) {
+          // Phase 1 / C7.
+          xlsxTaskResult = restoreTasksFromCSV(csvText);
+          restoredName = "Tasks ✅";
         } else if (fileName.includes("setting")) {
           restoreSettingsFromCSV(csvText);
           restoredName = "Media Hub Settings ⚙️";
         } else {
-          alert("Unable to detect target table from Excel filename. Name file 'prospects.xlsx', 'media.xlsx', 'campaigns.xlsx', 'audience_lists.xlsx', 'companies.xlsx', 'email_accounts.xlsx', 'domains.xlsx', or 'settings.xlsx'.");
+          alert("Unable to detect target table from Excel filename. Name file 'prospects.xlsx', 'media.xlsx', 'campaigns.xlsx', 'audience_lists.xlsx', 'companies.xlsx', 'email_accounts.xlsx', 'domains.xlsx', 'tasks.xlsx', or 'settings.xlsx'.");
           return;
         }
-        
+
         ensureStateDefaults();
         saveState();
-        alert(`Successfully cleared and restored table: ${restoredName}`);
+        alert(`Successfully cleared and restored table: ${restoredName}${describeTaskRestore(xlsxTaskResult)}`);
         if (resetInputEl) resetInputEl.value = "";
         renderApp();
       } catch(err) {
@@ -1982,6 +2947,7 @@ function switchView(viewName) {
     "prospects": "Prospect Hub",
     "media": "Media Hub",
     "campaigns": "Campaign Hub",
+    "tasks": "TaskHub",
     "data-management": "Data Management"
   };
   
@@ -1990,6 +2956,7 @@ function switchView(viewName) {
     "prospects": "",
     "media": "Formulate articles, videos, and newsletters from raw ideas to finished, published resources.",
     "campaigns": "",
+    "tasks": "",
     "data-management": "Securely back up database structures as standard ZIP/CSVs and restore existing tables."
   };
   
@@ -2040,6 +3007,8 @@ function renderApp() {
     renderMediaView();
   } else if (state.activeView === "campaigns") {
     renderCampaignsView();
+  } else if (state.activeView === "tasks") {
+    renderTasksView();
   } else if (state.activeView === "data-management") {
     renderDataManagementView();
   }
@@ -2055,10 +3024,9 @@ function renderDashboardView() {
   document.getElementById("stat-campaigns-count").textContent = state.campaigns.length;
   document.getElementById("stat-media-count").textContent = state.media.length;
   
-  // "Added to Vantage" / "Entered into Vantage" are record-creation stamps, not
-  // real outreach — exclude them from reachout counts and the reachout feed.
-  const NON_REACHOUT_TYPES = ["Added to Vantage", "Entered into Vantage"];
-  const isRealReachout = (h) => !NON_REACHOUT_TYPES.includes(h.type);
+  // NON_REACHOUT_TYPES / isRealReachout are now module-scope, defined above
+  // getLastReachoutDate(). The local copies that used to live here were the
+  // second of two lists that had to agree; they no longer exist.
 
   let totalReach = 0;
   state.prospects.forEach(p => {
@@ -2621,101 +3589,9 @@ function renderInspector(isBlankState = false) {
       });
     }
 
-    // Render memberships
-    const memEl = document.getElementById("inspector-memberships");
-    if (memEl) {
-      memEl.innerHTML = "";
-      const matchedLists = state.audienceLists.filter(al => al.prospectIds && al.prospectIds.includes(current.id));
-      const matchedCampaigns = state.campaigns.filter(c => {
-        return matchedLists.some(al => al.id === c.audienceListId);
-      });
-      // Build "Add to Audience" row — active lists only, excluding ones already joined
-      const activeAuds = state.audienceLists.filter(al =>
-        (al.status || "active") === "active" && !(al.prospectIds || []).includes(current.id)
-      );
-      const addRow = document.createElement("div");
-      addRow.style.cssText = "display:flex; gap:6px; align-items:center; margin-bottom:10px;";
-      if (activeAuds.length > 0) {
-        const sel = document.createElement("select");
-        sel.id = "inspector-aud-select";
-        sel.style.cssText = "flex:1; background:rgba(0,0,0,0.2); border:1px solid var(--color-border); color:var(--color-text-main); padding:5px 8px; border-radius:var(--border-radius-md); font-size:12px; outline:none;";
-        sel.innerHTML = `<option value="">Add to audience…</option>` +
-          activeAuds.map(al => `<option value="${al.id}">${escapeHTML(al.name)}</option>`).join("");
-        const addBtn = document.createElement("button");
-        addBtn.className = "header-action-btn primary-btn";
-        addBtn.style.cssText = "padding:5px 10px; font-size:12px; height:auto; white-space:nowrap;";
-        addBtn.textContent = "+ Add";
-        addBtn.addEventListener("click", () => {
-          const audId = sel.value;
-          if (!audId) return;
-          const aud = state.audienceLists.find(a => a.id === audId);
-          if (!aud) return;
-          if (!aud.prospectIds) aud.prospectIds = [];
-          aud.prospectIds.push(current.id);
-          addAudienceTagToProspects([current.id], aud.name);
-          saveState();
-          renderProspectsView();
-        });
-        addRow.appendChild(sel);
-        addRow.appendChild(addBtn);
-      } else {
-        addRow.innerHTML = `<span style="font-size:12px; color:var(--color-text-muted); font-style:italic;">Already in all active audiences.</span>`;
-      }
-      memEl.appendChild(addRow);
-
-      if (matchedLists.length === 0 && matchedCampaigns.length === 0) {
-        const emptyNote = document.createElement("div");
-        emptyNote.style.cssText = "color:var(--color-text-muted); font-style:italic;";
-        emptyNote.textContent = "Not included in any audience lists or outreach campaigns.";
-        memEl.appendChild(emptyNote);
-      } else {
-        if (matchedLists.length > 0) {
-          const listTitle = document.createElement("div");
-          listTitle.style.fontWeight = "600";
-          listTitle.style.color = "var(--color-secondary)";
-          listTitle.style.marginBottom = "4px";
-          listTitle.textContent = "Audience Lists:";
-          memEl.appendChild(listTitle);
-          const listContainer = document.createElement("div");
-          listContainer.style.display = "flex";
-          listContainer.style.flexWrap = "wrap";
-          listContainer.style.gap = "6px";
-          listContainer.style.marginBottom = "10px";
-          matchedLists.forEach(al => {
-            const span = document.createElement("span");
-            span.className = "tag-badge";
-            span.style.background = "rgba(6, 182, 212, 0.15)";
-            span.style.color = "var(--color-secondary)";
-            span.style.border = "1px solid rgba(6, 182, 212, 0.3)";
-            span.textContent = al.name;
-            listContainer.appendChild(span);
-          });
-          memEl.appendChild(listContainer);
-        }
-        if (matchedCampaigns.length > 0) {
-          const campTitle = document.createElement("div");
-          campTitle.style.fontWeight = "600";
-          campTitle.style.color = "var(--color-primary)";
-          campTitle.style.marginBottom = "4px";
-          campTitle.textContent = "Outreach Campaigns:";
-          memEl.appendChild(campTitle);
-          const campContainer = document.createElement("div");
-          campContainer.style.display = "flex";
-          campContainer.style.flexWrap = "wrap";
-          campContainer.style.gap = "6px";
-          matchedCampaigns.forEach(c => {
-            const span = document.createElement("span");
-            span.className = "tag-badge";
-            span.style.background = "rgba(79, 70, 229, 0.15)";
-            span.style.color = "var(--color-primary)";
-            span.style.border = "1px solid rgba(79, 70, 229, 0.3)";
-            span.textContent = `${c.title} (${c.status})`;
-            campContainer.appendChild(span);
-          });
-          memEl.appendChild(campContainer);
-        }
-      }
-    }
+    // Render memberships & tasks — three labeled subsections, built in
+    // renderInspectorMemberships() (Phase 1 / Session 1.4).
+    renderInspectorMemberships(current);
   } else if (selectedCompanyId) {
     const c = state.companies.find(x => x.id === selectedCompanyId);
     if (!c) {
@@ -2794,6 +3670,1401 @@ function renderInspector(isBlankState = false) {
     editBtn.parentNode.replaceChild(newEditBtn, editBtn);
     newEditBtn.addEventListener("click", () => openCompanyModal(c.id));
   }
+}
+
+
+/* ==========================================================================
+   ✅ INSPECTOR MEMBERSHIPS & TASKS  (Phase 1 / Session 1.4)
+
+   #inspector-memberships is three labeled subsections — Campaigns,
+   Audiences, Tasks — plus the pre-existing "Add to audience…" control,
+   which is deliberately kept at the very top of the block where it has
+   always been.
+
+   Everything here is built with createElement/appendChild. `innerHTML +=`
+   destroys existing listeners and has already bitten this inspector once;
+   see BUILD_NOTES.md. The only innerHTML use below is a whole-container
+   reset (`memEl.innerHTML = ""`), which is not the += pattern.
+   ========================================================================== */
+
+// A small labeled subsection: a heading in the given color, then a body
+// element the caller fills. Returns the body so rows can be appended.
+function buildInspectorSubsection(title, colorVar, headerAction) {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "margin-bottom:12px;";
+
+  const bar = document.createElement("div");
+  bar.style.cssText = "display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px;";
+
+  const label = document.createElement("div");
+  label.style.fontWeight = "600";
+  label.style.color = colorVar;
+  label.textContent = title;
+  bar.appendChild(label);
+
+  if (headerAction) bar.appendChild(headerAction);
+  wrap.appendChild(bar);
+
+  const body = document.createElement("div");
+  wrap.appendChild(body);
+
+  wrap._body = body;
+  return wrap;
+}
+
+function buildInspectorEmptyNote(text) {
+  const note = document.createElement("div");
+  note.style.cssText = "color:var(--color-text-muted); font-style:italic;";
+  note.textContent = text;
+  return note;
+}
+
+// A clickable membership chip. onClick is optional; without it the chip is
+// inert, which is what a non-navigable row should look like.
+function buildMembershipChip(text, bg, color, border, onClick) {
+  const span = document.createElement("span");
+  span.className = "tag-badge";
+  span.style.background = bg;
+  span.style.color = color;
+  span.style.border = `1px solid ${border}`;
+  span.textContent = text;
+  if (onClick) {
+    span.style.cursor = "pointer";
+    span.title = "Open this record";
+    span.addEventListener("click", onClick);
+  }
+  return span;
+}
+
+function renderInspectorMemberships(prospect) {
+  const memEl = document.getElementById("inspector-memberships");
+  if (!memEl || !prospect) return;   // Missing element kills the whole render otherwise.
+
+  memEl.innerHTML = "";
+
+  const matchedLists = state.audienceLists.filter(al => al.prospectIds && al.prospectIds.includes(prospect.id));
+  const matchedCampaigns = state.campaigns.filter(c => matchedLists.some(al => al.id === c.audienceListId));
+
+  /* --- "Add to audience…" row — PRESERVED from the pre-1.4 block. It stays
+         at the top of the memberships area, outside the three subsections,
+         so the restructure cannot break the add path. --- */
+  const activeAuds = state.audienceLists.filter(al =>
+    (al.status || "active") === "active" && !(al.prospectIds || []).includes(prospect.id)
+  );
+  const addRow = document.createElement("div");
+  addRow.style.cssText = "display:flex; gap:6px; align-items:center; margin-bottom:10px;";
+  if (activeAuds.length > 0) {
+    const sel = document.createElement("select");
+    sel.id = "inspector-aud-select";
+    sel.style.cssText = "flex:1; background:rgba(0,0,0,0.2); border:1px solid var(--color-border); color:var(--color-text-main); padding:5px 8px; border-radius:var(--border-radius-md); font-size:12px; outline:none;";
+    sel.innerHTML = `<option value="">Add to audience…</option>` +
+      activeAuds.map(al => `<option value="${al.id}">${escapeHTML(al.name)}</option>`).join("");
+    const addBtn = document.createElement("button");
+    addBtn.className = "header-action-btn primary-btn";
+    addBtn.style.cssText = "padding:5px 10px; font-size:12px; height:auto; white-space:nowrap;";
+    addBtn.textContent = "+ Add";
+    addBtn.addEventListener("click", () => {
+      const audId = sel.value;
+      if (!audId) return;
+      const aud = state.audienceLists.find(a => a.id === audId);
+      if (!aud) return;
+      if (!aud.prospectIds) aud.prospectIds = [];
+      aud.prospectIds.push(prospect.id);
+      addAudienceTagToProspects([prospect.id], aud.name);
+      saveState();
+      renderProspectsView();
+    });
+    addRow.appendChild(sel);
+    addRow.appendChild(addBtn);
+  } else {
+    const note = document.createElement("span");
+    note.style.cssText = "font-size:12px; color:var(--color-text-muted); font-style:italic;";
+    note.textContent = "Already in all active audiences.";
+    addRow.appendChild(note);
+  }
+  memEl.appendChild(addRow);
+
+  /* --- 1. Campaigns --- */
+  const campSec = buildInspectorSubsection("Campaigns", "var(--color-primary)");
+  if (matchedCampaigns.length === 0) {
+    campSec._body.appendChild(buildInspectorEmptyNote("Not in any outreach campaign."));
+  } else {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex; flex-wrap:wrap; gap:6px;";
+    matchedCampaigns.forEach(c => {
+      row.appendChild(buildMembershipChip(
+        `${c.title} (${c.status})`,
+        "rgba(79, 70, 229, 0.15)", "var(--color-primary)", "rgba(79, 70, 229, 0.3)",
+        () => {
+          switchView("campaigns");
+          campaignViewSubState = "campaigns";
+          renderCampaignsView();
+          openCampaignDetail(c.id);
+        }
+      ));
+    });
+    campSec._body.appendChild(row);
+  }
+  memEl.appendChild(campSec);
+
+  /* --- 2. Audiences --- */
+  const audSec = buildInspectorSubsection("Audiences", "var(--color-secondary)");
+  if (matchedLists.length === 0) {
+    audSec._body.appendChild(buildInspectorEmptyNote("Not in any audience list."));
+  } else {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex; flex-wrap:wrap; gap:6px;";
+    matchedLists.forEach(al => {
+      row.appendChild(buildMembershipChip(
+        al.name,
+        "rgba(6, 182, 212, 0.15)", "var(--color-secondary)", "rgba(6, 182, 212, 0.3)",
+        () => {
+          switchView("campaigns");
+          campaignViewSubState = "audiences";
+          selectedAudienceListId = al.id;
+          renderCampaignsView();
+        }
+      ));
+    });
+    audSec._body.appendChild(row);
+  }
+  memEl.appendChild(audSec);
+
+  /* --- 3. Tasks --- */
+  memEl.appendChild(renderProspectInspectorTasks(prospect));
+}
+
+// Contract C8. Returns the Tasks subsection element for this prospect:
+// a two-column table (Due Date · Title) of ALL tasks, completed included,
+// sorted due date DESCENDING. Row click opens the editor inline (a modal
+// over the inspector) — it never navigates to TaskHub, which would throw
+// away the context the prospect was opened for.
+function renderProspectInspectorTasks(prospect) {
+  const newBtn = document.createElement("button");
+  newBtn.className = "header-action-btn primary-btn";
+  newBtn.style.cssText = "padding:3px 8px; font-size:11px; height:auto; white-space:nowrap;";
+  newBtn.textContent = "+ New Task";
+  newBtn.addEventListener("click", () => openTaskEditor(null, prospect.id));
+
+  const sec = buildInspectorSubsection("Tasks", "var(--color-primary)", newBtn);
+
+  const mine = (state.tasks || [])
+    .filter(t => t.prospectId === prospect.id)
+    .sort((a, b) => String(b.dueDate || "").localeCompare(String(a.dueDate || "")));
+
+  if (mine.length === 0) {
+    sec._body.appendChild(buildInspectorEmptyNote("No tasks for this prospect."));
+    return sec;
+  }
+
+  const table = document.createElement("table");
+  table.className = "premium-table";
+  table.style.cssText = "width:100%; font-size:12px;";
+
+  const thead = document.createElement("thead");
+  const htr = document.createElement("tr");
+  ["Due Date", "Title"].forEach((h, i) => {
+    const th = document.createElement("th");
+    th.textContent = h;
+    if (i === 0) th.style.width = "96px";
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  mine.forEach(t => {
+    const tr = document.createElement("tr");
+    tr.style.cursor = "pointer";
+    tr.title = "Open task";
+
+    const dateTd = document.createElement("td");
+    dateTd.style.cssText = "white-space:nowrap; font-weight:600;";
+    dateTd.textContent = t.dueDate || "—";
+
+    const titleTd = document.createElement("td");
+    titleTd.style.lineHeight = "1.4";
+    titleTd.textContent = t.title || "(untitled)";
+
+    if (t.status === "completed") {
+      tr.style.opacity = "0.55";
+      dateTd.style.textDecoration = "line-through";
+      titleTd.style.textDecoration = "line-through";
+    }
+
+    tr.appendChild(dateTd);
+    tr.appendChild(titleTd);
+    tr.addEventListener("click", () => openTaskEditor(t.id));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  sec._body.appendChild(table);
+
+  return sec;
+}
+
+/* ==========================================================================
+   ✅ TASK EDITOR  (Phase 1 / Session 1.4, contract C8)
+
+   One editor, two call sites: the inspector's Tasks subsection today, and
+   TaskHub row clicks from Session 1.5. That is why it is a modal over the
+   current view rather than a form rendered into the inspector — a form
+   inside #inspector-memberships could not serve TaskHub without a second
+   implementation, and C8 freezes exactly one openTaskEditor().
+   ========================================================================== */
+
+let editingTaskId = null;
+
+function openTaskEditor(taskId = null, prospectId = null) {
+  const modal = document.getElementById("modal-task");
+  if (!modal) return;
+
+  const task = taskId ? (state.tasks || []).find(t => t.id === taskId) : null;
+  editingTaskId = task ? task.id : null;
+
+  /* The prospect id lives in a HIDDEN INPUT (contract C14, Session 1.9).
+     It was a <select> populated with every contact in the database, which is
+     fine at four seed contacts and unusable at four hundred. It keeps its id
+     and keeps carrying the value, so saveTaskFromEditor() did not change —
+     that is the whole reason C14 froze the id rather than the element.
+     The full-list population loop that stood here is DELETED; nothing should
+     ever build a list of every contact for this field again. */
+  const wanted = task ? task.prospectId : prospectId;
+  document.getElementById("task-prospect").value = wanted || "";
+
+  document.getElementById("task-modal-heading").textContent = task ? "Edit Task" : "New Task";
+  document.getElementById("task-due-date").value = task ? (task.dueDate || "") : todayLocalDateStr();
+  document.getElementById("task-title").value = task ? (task.title || "") : "";
+  document.getElementById("task-notes").value = task ? (task.notes || "") : "";
+
+  // Creating: prospect is implied and there is nothing to complete or
+  // delete yet, so the form asks only title, due date and notes.
+  const isNew = !task;
+  document.getElementById("task-complete-group").classList.toggle("hidden", isNew);
+  document.getElementById("task-modal-delete").classList.toggle("hidden", isNew);
+
+  // Scope §13.5: a checkbox, not a two-value <select>. C1 is unchanged —
+  // this only reads and writes the same status/completedDate fields.
+  const completeBox = document.getElementById("task-complete");
+  completeBox.checked = !!task && task.status === "completed";
+  // §14.4: transposition is offered only when this open→completed transition
+  // is actually available. Re-opening a completed task is not a completion.
+  taskWasOpenOnEditorOpen = !!task && task.status !== "completed";
+  resetTaskReachoutBlock();
+
+  /* --- Prospect field: wired, not chosen. -------------------------------
+     Amended 2026-08-29 (Michael, mid-1.4), amended again the same day by
+     scope §13.1. Scope §3 called for an editable picker in the ordinary
+     editor; it is gone. A task belongs to the prospect it was created under
+     and the normal workflow offers no way to move it — not from the
+     inspector, not from TaskHub. A task filed under the wrong person is
+     still delete-and-recreate.
+
+     The search is revealed in exactly TWO states, and neither is a workflow
+     choice:
+       CREATE WITH NO IMPLIED PROSPECT — TaskHub's "+ New Task", which has no
+         inspector to inherit a prospect from.
+       ORPHAN REPAIR — the task points at a contact that no longer resolves.
+     Anything else shows the prospect as fixed text.
+
+     Session 1.5 deleted the isOrphan branch when repair lived in the
+     resolution window; §13.1 made that window a list and brought repair back
+     here, because a list row cannot show a task's notes and deciding whether
+     to reattach or discard means reading the task.
+
+     DO NOT WIDEN THIS TEST TO "editing". That is the part of §12.1 that
+     survived both amendments and it is the load-bearing one. */
+  const wantedProspect = state.prospects.find(x => x.id === wanted);
+  const isOrphan = !!task && !wantedProspect;
+  const needsPicker = isOrphan || (isNew && !prospectId);
+
+  document.getElementById("task-prospect-group").classList.toggle("hidden", !needsPicker);
+  document.getElementById("task-prospect-fixed-group").classList.toggle("hidden", needsPicker);
+  document.getElementById("task-orphan-warning").classList.toggle("hidden", !isOrphan);
+
+  if (needsPicker) {
+    // Repair opens on the search itself, not on a stale chosen state: an
+    // orphan's stored id is preserved in the hidden input (so cancelling
+    // keeps it findable) but there is no contact to display.
+    syncTaskProspectSearchUI(wantedProspect || null);
+  } else {
+    const company = wantedProspect ? getCompanyName(wantedProspect.companyId) : "";
+    const fixed = document.getElementById("task-prospect-fixed");
+    fixed.textContent = wantedProspect
+      ? `${wantedProspect.firstName} ${wantedProspect.lastName}${company ? " — " + company : ""}`
+      : "(missing prospect)";
+    // §13.8: the name is a link to that contact. Only when it resolves —
+    // "(missing prospect)" has nowhere to go.
+    fixed.classList.toggle("task-prospect-link", !!wantedProspect);
+    fixed.title = wantedProspect ? "Save and open this contact in Prospect Hub" : "";
+  }
+
+  modal.classList.remove("hidden");
+  document.getElementById("task-title").focus();
+}
+
+/* --------------------------------------------------------------------------
+   Contact search — contract C14, scope §13.2 (Session 1.9)
+
+   Three frozen elements: #task-prospect-search (query), #task-prospect-results
+   (matches, built at input time), #task-prospect (hidden, carries the id).
+
+   AN EMPTY QUERY RENDERS NOTHING. Not the full list. That is the requirement
+   the whole change exists for, not an optimization — and the cap below is the
+   other half of it: a query matching 400 people must not build 400 rows.
+   -------------------------------------------------------------------------- */
+
+const TASK_SEARCH_CAP = 20;
+let taskSearchMatches = [];    // the prospects currently RENDERED, in order
+let taskSearchActive = -1;     // keyboard highlight into taskSearchMatches
+
+// Case-insensitive substring against first, last, "first last", and the
+// resolved company name. Company is included because "who was the person at
+// Acme" is how an orphan is usually remembered.
+function taskProspectMatches(p, q) {
+  const company = getCompanyName(p.companyId) || "";
+  const hay = [
+    p.firstName || "",
+    p.lastName || "",
+    `${p.firstName || ""} ${p.lastName || ""}`.trim(),
+    company
+  ];
+  return hay.some(h => h.toLowerCase().includes(q));
+}
+
+function renderTaskProspectResults() {
+  const box = document.getElementById("task-prospect-results");
+  if (!box) return;
+  box.innerHTML = "";
+  taskSearchMatches = [];
+  taskSearchActive = -1;
+
+  const q = (document.getElementById("task-prospect-search").value || "").trim().toLowerCase();
+  if (!q) return;   // the rule, stated once, in one place
+
+  const all = (state.prospects || []).filter(p => taskProspectMatches(p, q));
+  const shown = all.slice(0, TASK_SEARCH_CAP);
+  taskSearchMatches = shown;
+
+  if (shown.length === 0) {
+    const none = document.createElement("div");
+    none.className = "task-prospect-result-empty";
+    none.textContent = "No contact matches that.";
+    box.appendChild(none);
+    return;
+  }
+
+  // createElement + addEventListener, not innerHTML +=: these rows carry
+  // listeners, and += rebuilds the subtree and detaches them.
+  shown.forEach((p, i) => {
+    const row = document.createElement("div");
+    row.className = "task-prospect-result";
+    row.dataset.index = String(i);
+    const company = getCompanyName(p.companyId) || "No company";
+    row.textContent = `${p.firstName || ""} ${p.lastName || ""}`.trim() + ` — ${company}`;
+    row.addEventListener("mousedown", (e) => {
+      e.preventDefault();          // keep focus in the query field
+      chooseTaskProspect(p);
+    });
+    box.appendChild(row);
+  });
+
+  if (all.length > shown.length) {
+    const more = document.createElement("div");
+    more.className = "task-prospect-result-more";
+    more.textContent = `…${all.length - shown.length} more — keep typing`;
+    box.appendChild(more);
+  }
+}
+
+function highlightTaskSearchRow(next) {
+  const box = document.getElementById("task-prospect-results");
+  if (!box || taskSearchMatches.length === 0) return;
+  taskSearchActive = (next + taskSearchMatches.length) % taskSearchMatches.length;
+  [...box.querySelectorAll(".task-prospect-result")].forEach((el, i) => {
+    el.classList.toggle("is-active", i === taskSearchActive);
+  });
+  const el = box.querySelector(`.task-prospect-result.is-active`);
+  if (el) el.scrollIntoView({ block: "nearest" });
+}
+
+// On select the field shows the chosen contact as text with a visible way
+// back to searching, and the hidden input is stamped (C14).
+function chooseTaskProspect(p) {
+  document.getElementById("task-prospect").value = p.id;
+  syncTaskProspectSearchUI(p);
+}
+
+function syncTaskProspectSearchUI(prospect) {
+  const search = document.getElementById("task-prospect-search");
+  const results = document.getElementById("task-prospect-results");
+  const chosen = document.getElementById("task-prospect-chosen");
+  if (!search || !results || !chosen) return;
+
+  search.value = "";
+  results.innerHTML = "";
+  taskSearchMatches = [];
+  taskSearchActive = -1;
+
+  const has = !!prospect;
+  search.classList.toggle("hidden", has);
+  results.classList.toggle("hidden", has);
+  chosen.classList.toggle("hidden", !has);
+
+  if (has) {
+    const company = getCompanyName(prospect.companyId) || "No company";
+    document.getElementById("task-prospect-chosen-name").textContent =
+      `${prospect.firstName || ""} ${prospect.lastName || ""}`.trim() + ` — ${company}`;
+  }
+}
+
+// "Change" — back to searching. Clears the hidden input too, so a half-made
+// change cannot save the old id under a field that reads as empty.
+function clearTaskProspectChoice() {
+  document.getElementById("task-prospect").value = "";
+  syncTaskProspectSearchUI(null);
+  document.getElementById("task-prospect-search").focus();
+}
+
+/* --------------------------------------------------------------------------
+   §14.4 transposition — a task that WAS contact logs a real reachout
+
+   Scope §14 reversed §8: "Task Completed" is a timeline entry and never a
+   reachout, because counting internal prep walks a prospect's last-contact
+   date forward without anyone having spoken to them. This is the other half:
+   completing "Email Jane about the RFP" SHOULD write an Email entry.
+
+   Off by default, single-completion only. Bulk Mark Complete does not offer
+   it — a selection of twelve rarely shares one contact type, and getting it
+   wrong writes twelve wrong reachouts in one click.
+   -------------------------------------------------------------------------- */
+
+let taskWasOpenOnEditorOpen = false;
+
+function resetTaskReachoutBlock() {
+  const block = document.getElementById("task-log-reachout-block");
+  const box = document.getElementById("task-log-reachout");
+  const sel = document.getElementById("task-reachout-type");
+  if (!block || !box || !sel) return;
+
+  box.checked = false;
+  sel.classList.add("hidden");
+
+  // Contact types only — the same filter openInteractionModal() uses, and
+  // for the same reason: hand-logging "Task Completed" as outreach is never
+  // the intent.
+  const selectable = (state.reachoutTypes || []).filter(t => !NON_REACHOUT_TYPES.includes(t));
+  sel.innerHTML = "";
+  selectable.forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = t;
+    opt.textContent = t;
+    sel.appendChild(opt);
+  });
+  sel.value = selectable[0] || "";
+
+  syncTaskReachoutBlock();
+}
+
+// Visible only at the point of completion: the task was open when the editor
+// opened AND the box is now ticked.
+function syncTaskReachoutBlock() {
+  const block = document.getElementById("task-log-reachout-block");
+  const completing = taskWasOpenOnEditorOpen && document.getElementById("task-complete").checked;
+  block.classList.toggle("hidden", !completing);
+  if (!completing) document.getElementById("task-log-reachout").checked = false;
+  document.getElementById("task-reachout-type").classList.toggle(
+    "hidden", !completing || !document.getElementById("task-log-reachout").checked
+  );
+}
+
+// The chosen contact type, or null for the ordinary "Task Completed" entry.
+function taskReachoutTypeFromEditor() {
+  if (!taskWasOpenOnEditorOpen) return null;
+  if (!document.getElementById("task-complete").checked) return null;
+  if (!document.getElementById("task-log-reachout").checked) return null;
+  return document.getElementById("task-reachout-type").value || null;
+}
+
+function closeTaskEditor() {
+  document.getElementById("modal-task")?.classList.add("hidden");
+  editingTaskId = null;
+}
+
+function saveTaskFromEditor() {
+  const prospectId = document.getElementById("task-prospect").value;
+  const dueDate = document.getElementById("task-due-date").value;
+  const title = document.getElementById("task-title").value.trim();
+  // Notes is NOT trimmed: it may hold an email body, where leading and
+  // trailing whitespace is content (same rule as restoreTasksFromCSV).
+  const notes = document.getElementById("task-notes").value;
+  // Scope §13.5: a checkbox now, not a two-value <select>. Hidden on create,
+  // where an unchecked box reads "open" — the same rule Status followed.
+  const status = document.getElementById("task-complete").checked ? "completed" : "open";
+  const reachoutType = taskReachoutTypeFromEditor();   // §14.4, null in the ordinary case
+
+  /* Returns TRUE on save, FALSE when validation rejected. The §13.8 prospect
+     link is the caller that needs to know: it saves before navigating and must
+     NOT navigate if the save was refused — the alert stands and the editor
+     stays open. Every other caller ignores the value. */
+  if (!prospectId) { alert("Pick a prospect for this task."); return false; }
+  if (!title) { alert("A task needs a title."); return false; }
+  if (!dueDate) { alert("A task needs a due date."); return false; }
+
+  const existing = editingTaskId ? (state.tasks || []).find(t => t.id === editingTaskId) : null;
+
+  if (existing) {
+    const wasCompleted = existing.status === "completed";
+    existing.prospectId = prospectId;
+    existing.title = title;
+    existing.notes = notes;
+    existing.dueDate = dueDate;
+
+    /* Completion transition. This does NOT set status/completedDate itself:
+       it hands the open→completed transition to completeTask(), which is the
+       only route to the C5 history entry (Session 1.6, scope §8). The bulk
+       action bar calls the same function. Do not inline these assignments
+       back here — a second completion path is how history silently stops
+       being written, and the Advanced Query date filters go quietly wrong
+       rather than visibly broken.
+       completeTask() also handles the scope §5 sticky-visibility grace
+       period, so a task completed under a filter that excludes completed
+       tasks does not vanish under the cursor. */
+    if (status === "completed") {
+      if (!wasCompleted) {
+        // reachoutType is §14.4's one branch; null gives the ordinary
+        // "Task Completed" timeline entry.
+        completeTask(existing.id, reachoutType);
+      } else if (!existing.completedDate) {
+        // Already completed, but predates completedDate. Keep it completed
+        // and stamp a date; no second history entry.
+        existing.completedDate = todayLocalDateStr();
+      }
+    } else {
+      existing.status = "open";
+      existing.completedDate = null;
+    }
+  } else {
+    state.tasks.push({
+      id: `task-${Date.now()}`,
+      prospectId: prospectId,
+      title: title,
+      notes: notes,
+      dueDate: dueDate,
+      status: status,
+      completedDate: status === "completed" ? todayLocalDateStr() : null,
+      createdAt: todayLocalDateStr(),
+      source: "manual",
+      sourceRef: null
+    });
+  }
+
+  saveState();
+  closeTaskEditor();
+  refreshAfterTaskChange();
+  return true;
+}
+
+function deleteTask(id) {
+  const idx = (state.tasks || []).findIndex(t => t.id === id);
+  if (idx === -1) return;
+  if (!confirm("Delete this task permanently? Completed history is not affected.")) return;
+  state.tasks.splice(idx, 1);
+  saveState();
+  closeTaskEditor();
+  refreshAfterTaskChange();
+}
+
+// Re-render whichever surface is showing tasks. Both branches are required:
+// an edit made from TaskHub saves but does not repaint without the second.
+function refreshAfterTaskChange() {
+  if (state.activeView === "prospects") renderProspectsView();
+  else if (state.activeView === "tasks") renderTasksView();
+
+  /* Session 1.9, scope §13.1: repairing or deleting an orphan from the editor
+     refreshes the list BEHIND it without closing it. The guard is the whole
+     point — this must never OPEN a window the user has closed, so it acts
+     only on one that is already visible. renderTaskOrphanWindow() closes
+     itself and drops the chip when the last orphan is gone. */
+  const ow = document.getElementById("modal-task-orphans");
+  if (ow && !ow.classList.contains("hidden")) renderTaskOrphanWindow();
+}
+
+/* ==========================================================================
+   ✅ RENDER VIEW: TASKHUB  (Phase 1 / Session 1.5, contracts C8 · C9 · C10)
+
+   The sixth top-level hub. Opens on all open tasks, due date ascending, so
+   past-due sits at the top and overdue work is never hidden behind a filter
+   click (scope §5).
+
+   First name, last name and company are NEVER stored on a task (contract
+   C1) — they are looked up from prospectId at render time, here. An id that
+   does not resolve renders "(missing prospect)" and the task is kept; see
+   the orphan block at the bottom of this section for how it gets repaired.
+
+   Selection (taskSelectedIds) is tracked but nothing consumes it yet: the
+   bulk action bar is Session 1.6. The row checkbox is pure selection and
+   changes nothing about the task (scope §5).
+   ========================================================================== */
+
+// Module-scope selection and paging state, contract C8. Mirrors
+// aqSelectedIds / aqPage / aqPerPage rather than inventing a new pattern.
+let taskSelectedIds = new Set();
+let taskPage = 1;
+let taskPerPage = 25;
+let taskFilter = "open";   // open | pastdue | today | upcoming | range | completed | orphan
+let taskSort = { key: "dueDate", dir: "asc" };
+
+// "orphan" is present in the C8 filter list above but is NOT reachable from
+// the filter strip: scope §12.2 moved Missing Prospect out of the strip and
+// made it a chip that opens a resolution window. Do not rebuild it as a
+// filter.
+
+// Scope §5: a task completed while the active filter excludes completed
+// tasks stays visible, struck through and dimmed, until the filter changes
+// or the view reloads. This Set is that grace period and nothing else — it
+// is deliberately module-scope and never persisted.
+let taskStickyCompletedIds = new Set();
+
+function markTaskStickyCompleted(id) {
+  if (taskFilter !== "completed") taskStickyCompletedIds.add(id);
+}
+
+// What the last table render put on screen. Ticking a checkbox must NOT
+// re-render the table — that detaches the row under the cursor, drops focus
+// and scrolls the list — so the summary line is repainted from this instead.
+// `ids` (Session 1.6) is the current page's task ids, so the header
+// checkbox's three states can be recomputed without a render either.
+let taskLastPageInfo = { total: 0, startIdx: 0, shown: 0, ids: [] };
+
+function renderTaskHubSummary() {
+  const summary = document.getElementById("taskhub-summary");
+  if (!summary) return;
+  const { total, startIdx, shown } = taskLastPageInfo;
+  summary.textContent = total === 0
+    ? "No tasks match this filter."
+    : `Showing ${startIdx + 1}–${startIdx + shown} of ${total} task${total === 1 ? "" : "s"} · ${taskSelectedIds.size} selected`;
+}
+
+// The bulk action bar appears at ≥1 selected and shows the count (scope §5).
+function renderTaskHubBulkBar() {
+  const bar = document.getElementById("taskhub-bulk-actions");
+  if (!bar) return;
+  const count = taskSelectedIds.size;
+  const countEl = document.getElementById("taskhub-selected-count");
+  if (countEl) countEl.textContent = count;
+  bar.classList.toggle("hidden", count === 0);
+}
+
+// Header select-all checkbox: checked when every row on this page is
+// selected, indeterminate when some are. It reads taskLastPageInfo.ids, so
+// it never needs a table render to stay honest.
+function syncTaskHubHeaderCheckbox() {
+  const box = document.getElementById("taskhub-select-page");
+  if (!box) return;
+  const ids = taskLastPageInfo.ids || [];
+  const selectedOnPage = ids.filter(id => taskSelectedIds.has(id)).length;
+  box.checked = ids.length > 0 && selectedOnPage === ids.length;
+  box.indeterminate = selectedOnPage > 0 && selectedOnPage < ids.length;
+}
+
+// Everything a selection change must repaint — and nothing else. A row
+// checkbox handler calls THIS, never renderTaskHubTable(): re-rendering
+// detaches the row under the cursor and swallows the next click. See
+// BUILD_NOTES, "A checkbox handler must not re-render its own table."
+function syncTaskHubSelectionUI() {
+  renderTaskHubSummary();
+  renderTaskHubBulkBar();
+  syncTaskHubHeaderCheckbox();
+}
+
+/* --------------------------------------------------------------------------
+   Completion and prospect history (Session 1.6, contract C5 · scope §8)
+
+   EXACTLY ONE function writes a "Task Completed" history entry, and every
+   completion path — the editor's single completion and the bulk action —
+   goes through completeTask() to reach it. This is not tidiness. The failure
+   mode of a completion path that skips history is INVISIBLE: the Advanced
+   Query date filters keep returning results, just wrong ones, because
+   getLastReachoutDate() derives "last reachout" from history. A second
+   completion path with its own field assignments is how that happens.
+   -------------------------------------------------------------------------- */
+
+// C5 ids are `hist-${Date.now()}`, which collides inside a bulk loop —
+// several tasks complete in the same millisecond. Duplicate ids are not
+// cosmetic: deleteInteraction() filters on `h.id !== histId`, so deleting
+// one entry would silently delete every twin. The suffix follows the
+// existing `task-${Date.now()}-${i}` restore precedent (plan Assumption 8);
+// the C5 entry SHAPE is unchanged.
+function newHistoryId(prospect) {
+  const base = `hist-${Date.now()}`;
+  const taken = new Set((prospect.history || []).map(h => h.id));
+  if (!taken.has(base)) return base;
+  let n = 1;
+  while (taken.has(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
+}
+
+// The ONE writer. Returns true if an entry landed, false if the task is an
+// orphan (no prospect to write to) — the task still completes either way.
+// The entry is a TIMELINE record, not a reachout. "Task Completed" is IN
+// NON_REACHOUT_TYPES (see that block above getLastReachoutDate), so it shows
+// on the prospect's history and is excluded from last-reachout, the dashboard
+// reachout counts and the Advanced Query date filters. This reverses scope §8
+// and C5 as first frozen — Michael, 2026-08-29, scope §14. Do not "restore"
+// the old behavior by removing it from that list; §8's premise was wrong.
+//
+// §14.4 TRANSPOSITION lives here as ONE BRANCH, and that is deliberate: the
+// rule above ("exactly one function writes a given history entry type") does
+// not get an exception for the interesting case. A second writer for "the
+// completion that was really an email" is exactly the second completion path
+// this whole block exists to prevent. reachoutType is null in the ordinary
+// case and a registered contact type when the person said this completion WAS
+// contact — the task title stays the content either way.
+function logTaskCompletionHistory(task, reachoutType = null) {
+  const p = state.prospects.find(x => x.id === task.prospectId);
+  if (!p) return false;
+  if (!p.history) p.history = [];
+  p.history.push({
+    id: newHistoryId(p),
+    date: task.completedDate,
+    type: reachoutType || "Task Completed",
+    content: task.title
+  });
+  return true;
+}
+
+// C8. Transitions one open task to completed: status, completedDate, the
+// C5 history entry, and the scope §5 sticky-visibility grace period.
+// Does NOT saveState() or re-render — the caller owns that, so a bulk run
+// writes once instead of N times. Already-completed tasks are skipped so a
+// second Mark Complete cannot append a duplicate entry.
+// reachoutType (§14.4, Session 1.9) is passed only by the editor's single
+// completion. bulkCompleteTasks() never passes it — see the note there.
+function completeTask(id, reachoutType = null) {
+  const t = (state.tasks || []).find(x => x.id === id);
+  if (!t) return { completed: false, reason: "missing" };
+  if (t.status === "completed") return { completed: false, reason: "already" };
+
+  t.status = "completed";
+  t.completedDate = todayLocalDateStr();
+  const logged = logTaskCompletionHistory(t, reachoutType);
+  markTaskStickyCompleted(t.id);
+
+  return { completed: true, logged: logged, reason: logged ? "ok" : "orphan" };
+}
+
+// C8. Bulk Mark Complete: confirms with the count, then one completeTask()
+// per id. Completed tasks in the selection are skipped and reported, the
+// same way scope §6 treats them in the bulk due-date editor.
+//
+// §14.4 SETTLED HERE, Session 1.9: bulk does NOT offer transposition. It
+// calls completeTask() with no reachout type, so every entry is the ordinary
+// "Task Completed". The scope left this open and named single-only the safe
+// default; a selection of twelve rarely shares one contact type, and one
+// wrong pick writes twelve wrong reachouts in a single click — into the
+// reachout math, which is precisely what §14 reversed §8 to protect.
+// Reversible: it is an argument, not a structure.
+function bulkCompleteTasks(ids) {
+  const list = [...ids];
+  if (list.length === 0) { alert("Select at least one task first."); return; }
+
+  const tasks = list
+    .map(id => (state.tasks || []).find(t => t.id === id))
+    .filter(Boolean);
+  const open = tasks.filter(t => t.status !== "completed");
+  const alreadyDone = tasks.length - open.length;
+
+  if (open.length === 0) {
+    alert(`Nothing to do — ${alreadyDone === 1 ? "that task is" : "all " + alreadyDone + " selected tasks are"} already completed.`);
+    return;
+  }
+
+  let msg = `Mark ${open.length} task${open.length === 1 ? "" : "s"} complete?`;
+  if (alreadyDone > 0) msg += `\n\n${alreadyDone} already-completed task${alreadyDone === 1 ? " is" : "s are"} in the selection and will be skipped.`;
+  msg += `\n\nThis logs a "Task Completed" entry on each contact's history.`;
+  if (!confirm(msg)) return;
+
+  let completed = 0, orphaned = 0;
+  open.forEach(t => {
+    const r = completeTask(t.id);
+    if (!r.completed) return;
+    completed++;
+    if (!r.logged) orphaned++;
+  });
+
+  saveState();
+
+  // The rows stay visible via taskStickyCompletedIds; the selection does
+  // not, because the action has been applied and re-running it on the same
+  // rows is never the intent. Filter change still clears both.
+  taskSelectedIds = new Set();
+  renderTasksView();
+
+  if (orphaned > 0) {
+    alert(`${completed} task${completed === 1 ? "" : "s"} completed.\n\n${orphaned} had no contact to log against (missing prospect), so no history entry was written for ${orphaned === 1 ? "it" : "them"}. Resolve ${orphaned === 1 ? "it" : "them"} from the Missing Prospect chip.`);
+  }
+}
+
+// Clears a selection that may span pages, which the header checkbox cannot
+// reach. A full table render is correct here — every row's checkbox changes,
+// and no single row is under the cursor mid-click.
+function clearTaskSelection() {
+  taskSelectedIds = new Set();
+  renderTaskHubTable();
+}
+
+/* --------------------------------------------------------------------------
+   Bulk due-date editor (Session 1.7, contract C11 · scope §6, §7)
+
+   One modal, two modes. The global setting governs COUNTING and nothing
+   else: it never snaps a hand-picked date, never warns, and is never
+   retroactive. Changing state.taskSettings.dateMode does not move a single
+   existing task, now or in any future session — scope §7 is explicit that a
+   later session must not "helpfully" migrate them.
+   -------------------------------------------------------------------------- */
+
+// C11. Steps day by day from dateStr WITHOUT normalizing the start, counting
+// only Mon-Fri when mode === "business" and every day when mode === "all",
+// until |n| days have been counted. Sign of n sets direction.
+//
+// The arithmetic is done in UTC on purpose. A local-time Date advanced by
+// setDate() across a DST boundary lands on the same calendar day it started
+// (the 23-hour day), which silently loses a step — the off-by-one-day class
+// BUILD_NOTES already flags for toISOString(). UTC days are always 24 hours,
+// and the string is formatted back from the UTC fields, so no local offset
+// ever touches the value.
+//
+// Frozen test vectors (C11, from scope §7) — Session 1.7 Done-when runs
+// exactly these:
+//   shiftTaskDate("2026-09-05", +2, "business") === "2026-09-08"  // Sat -> Tue
+//   shiftTaskDate("2026-09-05", -2, "business") === "2026-09-03"  // Sat -> Thu
+//   shiftTaskDate("2026-09-04", +2, "business") === "2026-09-08"  // Fri -> Tue
+function shiftTaskDate(dateStr, n, mode) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || "").trim());
+  if (!m) return dateStr;                     // not a YYYY-MM-DD date; leave it alone
+
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  if (isNaN(d.getTime())) return dateStr;
+
+  const step = Number(n) < 0 ? -1 : 1;
+  let remaining = Math.abs(Math.trunc(Number(n) || 0));
+  const businessOnly = mode !== "all";        // anything but "all" counts weekdays
+
+  while (remaining > 0) {
+    d.setUTCDate(d.getUTCDate() + step);
+    const dow = d.getUTCDay();                // 0 Sun ... 6 Sat
+    if (!businessOnly || (dow !== 0 && dow !== 6)) remaining--;
+  }
+
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function taskDateMode() {
+  return (state.taskSettings && state.taskSettings.dateMode === "all") ? "all" : "business";
+}
+
+// Splits a selection the way scope §6 requires: completed tasks are skipped,
+// never moved. Retroactively moving the due date of finished work is never
+// the intent, and the skip count is reported rather than swallowed. Same
+// shape bulkCompleteTasks() uses, deliberately.
+function splitTaskSelectionForDueDate(ids) {
+  const tasks = [...ids]
+    .map(id => (state.tasks || []).find(t => t.id === id))
+    .filter(Boolean);
+  const open = tasks.filter(t => t.status !== "completed");
+  return { tasks, open, skipped: tasks.length - open.length };
+}
+
+// C8. Opens the modal against the current selection. Refuses an empty or
+// all-completed selection here rather than at apply time, so the user is
+// never asked to fill in a form that cannot do anything.
+function openBulkDueDateModal() {
+  const modal = document.getElementById("modal-task-due-date");
+  if (!modal) return;
+
+  if (taskSelectedIds.size === 0) { alert("Select at least one task first."); return; }
+
+  const { open, skipped } = splitTaskSelectionForDueDate(taskSelectedIds);
+  if (open.length === 0) {
+    alert(`Nothing to move — ${skipped === 1 ? "that task is" : "all " + skipped + " selected tasks are"} already completed.\n\nCompleted tasks are never re-dated.`);
+    return;
+  }
+
+  // Defaults: shift mode, +1, and today in the date field so the picker has
+  // something to open on. The date is honored exactly as typed or picked —
+  // weekend or not, nothing snaps (scope §7).
+  const shiftRadio = document.getElementById("bulk-due-mode-shift");
+  if (shiftRadio) shiftRadio.checked = true;
+  const dirSel = document.getElementById("bulk-due-direction");
+  if (dirSel) dirSel.value = "1";
+  const daysInput = document.getElementById("bulk-due-days");
+  if (daysInput) daysInput.value = "1";
+  const dateInput = document.getElementById("bulk-due-date");
+  if (dateInput && !dateInput.value) dateInput.value = todayLocalDateStr();
+
+  syncBulkDueDateModal();
+  modal.classList.remove("hidden");
+}
+
+function closeBulkDueDateModal() {
+  const modal = document.getElementById("modal-task-due-date");
+  if (modal) modal.classList.add("hidden");
+}
+
+// Repaints the modal's mode-dependent parts: which group is visible, the
+// counting note, and the affected/skipped line. Called on open and whenever
+// the mode radio changes.
+function syncBulkDueDateModal() {
+  const setMode = document.getElementById("bulk-due-mode-set");
+  const usingSet = !!(setMode && setMode.checked);
+
+  const shiftGroup = document.getElementById("bulk-due-shift-group");
+  const setGroup = document.getElementById("bulk-due-set-group");
+  if (shiftGroup) shiftGroup.classList.toggle("hidden", usingSet);
+  if (setGroup) setGroup.classList.toggle("hidden", !usingSet);
+
+  const note = document.getElementById("bulk-due-mode-note");
+  if (note) {
+    note.textContent = usingSet
+      ? "The date you pick is used exactly as entered — weekend or not."
+      : (taskDateMode() === "business"
+          ? "Counting business days (Mon–Fri). Change this in ⚙️ Settings → TaskHub."
+          : "Counting calendar days (every day). Change this in ⚙️ Settings → TaskHub.");
+  }
+
+  const { open, skipped } = splitTaskSelectionForDueDate(taskSelectedIds);
+  const summary = document.getElementById("bulk-due-summary");
+  if (summary) {
+    summary.textContent = skipped > 0
+      ? `${open.length} task${open.length === 1 ? "" : "s"} will move · ${skipped} completed task${skipped === 1 ? "" : "s"} will be skipped`
+      : `${open.length} task${open.length === 1 ? "" : "s"} will move`;
+  }
+}
+
+// C8. Validates, confirms with the affected count (scope §6), then commits.
+// Completed tasks in the selection are skipped and the skip count is
+// reported in both the confirm and the result.
+function applyBulkDueDate() {
+  const { open, skipped } = splitTaskSelectionForDueDate(taskSelectedIds);
+  if (open.length === 0) { alert("Nothing to move — every selected task is already completed."); return; }
+
+  const usingSet = !!document.getElementById("bulk-due-mode-set")?.checked;
+  const mode = taskDateMode();
+
+  let describe, compute;
+
+  if (usingSet) {
+    const target = (document.getElementById("bulk-due-date")?.value || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(target)) { alert("Pick a date first."); return; }
+    describe = `set to ${target}`;
+    compute = () => target;                   // honored as typed, weekend or not
+  } else {
+    const dir = Number(document.getElementById("bulk-due-direction")?.value || 1) < 0 ? -1 : 1;
+    const raw = Math.trunc(Number(document.getElementById("bulk-due-days")?.value));
+    if (!Number.isFinite(raw) || raw <= 0) { alert("Enter a whole number of days, 1 or more."); return; }
+    const n = dir * raw;
+    const unit = mode === "business" ? "business day" : "calendar day";
+    describe = `shifted ${dir < 0 ? "−" : "+"}${raw} ${unit}${raw === 1 ? "" : "s"}`;
+    compute = (t) => shiftTaskDate(t.dueDate, n, mode);
+  }
+
+  let msg = `${open.length} task${open.length === 1 ? "" : "s"} will be ${describe}.`;
+  if (skipped > 0) msg += `\n\n${skipped} already-completed task${skipped === 1 ? " is" : "s are"} in the selection and will be skipped.`;
+  msg += `\n\nApply?`;
+  if (!confirm(msg)) return;
+
+  let moved = 0;
+  open.forEach(t => {
+    const next = compute(t);
+    if (!next || next === t.dueDate) return;
+    t.dueDate = next;
+    moved++;
+  });
+
+  saveState();
+
+  // Same convention as bulkCompleteTasks(): the action has been applied, so
+  // the selection is cleared. Re-shifting the same rows a second time is not
+  // the normal intent, and a shift can move a row out of the active filter.
+  taskSelectedIds = new Set();
+  closeBulkDueDateModal();
+  renderTasksView();
+
+  let done = `${open.length} task${open.length === 1 ? "" : "s"} ${describe}.`;
+  if (moved !== open.length) done += `\n\n${open.length - moved} already had that date and did not change.`;
+  if (skipped > 0) done += `\n\n${skipped} completed task${skipped === 1 ? " was" : "s were"} skipped.`;
+  alert(done);
+}
+
+const TASKHUB_FILTERS = [
+  { key: "open",      label: "All Open" },
+  { key: "pastdue",   label: "Past Due" },
+  { key: "today",     label: "Due Today" },
+  { key: "upcoming",  label: "Upcoming" },
+  { key: "range",     label: "Date Range" },
+  { key: "completed", label: "Completed" }
+];
+
+const TASKHUB_COLUMNS = [
+  { key: "dueDate",   label: "Due Date",   width: "104px" },
+  { key: "firstName", label: "First Name" },
+  { key: "lastName",  label: "Last Name" },
+  { key: "company",   label: "Company" },
+  { key: "title",     label: "Task Title" }
+];
+
+// The prospect a task points at, or null. One lookup helper so the table,
+// the sort comparator and the orphan count all agree on what "resolves"
+// means.
+function taskProspect(t) {
+  return state.prospects.find(p => p.id === t.prospectId) || null;
+}
+
+function taskOrphanCount() {
+  return (state.tasks || []).filter(t => !taskProspect(t)).length;
+}
+
+// Due-date boundary uses todayLocalDateStr(), NOT toISOString(): the latter
+// is UTC and would call a task due tonight "upcoming" after 8pm local.
+function taskMatchesFilter(t) {
+  const today = todayLocalDateStr();
+  const isOpen = t.status !== "completed";
+  const due = t.dueDate || "";
+
+  switch (taskFilter) {
+    case "pastdue":   return isOpen && !!due && due < today;
+    case "today":     return isOpen && due === today;
+    case "upcoming":  return isOpen && !!due && due > today;
+    case "completed": return !isOpen;
+    case "range": {
+      if (!isOpen || !due) return false;
+      const start = document.getElementById("taskhub-range-start")?.value || "";
+      const end = document.getElementById("taskhub-range-end")?.value || "";
+      if (start && due < start) return false;
+      if (end && due > end) return false;
+      return true;
+    }
+    case "open":
+    default:          return isOpen;
+  }
+}
+
+function taskSortValue(t, key) {
+  const p = taskProspect(t);
+  switch (key) {
+    case "dueDate":   return t.dueDate || "";
+    case "firstName": return p ? (p.firstName || "") : "";
+    case "lastName":  return p ? (p.lastName || "") : "";
+    case "company":   return p ? (getCompanyName(p.companyId) || "") : "";
+    case "title":     return t.title || "";
+    default:          return "";
+  }
+}
+
+function getTaskHubRows() {
+  const rows = (state.tasks || []).filter(t =>
+    taskMatchesFilter(t) || (taskFilter !== "completed" && taskStickyCompletedIds.has(t.id))
+  );
+
+  const dir = taskSort.dir === "desc" ? -1 : 1;
+  rows.sort((a, b) => {
+    const av = String(taskSortValue(a, taskSort.key));
+    const bv = String(taskSortValue(b, taskSort.key));
+    const cmp = av.localeCompare(bv, undefined, { sensitivity: "base" });
+    // Stable secondary key so equal values do not shuffle between renders.
+    return (cmp !== 0 ? cmp : String(a.id).localeCompare(String(b.id))) * dir;
+  });
+
+  return rows;
+}
+
+function renderTasksView() {
+  const tbody = document.getElementById("taskhub-body");
+  if (!tbody) return;   // panel missing — never let it kill the whole render
+
+  renderTaskHubOrphanChip();
+  renderTaskHubFilterStrip();
+  renderTaskHubTable();
+}
+
+function renderTaskHubFilterStrip() {
+  const bar = document.getElementById("taskhub-filter-tabs");
+  if (!bar) return;
+  bar.innerHTML = "";
+
+  TASKHUB_FILTERS.forEach(f => {
+    const btn = document.createElement("button");
+    btn.className = "media-status-filter" + (taskFilter === f.key ? " active-filter" : "");
+    btn.dataset.filter = f.key;
+    btn.textContent = f.label;
+    btn.addEventListener("click", () => setTaskHubFilter(f.key));
+    bar.appendChild(btn);
+  });
+
+  document.getElementById("taskhub-range-group")
+    ?.classList.toggle("hidden", taskFilter !== "range");
+}
+
+// Changing any filter clears the selection (scope §5) and the sticky-visible
+// completed rows, and returns to page 1.
+function setTaskHubFilter(key) {
+  taskFilter = key;
+  taskSelectedIds = new Set();
+  taskStickyCompletedIds = new Set();
+  taskPage = 1;
+  renderTasksView();
+}
+
+function renderTaskHubTable() {
+  const thead = document.getElementById("taskhub-thead");
+  const tbody = document.getElementById("taskhub-body");
+  const pageIndicator = document.getElementById("taskhub-page-indicator");
+  if (!thead || !tbody) return;
+
+  const rows = getTaskHubRows();
+  const total = rows.length;
+
+  const perPage = parseInt(document.getElementById("taskhub-per-page")?.value, 10) || 25;
+  taskPerPage = perPage;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  if (taskPage > totalPages) taskPage = totalPages;
+  if (taskPage < 1) taskPage = 1;
+
+  const startIdx = (taskPage - 1) * perPage;
+  const pageItems = rows.slice(startIdx, startIdx + perPage);
+
+  if (pageIndicator) pageIndicator.textContent = `Page ${taskPage} of ${totalPages}`;
+  taskLastPageInfo = { total, startIdx, shown: pageItems.length, ids: pageItems.map(t => t.id) };
+
+  /* --- Header: every column sorts, both directions --- */
+  thead.innerHTML = "";
+  const htr = document.createElement("tr");
+
+  // Select-all-on-page (Session 1.6). A checkbox, NOT the Advanced Query
+  // row of buttons — Michael, review pass 2026-08-29. There is deliberately
+  // no "select all N matching" (plan Assumption 4); Clear Selection in the
+  // bulk bar covers a selection spanning pages.
+  const checkTh = document.createElement("th");
+  checkTh.style.width = "36px";
+  checkTh.style.textAlign = "center";
+  const selectAll = document.createElement("input");
+  selectAll.type = "checkbox";
+  selectAll.id = "taskhub-select-page";
+  selectAll.title = "Select every task on this page";
+  // Unlike a row checkbox, this handler DOES re-render the table: it changes
+  // every row, and the element it is attached to is rebuilt with the header
+  // rather than under the cursor. The asymmetry is deliberate.
+  selectAll.addEventListener("change", (e) => {
+    const ids = taskLastPageInfo.ids || [];
+    if (e.target.checked) ids.forEach(id => taskSelectedIds.add(id));
+    else ids.forEach(id => taskSelectedIds.delete(id));
+    renderTaskHubTable();
+  });
+  checkTh.appendChild(selectAll);
+  htr.appendChild(checkTh);
+
+  TASKHUB_COLUMNS.forEach(col => {
+    const th = document.createElement("th");
+    th.className = "taskhub-sortable";
+    if (col.width) th.style.width = col.width;
+    const arrow = taskSort.key === col.key ? (taskSort.dir === "asc" ? " ▲" : " ▼") : "";
+    th.textContent = col.label + arrow;
+    th.title = `Sort by ${col.label}`;
+    th.addEventListener("click", () => {
+      if (taskSort.key === col.key) {
+        taskSort.dir = taskSort.dir === "asc" ? "desc" : "asc";
+      } else {
+        taskSort = { key: col.key, dir: "asc" };
+      }
+      taskPage = 1;
+      renderTaskHubTable();
+    });
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+
+  // Summary, bulk bar and the header checkbox's three states. Runs here, not
+  // at the end, so the empty-page early return below is covered too.
+  syncTaskHubSelectionUI();
+
+  /* --- Body --- */
+  tbody.innerHTML = "";
+
+  if (pageItems.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = TASKHUB_COLUMNS.length + 1;
+    td.style.cssText = "text-align:center; padding:24px; color:var(--color-text-muted);";
+    td.textContent = taskFilter === "completed"
+      ? "No completed tasks yet."
+      : "No tasks match this filter. Click \"+ New Task\" to create one.";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  const today = todayLocalDateStr();
+
+  pageItems.forEach(t => {
+    const p = taskProspect(t);
+    const due = t.dueDate || "";
+    const isDone = t.status === "completed";
+
+    const tr = document.createElement("tr");
+    tr.style.cursor = "pointer";
+    tr.title = "Open task";
+    tr.dataset.taskId = t.id;
+
+    // Row color, scope §5: overdue red, due today green, otherwise default.
+    // Completion wins over both — a completed task is not "overdue".
+    if (isDone) tr.classList.add("taskhub-row-done");
+    else if (due && due < today) tr.classList.add("taskhub-row-overdue");
+    else if (due === today) tr.classList.add("taskhub-row-today");
+
+    // The checkbox is pure selection. It carries no state of its own and
+    // changes nothing about the task (scope §5). Session 1.6's bulk action
+    // bar is what consumes it.
+    const checkTd = document.createElement("td");
+    checkTd.style.textAlign = "center";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "taskhub-row-checkbox";
+    cb.checked = taskSelectedIds.has(t.id);
+    cb.addEventListener("change", (e) => {
+      if (e.target.checked) taskSelectedIds.add(t.id);
+      else taskSelectedIds.delete(t.id);
+      syncTaskHubSelectionUI();   // NOT renderTaskHubTable() — see taskLastPageInfo
+    });
+    checkTd.appendChild(cb);
+    tr.appendChild(checkTd);
+
+    const dueTd = document.createElement("td");
+    dueTd.className = "taskhub-due";
+    dueTd.style.whiteSpace = "nowrap";
+    dueTd.textContent = due || "—";
+    tr.appendChild(dueTd);
+
+    const firstTd = document.createElement("td");
+    firstTd.textContent = p ? (p.firstName || "—") : "(missing prospect)";
+    tr.appendChild(firstTd);
+
+    const lastTd = document.createElement("td");
+    lastTd.textContent = p ? (p.lastName || "—") : "—";
+    tr.appendChild(lastTd);
+
+    const compTd = document.createElement("td");
+    compTd.textContent = p ? (getCompanyName(p.companyId) || "—") : "—";
+    tr.appendChild(compTd);
+
+    const titleTd = document.createElement("td");
+    titleTd.style.lineHeight = "1.4";
+    titleTd.textContent = t.title || "(untitled)";
+    tr.appendChild(titleTd);
+
+    tr.addEventListener("click", (e) => {
+      if (e.target.closest("input")) return;   // the checkbox is not a row click
+      openTaskEditor(t.id);
+    });
+
+    tbody.appendChild(tr);
+  });
+}
+
+/* --------------------------------------------------------------------------
+   Orphan chip and resolution window (scope §12.2)
+
+   Load-bearing, not a nicety. An orphaned task resolves to no prospect, so
+   it appears in NO prospect inspector — without this window it is
+   unreachable and scope §3's "tasks are never silently discarded" quietly
+   becomes silent loss.
+
+   The chip renders only above zero: no empty state, no permanently visible
+   zero. It opens a window, not a table filter.
+   -------------------------------------------------------------------------- */
+
+function renderTaskHubOrphanChip() {
+  const slot = document.getElementById("taskhub-orphan-chip-slot");
+  if (!slot) return;
+  slot.innerHTML = "";
+
+  const count = taskOrphanCount();
+  if (count === 0) return;   // above zero only — this is the whole rule
+
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.id = "taskhub-orphan-chip";
+  chip.className = "taskhub-orphan-chip";
+  chip.textContent = `⚠️ ${count} Missing Prospect`;
+  chip.title = "These tasks point at a contact that no longer exists. Click to resolve them.";
+  chip.addEventListener("click", openTaskOrphanWindow);
+  slot.appendChild(chip);
+}
+
+function openTaskOrphanWindow() {
+  const modal = document.getElementById("modal-task-orphans");
+  if (!modal) return;
+  renderTaskOrphanWindow();
+  modal.classList.remove("hidden");
+}
+
+function closeTaskOrphanWindow() {
+  document.getElementById("modal-task-orphans")?.classList.add("hidden");
+}
+
+/* THE WINDOW IS A LIST AND NOTHING MORE (scope §13.1, Session 1.9).
+   §12.2 put Assign and Delete on every row, reasoning that deletion is the
+   expected action so the list should do the work. Michael overruled it the
+   same day, and the reason is worth keeping: an orphan is a task whose
+   CONTENT is the only evidence of what it was for, and a row cannot show
+   notes. Deciding whether to reattach or discard means reading the task,
+   which means opening it. The old window made the cheap case one click and
+   the correct case impossible.
+
+   So: the whole row opens the ordinary task editor — same modal the
+   inspector opens, with the contact field revealed as a search (C14) and
+   Delete present. Saving or deleting there refreshes this list without
+   closing it (refreshAfterTaskChange). When the last orphan is resolved the
+   window closes and the chip disappears. */
+function renderTaskOrphanWindow() {
+  const body = document.getElementById("task-orphans-body");
+  if (!body) return;
+  body.innerHTML = "";
+
+  const orphans = (state.tasks || []).filter(t => !taskProspect(t));
+
+  if (orphans.length === 0) {
+    closeTaskOrphanWindow();
+    renderTasksView();
+    return;
+  }
+
+  orphans.forEach(t => {
+    const tr = document.createElement("tr");
+    tr.style.cursor = "pointer";
+    tr.title = "Open this task";
+    tr.dataset.taskId = t.id;
+    tr.addEventListener("click", () => openTaskEditor(t.id));
+
+    const dueTd = document.createElement("td");
+    dueTd.style.whiteSpace = "nowrap";
+    dueTd.textContent = t.dueDate || "—";
+    tr.appendChild(dueTd);
+
+    const titleTd = document.createElement("td");
+    titleTd.style.lineHeight = "1.4";
+    titleTd.textContent = t.title || "(untitled)";
+    tr.appendChild(titleTd);
+
+    // The unresolved id AS STORED — that is the only forensic evidence of
+    // where the task came from, so it is shown verbatim, not prettified.
+    const idTd = document.createElement("td");
+    idTd.style.cssText = "font-family:monospace; font-size:11px; color:var(--color-text-muted); word-break:break-all;";
+    idTd.textContent = t.prospectId || "(empty)";
+    tr.appendChild(idTd);
+
+    body.appendChild(tr);
+  });
 }
 
 /* ==========================================================================
@@ -3382,10 +5653,32 @@ function getAddedToVantageDate(p) {
   return earliest;
 }
 
-// Most recent genuine reachout/interaction date (excludes the auto-logged
-// "Added to Vantage"/"Entered into Vantage" import events).
+/* ==========================================================================
+   WHAT COUNTS AS A REACHOUT  (single source of truth)
+
+   A reachout is contact with a human: email, DM, phone call. Everything in
+   this list is a history entry that is NOT contact — it belongs on the
+   prospect's timeline so you can see what happened, but it must never move
+   "last reachout", never feed the Advanced Query date filters, and never be
+   selectable in the manual "log a reachout" dropdown.
+
+   "Task Completed" is here by Michael's decision, 2026-08-29, which REVERSES
+   scope §8 and contract C5 as originally frozen — see scope §14. §8 assumed
+   completing a task was reachout. It is not: "Research Jane's company" is
+   internal prep, and counting it would quietly walk her last-contact date
+   forward while the filters kept returning confident, wrong answers.
+   Completing a task that WAS contact logs a real Email/Call/LinkedIn entry
+   instead — Session 1.9.
+
+   Read by getLastReachoutDate(), renderDashboardView() and
+   openInteractionModal(). Add a non-contact type here and all three follow.
+   ========================================================================== */
+const NON_REACHOUT_TYPES = ["Added to Vantage", "Entered into Vantage", "Task Completed"];
+const isRealReachout = (h) => !NON_REACHOUT_TYPES.includes(h.type);
+
+// Most recent genuine reachout/interaction date.
 function getLastReachoutDate(p) {
-  const entries = (p.history || []).filter(h => h.type !== "Added to Vantage" && h.type !== "Entered into Vantage");
+  const entries = (p.history || []).filter(isRealReachout);
   let latest = "";
   entries.forEach(h => { if (h.date && h.date > latest) latest = h.date; });
   return latest;
@@ -6918,13 +9211,18 @@ function openInteractionModal() {
   if (!state.selectedProspectId) return;
   document.getElementById("int-date").value = new Date().toISOString().split("T")[0];
   
+  // Only real contact types are offered here. The auto-stamped types stay
+  // registered in state.reachoutTypes — removing one would change what CSV
+  // restore does — but hand-logging "Task Completed" or "Added to Vantage"
+  // as a reachout is never the intent, so they are filtered out of the list.
+  const selectable = (state.reachoutTypes || []).filter(t => !NON_REACHOUT_TYPES.includes(t));
   const typeSelect = document.getElementById("int-type");
   typeSelect.innerHTML = "";
-  state.reachoutTypes.forEach(t => {
+  selectable.forEach(t => {
     typeSelect.innerHTML += `<option value="${escapeHTML(t)}">${escapeHTML(t)}</option>`;
   });
-  
-  document.getElementById("int-type").value = state.reachoutTypes[0] || "";
+
+  document.getElementById("int-type").value = selectable[0] || "";
   document.getElementById("int-content").value = "";
   document.getElementById("modal-interaction").classList.remove("hidden");
 }
@@ -7117,8 +9415,36 @@ function deleteCampaign(id) {
 
 // Export complete PRM JSON
 function exportJSONBackup() {
-  const json = JSON.stringify(state, null, 2);
+  // snapshotHealth is excluded from every backup by design — see C13.
+  const { snapshotHealth, ...exportable } = state;
+  const json = JSON.stringify(exportable, null, 2);
   saveBackupFile(`vantage_prm_backup_${new Date().toISOString().split("T")[0]}.json`, json);
+}
+
+// The full-state JSON restore engine. Shared by the manual .json restore and
+// by "Restore from snapshot" — a snapshot is a state JSON, so it restores
+// through exactly the same path rather than a second one.
+function applyJSONBackupText(text, sourceLabel) {
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed.prospects && parsed.companies && parsed.media) {
+      const liveHealth = state.snapshotHealth;   // never adopt a health object
+      state = parsed;                            // from a file — see C13.
+      state.snapshotHealth = liveHealth || freshSnapshotHealth();
+      ensureStateDefaults();
+      saveState();
+      alert(`Database restored successfully from ${sourceLabel}!`);
+      renderApp();
+      evaluateSnapshotHealth();
+      return true;
+    }
+    alert("Invalid backup format. Missing core PRM keys.");
+    return false;
+  } catch (err) {
+    console.error("[Restore] JSON parse failed:", err);
+    alert("Error parsing backup file.");
+    return false;
+  }
 }
 
 // Restore PRM JSON
@@ -7133,20 +9459,7 @@ function restoreJSONBackup(e) {
 
   const reader = new FileReader();
   reader.onload = function(evt) {
-    try {
-      const parsed = JSON.parse(evt.target.result);
-      if (parsed.prospects && parsed.companies && parsed.media) {
-        state = parsed;
-        ensureStateDefaults();
-        saveState();
-        alert("Database restored successfully!");
-        renderApp();
-      } else {
-        alert("Invalid backup format. Missing core PRM keys.");
-      }
-    } catch (err) {
-      alert("Error parsing backup file.");
-    }
+    applyJSONBackupText(evt.target.result, file.name);
   };
   reader.readAsText(file);
 }
@@ -7946,6 +10259,19 @@ function getCompanyName(compId) {
   return c ? c.name : "";
 }
 
+// Today as a LOCAL "YYYY-MM-DD" string (Phase 1 / Session 1.4).
+// Deliberately not `new Date().toISOString().split("T")[0]`, the older
+// convention elsewhere in this file: toISOString() is UTC, so in
+// America/New_York every task created after 8pm would be stamped with
+// tomorrow's date. DECLARATIONS stores dates as local YYYY-MM-DD strings.
+// Reuse this for task dates (1.5's "due today", 1.6's completedDate).
+function todayLocalDateStr() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 function getMediaTitle(medId) {
   const m = state.media.find(x => x.id === medId);
   return m ? m.title : "None";
@@ -8167,6 +10493,7 @@ function setupEventListeners() {
   document.getElementById("btn-export-media-csv").addEventListener("click", exportMediaCSV);
   document.getElementById("btn-export-campaigns-csv").addEventListener("click", exportCampaignsCSV);
   document.getElementById("btn-export-audiences-csv").addEventListener("click", exportAudienceListsCSV);
+  document.getElementById("btn-export-tasks-csv")?.addEventListener("click", exportTasksCSV);
   document.getElementById("btn-export-companies-csv").addEventListener("click", exportCompaniesCSV);
   document.getElementById("btn-export-email-accounts-csv").addEventListener("click", exportEmailAccountsCSV);
   document.getElementById("btn-export-domains-csv").addEventListener("click", exportDomainsCSV);
@@ -8178,6 +10505,12 @@ function setupEventListeners() {
   if (chooseFolderBtn) chooseFolderBtn.addEventListener("click", chooseBackupFolder);
   const restoreFromFolderBtn = document.getElementById("btn-restore-from-folder");
   if (restoreFromFolderBtn) restoreFromFolderBtn.addEventListener("click", restoreFromBackupFolder);
+  const snapRestoreBtn = document.getElementById("btn-restore-from-snapshot");
+  if (snapRestoreBtn) snapRestoreBtn.addEventListener("click", handleRestoreFromSnapshotClick);
+  const snapNowBtn = document.getElementById("btn-snapshot-now");
+  if (snapNowBtn) snapNowBtn.addEventListener("click", handleSnapshotChipClick);
+  const mirrorNowBtn = document.getElementById("btn-mirror-now");
+  if (mirrorNowBtn) mirrorNowBtn.addEventListener("click", handleMirrorNowClick);
 
   const restoreDropzone = document.getElementById("data-restore-dropzone");
   const restoreInput = document.getElementById("data-restore-input");
@@ -8197,6 +10530,106 @@ function setupEventListeners() {
     document.getElementById("modal-interaction").classList.add("hidden");
   });
   document.getElementById("int-modal-confirm").addEventListener("click", recordInteraction);
+
+  // Task Editor Modal triggers (Phase 1 / Session 1.4, contract C8).
+  // The "+ New Task" button and the task rows live inside the inspector and
+  // are wired at render time in renderProspectInspectorTasks(); only the
+  // modal's own static controls are bound here.
+  document.getElementById("task-modal-cancel").addEventListener("click", closeTaskEditor);
+  document.getElementById("task-modal-save").addEventListener("click", saveTaskFromEditor);
+  document.getElementById("task-modal-delete").addEventListener("click", () => {
+    if (editingTaskId) deleteTask(editingTaskId);
+  });
+
+  /* Contact search, contract C14 (Session 1.9). Rows are built and wired in
+     renderTaskProspectResults(); only the field's own controls are here. */
+  document.getElementById("task-prospect-search").addEventListener("input", renderTaskProspectResults);
+  document.getElementById("task-prospect-search").addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown")      { e.preventDefault(); highlightTaskSearchRow(taskSearchActive + 1); }
+    else if (e.key === "ArrowUp")   { e.preventDefault(); highlightTaskSearchRow(taskSearchActive - 1); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      // Enter with nothing highlighted takes the first match — the common
+      // case is typing a name until one row is left.
+      const pick = taskSearchMatches[taskSearchActive >= 0 ? taskSearchActive : 0];
+      if (pick) chooseTaskProspect(pick);
+    } else if (e.key === "Escape") {
+      // Clears the query, and stops there: Escape inside a search field
+      // should not also close the modal behind it.
+      e.stopPropagation();
+      e.target.value = "";
+      renderTaskProspectResults();
+    }
+  });
+  document.getElementById("task-prospect-change").addEventListener("click", clearTaskProspectChoice);
+
+  // §13.5 / §14.4: the completion checkbox governs whether transposition is
+  // even offered, so both boxes repaint the same block.
+  document.getElementById("task-complete").addEventListener("change", syncTaskReachoutBlock);
+  document.getElementById("task-log-reachout").addEventListener("change", syncTaskReachoutBlock);
+
+  /* §13.8: the prospect name is a link to that contact. SAVE FIRST — the
+     click comes from inside the editor, so committing what was typed and then
+     going to look is the natural reading, and it means nothing has to be
+     stashed and reconciled on the way back. If validation rejects, its alert
+     stands and we do not navigate. Phase 2 changes what the destination looks
+     like, not that there is one. */
+  document.getElementById("task-prospect-fixed").addEventListener("click", () => {
+    const id = document.getElementById("task-prospect").value;
+    const p = (state.prospects || []).find(x => x.id === id);
+    if (!p) return;                        // "(missing prospect)" has nowhere to go
+    if (saveTaskFromEditor() !== true) return;
+    switchView("prospects");
+    selectProspect(p.id);
+  });
+
+  // TaskHub view listeners (Phase 1 / Session 1.5). Filter chips, sortable
+  // headers, row checkboxes and orphan rows are all wired at render time in
+  // renderTasksView() and its helpers; only the panel's static controls are
+  // bound here.
+  document.getElementById("taskhub-new-btn").addEventListener("click", () => openTaskEditor(null, null));
+  document.getElementById("taskhub-per-page").addEventListener("change", () => {
+    taskPage = 1;
+    renderTaskHubTable();
+  });
+  document.getElementById("taskhub-range-start").addEventListener("change", () => {
+    taskPage = 1;
+    renderTaskHubTable();
+  });
+  document.getElementById("taskhub-range-end").addEventListener("change", () => {
+    taskPage = 1;
+    renderTaskHubTable();
+  });
+  document.getElementById("btn-taskhub-prev-page").addEventListener("click", () => {
+    if (taskPage > 1) { taskPage--; renderTaskHubTable(); }
+  });
+  document.getElementById("btn-taskhub-next-page").addEventListener("click", () => {
+    const totalPages = Math.max(1, Math.ceil(getTaskHubRows().length / taskPerPage));
+    if (taskPage < totalPages) { taskPage++; renderTaskHubTable(); }
+  });
+  document.getElementById("task-orphans-close").addEventListener("click", closeTaskOrphanWindow);
+  // Bulk action bar (Session 1.6). The header select-all checkbox is bound
+  // inside renderTaskHubTable(), because the thead is rebuilt every render.
+  document.getElementById("btn-taskhub-bulk-complete").addEventListener("click", () => bulkCompleteTasks(taskSelectedIds));
+  document.getElementById("btn-taskhub-bulk-duedate").addEventListener("click", openBulkDueDateModal);
+  document.getElementById("btn-taskhub-clear-selection").addEventListener("click", clearTaskSelection);
+  document.getElementById("btn-tasks-settings").addEventListener("click", openSettingsModal);
+
+  // Bulk due-date modal (Session 1.7). The two mode radios only repaint the
+  // modal; nothing is committed until Apply, which confirms with the count.
+  document.getElementById("bulk-due-mode-shift").addEventListener("change", syncBulkDueDateModal);
+  document.getElementById("bulk-due-mode-set").addEventListener("change", syncBulkDueDateModal);
+  document.getElementById("btn-bulk-due-apply").addEventListener("click", applyBulkDueDate);
+  document.getElementById("btn-bulk-due-cancel").addEventListener("click", closeBulkDueDateModal);
+  document.getElementById("btn-bulk-due-close-x").addEventListener("click", closeBulkDueDateModal);
+
+  // Global due-date counting mode, in Application Settings. Writing it is
+  // NEVER retroactive — no existing task moves (scope §7).
+  document.getElementById("setting-task-date-mode").addEventListener("change", (e) => {
+    if (!state.taskSettings || typeof state.taskSettings !== "object") state.taskSettings = {};
+    state.taskSettings.dateMode = e.target.value === "all" ? "all" : "business";
+    saveState();
+  });
 
   // 2. Media Manager View listeners
   document.getElementById("media-search").addEventListener("input", renderMediaView);
@@ -8782,6 +11215,15 @@ function renderSettingsLists() {
       domainHostsContainer.innerHTML += buildRowWithUrl('domainHosts', idx, escapeHTML(t), state.domainHosts.length, 'domainHostDefaultUrls');
     });
     wireDefaultUrlInputs(domainHostsContainer);
+  }
+
+  // 13. TaskHub due-date counting mode (Session 1.7). Not a list — a scalar
+  // setting, so it is a <select> rather than an item list + inline add. Its
+  // backup coverage is contract C4: the ["Task Date Mode", value] row in
+  // prm_settings.csv, already written by Session 1.3.
+  const taskDateModeSelect = document.getElementById("setting-task-date-mode");
+  if (taskDateModeSelect) {
+    taskDateModeSelect.value = (state.taskSettings && state.taskSettings.dateMode === "all") ? "all" : "business";
   }
 }
 
