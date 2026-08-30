@@ -1,0 +1,50 @@
+# Vantage — .gitignore
+#
+# Added 2026-08-30. This repo is PUBLIC and holds a prospecting tool whose
+# live data is contact information for people who never opted in (DIRECTIVES
+# §0, Gate A). Real data normally never reaches this folder — it lives in
+# localStorage, and DECLARATIONS puts backups in a SIBLING directory outside
+# the project. That rule depends on nobody ever mis-clicking a save dialog.
+# This file is the guard that does not.
+#
+# Git history is permanent and this repo is public: a backup committed once
+# stays retrievable even after it is deleted, and even if the repo is later
+# made private. Prevention is the only control that works here.
+#
+# NOTE: .gitignore does not affect files git ALREADY tracks. prm_data.json is
+# tracked on purpose — it is the four fictional seed contacts (Jane Smith,
+# Alex Rivera, Sarah Chen, Marcus Vance, all on 555 numbers), not real data.
+
+# --- Backup and export artifacts (the actual risk) -------------------------
+# The ZIP backup bundle and the per-entity CSVs it contains. These hold the
+# real database: names, emails, phones, LinkedIn URLs and private notes.
+*.zip
+prm_*.csv
+vantage_backup*
+*_backup.csv
+*_backup.json
+
+# Local snapshots (Tier 1 recovery). These belong outside the project folder
+# per DECLARATIONS; this catches the case where one is pointed here anyway.
+# Snapshot files are named YYYY-MM-DD_HHMMSS.json.
+snapshots/
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].json
+
+# --- Secrets (DIRECTIVES §4: never committed) ------------------------------
+# Nothing needs these today. Phase 2 adds Firebase config, which is when this
+# section starts earning its place.
+.env
+.env.*
+*.key
+*.pem
+firebase-adminsdk*.json
+serviceAccountKey.json
+
+# --- Local tooling and OS cruft --------------------------------------------
+node_modules/
+npm-debug.log*
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

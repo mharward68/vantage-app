@@ -78,6 +78,14 @@ Durable findings only — what a future session would waste time rediscovering. 
 
 - **Day-stepping arithmetic must run in UTC, not local time.** `shiftTaskDate()` (Session 1.7, contract C11) advances a `Date` one day at a time. A local-time `d.setDate(d.getDate() + 1)` across a spring-forward boundary lands on the *same* calendar day it started, because that local day is 23 hours — so a "+5 business days" shift silently arrives four days out, twice a year, in a way no test run in July will ever show. `Date.UTC(y, m, d)` days are always 24 hours. **Parse `YYYY-MM-DD` into UTC fields, step with `setUTCDate()`, read back with `getUTCFullYear/Month/Date`, and never let a local offset touch the value.** This is the same off-by-one-day class as the `toISOString()` note above, arriving from the other direction: there the bug is *reading* a local moment as UTC, here it is *doing arithmetic* in local time.
 
+## The repo is public
+
+- **`github.com/mharward68/vantage-app` is a PUBLIC repository** (confirmed 2026-08-30). Every commit is world-readable and **git history is permanent** — a file committed once stays retrievable after it is deleted, and after the repo is made private. Decide what goes in *before* committing; there is no clean undo.
+- **This matters more here than in most projects.** DIRECTIVES §0 records that Vantage holds contact data for people who never opted in — names, titles, emails, phones, LinkedIn URLs, plus private notes about them. Publishing any of it is a Gate A failure and a real-world obligation, not a tidiness issue.
+- **What keeps real data out today is architectural, not deliberate:** the live database is in `localStorage`, and DECLARATIONS puts backups in a sibling directory *outside* the project folder. Nothing in the repo holds real contacts. `prm_data.json` is tracked on purpose and is four fictional seeds (Jane Smith / Alex Rivera / Sarah Chen / Marcus Vance, all on `555` numbers, zero history entries).
+- **A `.gitignore` was added 2026-08-30** covering ZIP bundles, `prm_*.csv` exports, `snapshots/`, timestamped snapshot JSONs, and the secret shapes Phase 2 will introduce. It exists because the previous protection depended on nobody mis-clicking a save dialog while `git add -A` is the working habit. **`.gitignore` does not affect files git already tracks** — untrack with `git rm --cached` if something slips in.
+- **Phase 2 is the pressure point.** Hosting adds Firebase config and credentials, and the localStorage→hosted migration means real data passes through export files. Read this section before committing anything in that phase.
+
 ## Fossils and dead ends
 
 - `schema_update.sql` describes `Prospect` and `Company` **SQL tables that have never existed.** A fossil from an abandoned SQL direction, and actively misleading — an agent reading it cold would conclude there is a relational database here. Status header added 2026-08-28; safe to delete.
