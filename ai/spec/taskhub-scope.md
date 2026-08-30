@@ -351,6 +351,19 @@ Open at the time of writing, for 1.9 to settle: whether the bulk Mark Complete o
 
 So the slot keeps its height whether or not anything is selected: the *contents* toggle, the *box* does not. In a fixed-height panel (§15.2) this costs one strip of height permanently and buys a table whose rows never move. DIRECTIVES ladder rung 1 (stability) and rung 2 (no layout shift) agree, so the call is made here rather than left to the session. Reversible if the reserved strip reads as dead space in practice.
 
+#### 15.1a Amendment 2026-08-30 — the bar is faded at zero, not hidden
+
+**It read as dead space, and the reversal clause above fired within minutes of real use.** As first shipped, the bar was `display: none` inside the height-reserved slot. Michael's report: *"Bulk edit items are missing."* An empty 50px gap sitting between the filter strip and the Per Page row does not read as a toolbar waiting for a selection; it reads as a component that failed to load. In its old position at the bottom of the panel the same gap was invisible, which is why §15.1 could not have predicted this — moving the bar up is what made its absence legible.
+
+**What is now true:**
+
+- The bar is **always visible**. At zero selected it is **faded and inert**; the first ticked row lights it.
+- **The reserved height is unchanged and is not negotiable** — it is the whole reason §15.1 exists. Verified: the table wrapper's top and the first row's top are identical at zero selected and at one.
+- `renderTaskHubBulkBar()` still toggles `.hidden` and that class is still the single source of truth for "is anything selected". What changed is what the class *means* for this one bar: a CSS rule on `#taskhub-bulk-slot > #taskhub-bulk-actions.hidden` reinterprets it as `opacity: 0.45; pointer-events: none` instead of `display: none`.
+- **The three controls also get `disabled`, and that is not decoration.** `pointer-events: none` stops the mouse and nothing else — without `disabled` the buttons stay in the tab order and fire on Enter while looking greyed out. A control that lies about its own state is exactly what ladder rung 2 rules out. Verified: a real click and a real Enter on the faded Mark Complete changed nothing, focus refused to land on it, and two rows selected still completed normally.
+
+**This supersedes §15.1's "same show/hide-at-zero-selected behavior" only for this bar's appearance.** The id, the four controls, the handlers and `syncTaskHubSelectionUI()` are still untouched. Owner: Session 1.10, review pass.
+
 ### 15.2 TaskHub is exactly the screen height, and only the task list scrolls
 
 > "I want the window containing the tasks to be the vertical height of the screen minus the header. The idea is you don't have to ever scroll the screen but instead you scroll tasks inside the task window."

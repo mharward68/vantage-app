@@ -1265,6 +1265,40 @@ function ensureStateDefaults() {
   if (state.taskSettings.dateMode !== "business" && state.taskSettings.dateMode !== "all") {
     state.taskSettings.dateMode = "business";
   }
+  /* Phase 1 / C15 (Session 1.10). The app's ONE persisted-UI-layout record,
+     keyed by table id so a second table adopts it without a second
+     implementation. Only "taskhub" is populated in Phase 1.
+
+     ANY future persisted UI layout — panel sizes, pane splits — joins this
+     record under its own key rather than starting a sibling store. Two stores
+     means two migrations, two backup rows, and two chances to miss one in
+     wipeAllData(). Rename the field to state.uiLayouts at that point if
+     "columnLayouts" reads wrong; that is a rename with a defaults migration,
+     not a new store.
+
+     `order` holds column KEYS — not labels (they change) and not indices
+     (they lie after a reorder). `widths` is px integers where 0 means
+     "unset — use the code default"; not null, not absent. The leftmost
+     checkbox column is in neither: it is structural and always first.
+
+     Backup coverage is contract C17: one ["Column Layouts", <json>] row in
+     prm_settings.csv, which reaches every path the settings CSV already
+     reaches. */
+  if (!state.columnLayouts || typeof state.columnLayouts !== "object") state.columnLayouts = {};
+  if (!state.columnLayouts.taskhub || typeof state.columnLayouts.taskhub !== "object") {
+    /* C15's own example record shows `dueDate: 104`; every column ships as 0
+       here instead. 0 is C15's "unset — use the code default", and 104 was
+       simply Session 1.5's code default copied into the example. Under
+       table-layout:fixed that value truncates the label, so freezing it into
+       every first-run record would ship a header reading "DUE DAT…" that no
+       later code-default fix could reach. The record's shape, keys and
+       semantics are exactly as C15 specifies — only the example's seed value
+       differs, and 0 is the value C15 defines for "I have not chosen one". */
+    state.columnLayouts.taskhub = {
+      order: ["dueDate", "firstName", "lastName", "company", "title"],
+      widths: { dueDate: 0, firstName: 0, lastName: 0, company: 0, title: 0 }
+    };
+  }
   // Field-level defaults so records predating a field read "" / null, never undefined.
   state.tasks.forEach(t => {
     if (t.notes === undefined || t.notes === null) t.notes = "";
@@ -1701,6 +1735,13 @@ async function wipeAllData() {
   state.emailAccounts = [];
   state.domains = [];
   state.tasks = [];   // Phase 1 / Session 1.3 — a new store must be wiped too.
+  // Phase 1 / C15 (Session 1.10). This function clears an EXPLICIT list, not
+  // everything, so every new top-level store has to be added here by hand —
+  // state.tasks was missed on the first pass in 1.3. A store left out survives
+  // the wipe, which silently turns any export→wipe→restore drill into a test
+  // that cannot fail. ensureStateDefaults() refills the taskhub default on the
+  // next load or restore.
+  state.columnLayouts = {};
   state.selectedProspectId = null;
   state.activeView = "dashboard";
 
@@ -2019,6 +2060,14 @@ function generateSettingsCSV() {
   // Custom Sort Order rather than in a file of its own. This is what gives
   // state.taskSettings its DIRECTIVES §4 backup coverage.
   rows.push(["Task Date Mode", (state.taskSettings && state.taskSettings.dateMode) || "business"]);
+  // Phase 1 / C17. state.columnLayouts' ENTIRE DIRECTIVES §4 coverage is this
+  // one row, following the Custom Sort Order precedent. The payload is JSON
+  // and therefore full of `"` characters — the round trip depends on
+  // convertToCSV() quoting unconditionally and parseCSV() tracking quote
+  // state, which Session 1.3 verified against a note holding embedded quotes.
+  // If it ever fails, base64 the payload into this same cell; do not add a
+  // file.
+  rows.push(["Column Layouts", JSON.stringify(state.columnLayouts || {})]);
 
   return convertToCSV(rows, ["Option Type", "Option Value"], r => r);
 }
@@ -2499,6 +2548,8 @@ function restoreSettingsFromCSV(text) {
   let sawDomainHostDefaultUrls = false;
   let sawTaskDateMode = false;
   let taskDateMode = "business";
+  let sawColumnLayouts = false;
+  let columnLayouts = null;
 
   const headers = rows[0];
   let typeIdx = 0;
@@ -2578,6 +2629,20 @@ function restoreSettingsFromCSV(text) {
       // Phase 1 / C4.
       sawTaskDateMode = true;
       taskDateMode = val.toLowerCase() === "all" ? "all" : "business";
+    } else if (typeLower === "column layouts") {
+      // Phase 1 / C17. A malformed cell must not take the whole settings
+      // restore down with it — a corrupt column width is cosmetic, and losing
+      // every tag and reachout type in the same file is not. Leave the flag
+      // down so the current layout survives untouched.
+      try {
+        const parsed = JSON.parse(val);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          sawColumnLayouts = true;
+          columnLayouts = parsed;
+        }
+      } catch (err) {
+        console.warn("Settings restore: 'Column Layouts' could not be parsed; keeping the current layout.", err);
+      }
     }
   }
 
@@ -2600,6 +2665,12 @@ function restoreSettingsFromCSV(text) {
     if (!state.taskSettings || typeof state.taskSettings !== "object") state.taskSettings = {};
     state.taskSettings.dateMode = taskDateMode;
   }
+  // C17. Restored wholesale like every sibling list. Unknown keys inside it
+  // and keys missing from it are handled at READ time by the C15 migration
+  // rule (taskHubColumns / taskHubColumnWidth), not here — that is what makes
+  // restoring an older backup, or one written by a later version with an
+  // extra column, safe.
+  if (sawColumnLayouts) state.columnLayouts = columnLayouts;
 }
 
 // Phase 1 / C3. The CSV carries First Name, Last Name and Company as
@@ -3960,10 +4031,8 @@ function openTaskEditor(taskId = null, prospectId = null) {
      inspector, not from TaskHub. A task filed under the wrong person is
      still delete-and-recreate.
 
-     The search is revealed in exactly TWO states, and neither is a workflow
+     The search is revealed in exactly ONE state, and it is not a workflow
      choice:
-       CREATE WITH NO IMPLIED PROSPECT — TaskHub's "+ New Task", which has no
-         inspector to inherit a prospect from.
        ORPHAN REPAIR — the task points at a contact that no longer resolves.
      Anything else shows the prospect as fixed text.
 
@@ -3972,11 +4041,32 @@ function openTaskEditor(taskId = null, prospectId = null) {
      here, because a list row cannot show a task's notes and deciding whether
      to reattach or discard means reading the task.
 
+     §15.4 (Session 1.10) DELETED the second half, `isNew && !prospectId`.
+     TaskHub's "+ New Task" was its only caller and it is gone; every
+     inspector create passes a prospect in. This was argued the other way
+     first — keep the branch as a safety net for some future
+     create-without-prospect surface — and Michael overruled it: creating a
+     task without a prospect is to be prevented ON PURPOSE. The dead end is
+     not a failure mode to guard against, it IS the guard. A branch that would
+     let a future surface create a prospect-less task is not a safety net; it
+     is the hole. saveTaskFromEditor()'s `if (!prospectId)` refusal is the
+     enforcement — intended behavior, not a bug to fix.
+
+     THE DISTINCTION THAT MUST SURVIVE: "a task cannot exist without a
+     prospect" is FALSE as stated. Creation is forbidden; a task can still
+     BECOME prospect-less through a restore taken before that contact existed
+     or after they were deleted. Those are orphans, and they are preserved,
+     chip-surfaced and repairable. Reading §15.4 as license to blank an
+     unresolved prospectId or drop orphans on restore would turn orphan
+     preservation into silent orphan loss — the exact failure scope §3 has
+     been protecting against since the beginning.
+
      DO NOT WIDEN THIS TEST TO "editing". That is the part of §12.1 that
-     survived both amendments and it is the load-bearing one. */
+     survived every amendment and it is the load-bearing one. §15.4 narrows
+     the test by removing a state; it never widens it. */
   const wantedProspect = state.prospects.find(x => x.id === wanted);
   const isOrphan = !!task && !wantedProspect;
-  const needsPicker = isOrphan || (isNew && !prospectId);
+  const needsPicker = isOrphan;
 
   document.getElementById("task-prospect-group").classList.toggle("hidden", !needsPicker);
   document.getElementById("task-prospect-fixed-group").classList.toggle("hidden", needsPicker);
@@ -4346,7 +4436,22 @@ function renderTaskHubSummary() {
     : `Showing ${startIdx + 1}–${startIdx + shown} of ${total} task${total === 1 ? "" : "s"} · ${taskSelectedIds.size} selected`;
 }
 
-// The bulk action bar appears at ≥1 selected and shows the count (scope §5).
+// The bulk action bar shows the count (scope §5).
+//
+// `.hidden` remains the single source of truth for "is anything selected",
+// unchanged since Session 1.6. What CHANGED is what that class means for this
+// one bar: §15.1 as first shipped made it display:none inside a
+// height-reserved slot, and an empty 50px gap between the filters and the Per
+// Page row read as a component that had failed to load. Michael amended it
+// 2026-08-30 after using it — the bar is now ALWAYS VISIBLE, faded and inert
+// at zero and lit on the first tick. The fade is the CSS rule on
+// `#taskhub-bulk-slot > #taskhub-bulk-actions.hidden`.
+//
+// `disabled` is not decoration on top of that fade. `pointer-events: none`
+// stops the mouse and nothing else: without this the three controls stay in
+// the tab order and fire on Enter while looking greyed out — a control that
+// lies about its own state, which is exactly what DIRECTIVES ladder rung 2
+// rules out.
 function renderTaskHubBulkBar() {
   const bar = document.getElementById("taskhub-bulk-actions");
   if (!bar) return;
@@ -4354,6 +4459,7 @@ function renderTaskHubBulkBar() {
   const countEl = document.getElementById("taskhub-selected-count");
   if (countEl) countEl.textContent = count;
   bar.classList.toggle("hidden", count === 0);
+  bar.querySelectorAll("button").forEach(btn => { btn.disabled = count === 0; });
 }
 
 // Header select-all checkbox: checked when every row on this page is
@@ -4706,13 +4812,107 @@ const TASKHUB_FILTERS = [
   { key: "completed", label: "Completed" }
 ];
 
+/* TASKHUB_COLUMNS is the definition of what a column IS — its key, its label
+   and its CODE DEFAULT width in px. It is NOT the on-screen sequence: that is
+   `order` in the C15 record, resolved by taskHubColumns() below. Session 1.11
+   adds the drag that writes `order`; nothing else about this changes.
+
+   Every column carries a default width because the table is table-layout:fixed
+   (per-column pixel widths do not stick otherwise) and the trailing spacer
+   column absorbs whatever the real columns leave over. */
 const TASKHUB_COLUMNS = [
-  { key: "dueDate",   label: "Due Date",   width: "104px" },
-  { key: "firstName", label: "First Name" },
-  { key: "lastName",  label: "Last Name" },
-  { key: "company",   label: "Company" },
-  { key: "title",     label: "Task Title" }
+  // 124, not Session 1.5's 104: under table-layout:fixed a column can no
+  // longer grow to fit, and "DUE DATE ▲" (the default sort, so the arrow is
+  // always there) needs 113px inside .premium-table th's 32px of horizontal
+  // padding. At 104 the header rendered as "DUE DAT…". Found by screenshot.
+  { key: "dueDate",   label: "Due Date",   width: 124 },
+  { key: "firstName", label: "First Name", width: 140 },
+  { key: "lastName",  label: "Last Name",  width: 160 },
+  { key: "company",   label: "Company",    width: 220 },
+  { key: "title",     label: "Task Title", width: 340 }
 ];
+
+// C16 hit zones and the resize floor. All three zones are implemented in
+// Session 1.10 even though only resize is built, so 1.11 adds a branch rather
+// than rewriting the handler.
+const TASKHUB_RESIZE_EDGE_PX = 5;        // C16 row 1 — resize
+const TASKHUB_REORDER_THRESHOLD_PX = 4;  // C16 row 2 — reorder (Session 1.11)
+const TASKHUB_MIN_COL_PX = 60;
+
+/* --------------------------------------------------------------------------
+   C15 read/fallback rule — the migration rule, and it is NOT optional.
+
+   UNKNOWN keys in a saved layout are IGNORED on read; keys MISSING from it
+   fall back to the code default. That is what lets a later session add a
+   column without a saved layout breaking, and what makes restoring an older
+   backup — or one written by a newer version with an extra column — safe.
+   Nothing else in the app may read state.columnLayouts.taskhub directly.
+   -------------------------------------------------------------------------- */
+
+function taskHubLayoutRecord() {
+  if (!state.columnLayouts || typeof state.columnLayouts !== "object") return {};
+  const rec = state.columnLayouts.taskhub;
+  return (rec && typeof rec === "object") ? rec : {};
+}
+
+// The columns to render, in order. Saved keys first (unknown ones dropped),
+// then any known column the saved order never mentioned.
+function taskHubColumns() {
+  const saved = taskHubLayoutRecord().order;
+  const savedOrder = Array.isArray(saved) ? saved : [];
+  const out = [];
+  savedOrder.forEach(key => {
+    const col = TASKHUB_COLUMNS.find(c => c.key === key);
+    if (col && !out.includes(col)) out.push(col);
+  });
+  TASKHUB_COLUMNS.forEach(col => { if (!out.includes(col)) out.push(col); });
+  return out;
+}
+
+// C15: 0 means "unset — use the code default". Not null, not absent.
+function taskHubColumnWidth(key) {
+  const widths = taskHubLayoutRecord().widths;
+  const saved = (widths && typeof widths === "object") ? widths[key] : undefined;
+  if (typeof saved === "number" && isFinite(saved) && saved > 0) return Math.round(saved);
+  const col = TASKHUB_COLUMNS.find(c => c.key === key);
+  return col && col.width ? col.width : 120;
+}
+
+// Called once per drag, on mouseup — never on mousemove. A width written on
+// every frame would push a saveState() (and its debounced snapshot) through
+// localStorage sixty times a second for one gesture.
+function setTaskHubColumnWidth(key, px) {
+  if (!state.columnLayouts || typeof state.columnLayouts !== "object") state.columnLayouts = {};
+  if (!state.columnLayouts.taskhub || typeof state.columnLayouts.taskhub !== "object") {
+    state.columnLayouts.taskhub = { order: TASKHUB_COLUMNS.map(c => c.key), widths: {} };
+  }
+  const rec = state.columnLayouts.taskhub;
+  if (!rec.widths || typeof rec.widths !== "object") rec.widths = {};
+  rec.widths[key] = Math.max(TASKHUB_MIN_COL_PX, Math.round(px));
+  saveState();
+}
+
+// The order writer (Session 1.11). Same shape and the same rule as the width
+// writer above: called ONCE per gesture, on drop — never on mousemove.
+//
+// It launders the list through TASKHUB_COLUMNS on the way in, so what lands in
+// state is always a full, valid, duplicate-free order even if the DOM it was
+// read from were somehow short a column. That is the C15 read rule applied at
+// write time as well, and it is why nothing downstream has to defend itself.
+function setTaskHubColumnOrder(keys) {
+  if (!state.columnLayouts || typeof state.columnLayouts !== "object") state.columnLayouts = {};
+  if (!state.columnLayouts.taskhub || typeof state.columnLayouts.taskhub !== "object") {
+    state.columnLayouts.taskhub = { order: TASKHUB_COLUMNS.map(c => c.key), widths: {} };
+  }
+  const rec = state.columnLayouts.taskhub;
+  const clean = [];
+  (Array.isArray(keys) ? keys : []).forEach(k => {
+    if (TASKHUB_COLUMNS.some(c => c.key === k) && !clean.includes(k)) clean.push(k);
+  });
+  TASKHUB_COLUMNS.forEach(c => { if (!clean.includes(c.key)) clean.push(c.key); });
+  rec.order = clean;
+  saveState();
+}
 
 // The prospect a task points at, or null. One lookup helper so the table,
 // the sort comparator and the orphan count all agree on what "resolves"
@@ -4864,14 +5064,25 @@ function renderTaskHubTable() {
   checkTh.appendChild(selectAll);
   htr.appendChild(checkTh);
 
-  TASKHUB_COLUMNS.forEach(col => {
+  // Columns come from the C15 resolver, never from TASKHUB_COLUMNS' literal
+  // sequence — that is what makes a saved order (and an old backup carrying
+  // an unknown or missing key) safe to load. The BODY builds its cells from
+  // this same list below, so cells can never drift out of sync with headers.
+  const cols = taskHubColumns();
+
+  cols.forEach(col => {
     const th = document.createElement("th");
     th.className = "taskhub-sortable";
-    if (col.width) th.style.width = col.width;
+    th.dataset.colKey = col.key;                        // C16 reads this
+    th.style.width = taskHubColumnWidth(col.key) + "px";
     const arrow = taskSort.key === col.key ? (taskSort.dir === "asc" ? " ▲" : " ▼") : "";
     th.textContent = col.label + arrow;
     th.title = `Sort by ${col.label}`;
     th.addEventListener("click", () => {
+      // C16 third row: a header click that did NOT become a drag still sorts.
+      // A drag sets this flag on mouseup so the click it trails does not also
+      // re-sort the column the user was only resizing.
+      if (taskSuppressNextHeaderClick) { taskSuppressNextHeaderClick = false; return; }
       if (taskSort.key === col.key) {
         taskSort.dir = taskSort.dir === "asc" ? "desc" : "asc";
       } else {
@@ -4882,6 +5093,17 @@ function renderTaskHubTable() {
     });
     htr.appendChild(th);
   });
+
+  // Trailing spacer column. Carries no width on purpose: under
+  // table-layout:fixed it soaks up whatever the real columns do not use, so
+  // shrinking one column does not stretch its neighbours — the leftover
+  // collects harmlessly at the end. Same trick the email-accounts table uses.
+  // It is not sortable, not resizable and not in the C15 record.
+  const spacerTh = document.createElement("th");
+  spacerTh.className = "taskhub-col-spacer";
+  spacerTh.setAttribute("aria-hidden", "true");
+  htr.appendChild(spacerTh);
+
   thead.appendChild(htr);
 
   // Summary, bulk bar and the header checkbox's three states. Runs here, not
@@ -4894,11 +5116,13 @@ function renderTaskHubTable() {
   if (pageItems.length === 0) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
-    td.colSpan = TASKHUB_COLUMNS.length + 1;
+    td.colSpan = cols.length + 2;   // checkbox column + the trailing spacer
     td.style.cssText = "text-align:center; padding:24px; color:var(--color-text-muted);";
+    // §15.4: TaskHub no longer creates tasks, so it must not tell the reader
+    // to click a button that is not there.
     td.textContent = taskFilter === "completed"
       ? "No completed tasks yet."
-      : "No tasks match this filter. Click \"+ New Task\" to create one.";
+      : "No tasks match this filter. Tasks are created from a contact in the Prospect Hub.";
     tr.appendChild(td);
     tbody.appendChild(tr);
     return;
@@ -4939,28 +5163,41 @@ function renderTaskHubTable() {
     checkTd.appendChild(cb);
     tr.appendChild(checkTd);
 
-    const dueTd = document.createElement("td");
-    dueTd.className = "taskhub-due";
-    dueTd.style.whiteSpace = "nowrap";
-    dueTd.textContent = due || "—";
-    tr.appendChild(dueTd);
+    // Cells are built from the SAME resolved column list the header used, so
+    // a reordered layout can never produce correct data under wrong labels —
+    // the failure mode Session 1.11's drag would otherwise introduce.
+    cols.forEach(col => {
+      const td = document.createElement("td");
+      switch (col.key) {
+        case "dueDate":
+          td.className = "taskhub-due";
+          td.style.whiteSpace = "nowrap";
+          td.textContent = due || "—";
+          break;
+        case "firstName":
+          td.textContent = p ? (p.firstName || "—") : "(missing prospect)";
+          break;
+        case "lastName":
+          td.textContent = p ? (p.lastName || "—") : "—";
+          break;
+        case "company":
+          td.textContent = p ? (getCompanyName(p.companyId) || "—") : "—";
+          break;
+        case "title":
+          td.style.lineHeight = "1.4";
+          td.textContent = t.title || "(untitled)";
+          break;
+        default:
+          td.textContent = "";
+      }
+      tr.appendChild(td);
+    });
 
-    const firstTd = document.createElement("td");
-    firstTd.textContent = p ? (p.firstName || "—") : "(missing prospect)";
-    tr.appendChild(firstTd);
-
-    const lastTd = document.createElement("td");
-    lastTd.textContent = p ? (p.lastName || "—") : "—";
-    tr.appendChild(lastTd);
-
-    const compTd = document.createElement("td");
-    compTd.textContent = p ? (getCompanyName(p.companyId) || "—") : "—";
-    tr.appendChild(compTd);
-
-    const titleTd = document.createElement("td");
-    titleTd.style.lineHeight = "1.4";
-    titleTd.textContent = t.title || "(untitled)";
-    tr.appendChild(titleTd);
+    // Matches the header's trailing spacer <th>. Without it the spacer column
+    // has no body cells and the table's last column collapses on some rows.
+    const spacerTd = document.createElement("td");
+    spacerTd.setAttribute("aria-hidden", "true");
+    tr.appendChild(spacerTd);
 
     tr.addEventListener("click", (e) => {
       if (e.target.closest("input")) return;   // the checkbox is not a row click
@@ -4968,6 +5205,260 @@ function renderTaskHubTable() {
     });
 
     tbody.appendChild(tr);
+  });
+}
+
+/* --------------------------------------------------------------------------
+   C16 — one mousedown handler, three hit zones (Session 1.10)
+
+   | mousedown within 5px of the th's right edge        | RESIZE that column |
+   | mousedown elsewhere, then movement >= 4px          | REORDER (1.11)     |
+   | mousedown elsewhere, released with movement < 4px  | SORT (unchanged)   |
+
+   All three zones are decided HERE even though 1.10 only builds resize, so
+   Session 1.11 adds a branch rather than rewriting the handler. A 1.10 that
+   grabbed the whole th for resizing would have to be undone.
+
+   The third row is the one that breaks. Sorting is existing, verified
+   behaviour and a drag implementation that swallows the click kills it
+   silently — so a drag sets taskSuppressNextHeaderClick and the sort listener
+   consumes the flag, rather than the drag calling stopPropagation() on a
+   click it cannot see.
+
+   Bound ONCE, delegated to the static #taskhub-thead: the header <tr> and its
+   <th>s are rebuilt on every render, so a per-th binding would have to be
+   re-made each time and would leak a listener per render.
+   -------------------------------------------------------------------------- */
+
+let taskHeaderDragInit = false;
+let taskSuppressNextHeaderClick = false;
+
+// The checkbox column and the trailing spacer carry no data-col-key: they are
+// structural, and C15 keeps them out of `order` and `widths` for the same
+// reason. Returning null for them is what makes them neither resizable nor
+// reorderable, with no special case anywhere else.
+function taskHubHeaderCell(target) {
+  return (target && target.closest) ? target.closest("#taskhub-thead th[data-col-key]") : null;
+}
+
+function taskHubInResizeZone(th, clientX) {
+  return (th.getBoundingClientRect().right - clientX) <= TASKHUB_RESIZE_EDGE_PX;
+}
+
+/* --------------------------------------------------------------------------
+   Reorder support (Session 1.11)
+
+   Live shifting moves the REAL cells rather than painting a preview over
+   them, which is what makes "the columns to the right shift to make room"
+   (scope §13.4) true rather than simulated — and moving a node keeps the
+   listeners on it, so the sort handler bound to a th at render time survives
+   being dragged across the table.
+
+   The header row and every body row are moved in the same step, so cells can
+   never be left under the wrong label mid-drag. That is the failure mode this
+   session's risk note names, and the reason it cannot happen here is
+   structural, not careful coding: one function moves both or neither.
+   -------------------------------------------------------------------------- */
+
+// Data columns only, in live DOM order. The checkbox th and the trailing
+// spacer th carry no data-col-key, so they are excluded by the selector and
+// stay pinned at the ends with no special case.
+function taskHubHeaderCells() {
+  const thead = document.getElementById("taskhub-thead");
+  return thead ? Array.from(thead.querySelectorAll("th[data-col-key]")) : [];
+}
+
+// Swap data columns i and i+1 across the header row and every task row.
+// Cell index is dataIndex + 1 in every row, because the checkbox column is
+// always first (C15: it is structural and not in `order`).
+function taskHubSwapAdjacentColumnCells(i) {
+  const thead = document.getElementById("taskhub-thead");
+  const tbody = document.getElementById("taskhub-body");
+  const rows = [];
+  const htr = thead ? thead.querySelector("tr") : null;
+  if (htr) rows.push(htr);
+  // tr[data-task-id] only: the empty-state row is a single colSpan cell and
+  // has no columns to swap.
+  if (tbody) tbody.querySelectorAll("tr[data-task-id]").forEach(r => rows.push(r));
+  rows.forEach(row => {
+    const a = row.children[i + 1];
+    const b = row.children[i + 2];
+    if (a && b) row.insertBefore(b, a);
+  });
+}
+
+// The drop indicator lives on <body>, not inside the table. A positioned
+// child inside #taskhub-table would need a positioned ancestor, and adding
+// `position: relative` to the table or its th is exactly what silently
+// un-stuck the sticky header in Session 1.10.
+function taskHubDropLine() {
+  let el = document.getElementById("taskhub-drop-line");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "taskhub-drop-line";
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function showTaskHubDropLine(th) {
+  const wrap = document.querySelector("#view-tasks .taskhub-table-wrap");
+  const r = th.getBoundingClientRect();
+  const box = wrap ? wrap.getBoundingClientRect() : r;
+  const el = taskHubDropLine();
+  el.style.display = "block";
+  el.style.left = Math.round(r.left) + "px";
+  el.style.top = Math.round(box.top) + "px";
+  el.style.height = Math.round(box.height) + "px";
+}
+
+function hideTaskHubDropLine() {
+  const el = document.getElementById("taskhub-drop-line");
+  if (el) el.style.display = "none";
+}
+
+function initTaskHubHeaderDrag() {
+  const thead = document.getElementById("taskhub-thead");
+  if (!thead || taskHeaderDragInit) return;
+  taskHeaderDragInit = true;
+
+  // The cursor is the only thing that advertises the 5px zone, and a :hover
+  // rule cannot know the pointer's x — so it is set from mousemove.
+  thead.addEventListener("mousemove", (e) => {
+    const th = taskHubHeaderCell(e.target);
+    if (!th) return;
+    th.style.cursor = taskHubInResizeZone(th, e.clientX) ? "col-resize" : "";
+  });
+
+  thead.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    const th = taskHubHeaderCell(e.target);
+    if (!th) return;
+
+    /* A new gesture starting means the previous gesture's trailing click has
+       already been and gone — a click always precedes the next mousedown. So
+       a flag still standing here did not reach a sort listener at all (the
+       click landed on the header row rather than on a th, say). Clearing it
+       is the difference between "one dead click after a drag", which is the
+       intent, and "every header click dead from now on", which is what a
+       leaked flag would mean. */
+    taskSuppressNextHeaderClick = false;
+
+    /* --- Zone 1: resize --- */
+    if (taskHubInResizeZone(th, e.clientX)) {
+      e.preventDefault();     // no text selection while dragging
+      e.stopPropagation();
+      const key = th.dataset.colKey;
+      const startX = e.clientX;
+      const startWidth = th.getBoundingClientRect().width;
+      let finalWidth = startWidth;
+
+      th.classList.add("taskhub-col-resizing");
+      document.body.style.cursor = "col-resize";
+
+      const onMove = (ev) => {
+        finalWidth = Math.max(TASKHUB_MIN_COL_PX, Math.round(startWidth + (ev.clientX - startX)));
+        th.style.width = finalWidth + "px";   // live and cheap: no render, no save
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        th.classList.remove("taskhub-col-resizing");
+        document.body.style.cursor = "";
+        taskSuppressNextHeaderClick = true;   // a drag is not a sort
+        setTaskHubColumnWidth(key, finalWidth);   // persisted ONCE, here
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      return;
+    }
+
+    /* --- Zones 2 and 3: distance decides, not the element --- */
+    const startX = e.clientX;
+    const dragTh = th;
+    let passedThreshold = false;
+
+    // No preventDefault() on the mousedown: this is also the sort path (C16
+    // row 3), and suppressing the default here changes focus behaviour on a
+    // plain click. Text selection is killed at the moment the gesture is
+    // known to be a drag instead.
+    const beginReorder = () => {
+      dragTh.classList.add("taskhub-col-dragging");
+      document.body.style.userSelect = "none";
+      showTaskHubDropLine(dragTh);
+    };
+
+    const onMove = (ev) => {
+      if (!passedThreshold) {
+        if (Math.abs(ev.clientX - startX) < TASKHUB_REORDER_THRESHOLD_PX) return;
+        passedThreshold = true;
+        beginReorder();
+      }
+
+      /* One neighbour at a time, in a loop, so a fast drag that crosses two
+         columns between frames still lands correctly.
+
+         The pointer must pass a neighbour's MIDPOINT before the swap. Using
+         the neighbour's whole box instead oscillates whenever the dragged
+         column is narrower than the one it displaces: the swap puts the
+         pointer back inside the neighbour, which immediately swaps it back.
+         With the midpoint rule the pointer always finishes on the far side of
+         the boundary it just crossed, so nothing re-triggers. */
+      let moved = true;
+      while (moved) {
+        moved = false;
+        const cells = taskHubHeaderCells();
+        const idx = cells.indexOf(dragTh);
+        if (idx === -1) break;
+
+        const next = cells[idx + 1];
+        if (next) {
+          const r = next.getBoundingClientRect();
+          if (ev.clientX > r.left + r.width / 2) {
+            taskHubSwapAdjacentColumnCells(idx);
+            moved = true;
+            continue;
+          }
+        }
+        const prev = cells[idx - 1];
+        if (prev) {
+          const r = prev.getBoundingClientRect();
+          if (ev.clientX < r.left + r.width / 2) {
+            taskHubSwapAdjacentColumnCells(idx - 1);
+            moved = true;
+          }
+        }
+      }
+      showTaskHubDropLine(dragTh);
+    };
+
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      if (!passedThreshold) return;
+      // Under the threshold we fall through untouched and the click sorts.
+      // C16 row 3 — the row this session is most able to break.
+      taskSuppressNextHeaderClick = true;   // a drag is not a sort
+      dragTh.classList.remove("taskhub-col-dragging");
+      document.body.style.userSelect = "";
+      hideTaskHubDropLine();
+      // Persisted ONCE, here, from the order the user can actually see —
+      // never per mousemove.
+      setTaskHubColumnOrder(taskHubHeaderCells().map(c => c.dataset.colKey));
+
+      /* And deliberately NO renderTaskHubTable() here.
+         The live shift already moved the real cells, so the DOM is exactly
+         what a re-render would rebuild — same widths, same sort arrow, same
+         listeners on the same nodes.
+         Re-rendering would also break C16 row 3 in a way that only shows up
+         one gesture later: the trailing click is dispatched AFTER this
+         handler returns, so replacing the <th> here leaves that click with no
+         live target, taskSuppressNextHeaderClick never gets consumed, and the
+         user's NEXT genuine click on a header silently fails to sort.
+         Measured, not reasoned about — the harness caught it. */
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
   });
 }
 
@@ -10587,7 +11078,16 @@ function setupEventListeners() {
   // headers, row checkboxes and orphan rows are all wired at render time in
   // renderTasksView() and its helpers; only the panel's static controls are
   // bound here.
-  document.getElementById("taskhub-new-btn").addEventListener("click", () => openTaskEditor(null, null));
+  // §15.4 (Session 1.10): "+ New Task" and this listener were removed
+  // together. Tasks are created in the Prospect Hub inspector only — a task
+  // exists because of a person, and choosing that person as a form field is
+  // the step most likely to be got wrong and the hardest to notice
+  // afterwards. Do not re-add a create control here.
+  //
+  // C16 (Session 1.10): one delegated mousedown on the STATIC #taskhub-thead,
+  // bound once. The header <tr> is rebuilt on every render, so a per-row
+  // binding would have to be re-made each time.
+  initTaskHubHeaderDrag();
   document.getElementById("taskhub-per-page").addEventListener("change", () => {
     taskPage = 1;
     renderTaskHubTable();

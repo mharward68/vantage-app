@@ -160,6 +160,191 @@ body.module-tasks.light-theme {
 .taskhub-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .taskhub-sortable:hover { color: var(--color-primary); }
 
+/* ==========================================================================
+   ✅ TASKHUB LAYOUT — one screen tall, only the list scrolls
+   (Phase 1 / Session 1.10, scope §13.3 · §15.1 · §15.2 · §15.3)
+
+   #canvas-body is the app's scroll owner and is SHARED BY ALL SIX HUBS. It is
+   deliberately untouched here. Instead #view-tasks fills it exactly and owns
+   its own overflow, so while TaskHub is active #canvas-body simply has
+   nothing left to scroll and the other five hubs are unaffected.
+
+   Height is INHERITED, never computed: #main-canvas is already
+   `height:100vh; flex-column; overflow:hidden`, so "screen minus header" is
+   `height:100%` here. A calc(100vh - <header>) would be a second, stale copy
+   of a number the flex layout has already solved.
+
+   min-height:0 appears at EVERY level of the chain — section, card, wrapper.
+   A flex child defaults to min-height:auto and refuses to shrink below its
+   content, so ONE missing min-height:0 anywhere makes the panel grow instead
+   of the list scrolling, and the symptom looks like the sticky header failing
+   rather than like a flex bug.
+   ========================================================================== */
+#view-tasks {
+  height: 100%;
+  min-height: 0;
+  gap: 0;                 /* the card owns its own internal gaps */
+}
+
+.taskhub-panel-card {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The #view-tasks prefix is not decoration: .table-scroll-container's own
+   `padding: 12px` shorthand is declared ~950 lines further down this file, so
+   a bare .taskhub-table-wrap rule loses the padding-top override on source
+   order at equal specificity. Same trap as the sticky/relative one above. */
+#view-tasks .taskhub-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Columns can be resized past the panel's width (§13.4) — that overflow
+     scrolls here rather than pushing the page sideways. */
+  overflow-x: auto;
+  /* .table-scroll-container's 12px padding is removed at the TOP only.
+     `position: sticky; top: 0` pins the header to the scrollport's padding
+     edge, so any padding above it is a strip that scrolling rows remain
+     VISIBLE in — a 12px sliver of the row above, floating over the header.
+     Found by screenshot; the computed styles all said the header was opaque
+     and stuck, and they were right. The th carries its own 12px padding, so
+     nothing looks cramped. */
+  padding-top: 0;
+}
+
+/* §15.1, amended by Michael 2026-08-30 after using it — the reserved slot.
+
+   The bar is ALWAYS VISIBLE, faded and inert at zero selected, lit the moment
+   something is ticked. It still keeps toggling `.hidden` exactly as Session
+   1.6 wrote it, so that class stays the single source of truth for "is
+   anything selected"; this rule reinterprets it as a fade instead of
+   display:none.
+
+   Two things this buys, and the second one is why the amendment happened:
+   1. The slot keeps the bar's REAL height whether or not anything is
+      selected, so the rows below never move under the cursor mid-click.
+      Derived from the bar itself — no magic number to go stale when a control
+      is added to it.
+   2. The strip explains itself. The first version used visibility:hidden, and
+      an empty 50px gap sitting between the filters and the Per Page row read
+      as something that had failed to load rather than as a toolbar waiting
+      for a selection. That is the "reads as dead space" outcome §15.1 named
+      as reversible, and it took about two minutes of real use to appear.
+
+   pointer-events is belt-and-braces: renderTaskHubBulkBar() also sets
+   `disabled` on the three controls, which is what actually keeps them out of
+   the tab order and off the keyboard. */
+#taskhub-bulk-slot > #taskhub-bulk-actions.hidden {
+  display: flex !important;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+#taskhub-bulk-slot > #taskhub-bulk-actions {
+  transition: opacity 0.15s ease;
+}
+
+/* §15.3 — the column header row takes TaskHub's cyan at an 18% tint.
+   ONE class, worn by TaskHub's <thead> and the orphan window's <thead>.
+
+   THESE BACKGROUNDS ARE THE TINT ALREADY COMPOSITED OVER THE PANEL, sampled
+   from the rendered pixel. The header therefore LOOKS semi-opaque and IS
+   fully opaque, which is exactly what the sticky header below requires: a
+   sticky header with alpha < 1 lets rows scroll visibly through it, and that
+   only shows up once the list is long enough to scroll. DO NOT "simplify"
+   these to rgba() or color-mix(..., transparent) — that reintroduces the bug
+   the opaque requirement exists to prevent.
+
+   Literal hexes with a .light-theme sibling, following .taskhub-row-overdue /
+   .taskhub-row-today. Do NOT invent a custom property: var(--color-danger) is
+   used in renderDomainsView() and defined nowhere, which is why the
+   expired-domain highlight is silently dead.
+
+   The selector is thead.task-table-head th (0,1,2) so it beats
+   .premium-table th (0,1,1) regardless of source order. */
+thead.task-table-head th {
+  background-color: #0c2c31;
+  color: #06b6d4;
+}
+.light-theme thead.task-table-head th {
+  background-color: #b0cad0;
+  color: #0891b2;
+}
+
+/* §13.3 — the header row stays put while rows scroll under it. Applied to the
+   th cells, not the thead, for reliable cross-browser table behavior — same
+   as #aq-results-thead th. */
+#taskhub-thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* §13.4 — per-column pixel widths only stick under table-layout:fixed. The
+   trailing spacer <th> carries no width, so it absorbs whatever the real
+   columns do not use and shrinking a column does not stretch its neighbors. */
+#taskhub-table {
+  table-layout: fixed;
+  width: 100%;
+}
+/* No `position: relative` here. It would out-order the sticky rule above at
+   equal specificity and silently un-stick the header — the symptom being a
+   header that scrolls away while every class and computed background still
+   look right. C16 hit-tests the pointer's x instead of using an absolutely
+   positioned handle, so nothing needs a positioned ancestor. */
+#taskhub-table th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#taskhub-table td {
+  /* Wrap rather than clip — a task title is content, not a label. */
+  overflow-wrap: anywhere;
+}
+
+/* C16 first hit zone: the 5px strip at a column's right edge. The cursor is
+   the only thing that advertises it, so it is set from the mousemove handler
+   rather than by a :hover rule, which cannot know the pointer's x. */
+#taskhub-table th.taskhub-col-resizing {
+  user-select: none;
+}
+
+/* C16 second hit zone — the column being dragged sideways (Session 1.11).
+
+   The selector is #taskhub-thead th.taskhub-col-dragging (1,1,1) so it cannot
+   lose on source order to .premium-table th (0,1,1) or to
+   thead.task-table-head th (0,1,2) declared further down this file. Two rules
+   were lost to exactly that trap in Session 1.10.
+
+   Opacity only — no transform, no background. The real cells are what move
+   during the drag, so the dragged column does not need a ghost, and a
+   transform on a sticky th would create a containing block and un-stick it. */
+#taskhub-thead th.taskhub-col-dragging {
+  opacity: 0.55;
+  user-select: none;
+  cursor: grabbing;
+}
+
+/* The drop indicator. It is appended to <body> and positioned from script,
+   spanning the scrolling list, because the thing it marks — the boundary the
+   column will land on — moves with the cells themselves.
+
+   position: fixed and NOT a child of the table on purpose: an absolutely
+   positioned marker inside #taskhub-table would need a positioned ancestor,
+   and `position: relative` on the table or its th is precisely what silently
+   un-stuck the sticky header in Session 1.10. */
+#taskhub-drop-line {
+  position: fixed;
+  display: none;
+  width: 2px;
+  background: #06b6d4;
+  z-index: 300;
+  pointer-events: none;
+}
+.light-theme #taskhub-drop-line {
+  background: #0891b2;
+}
+
 /* --------------------------------------------------------------------------
    ✅ BULK DUE DATE MODAL (Phase 1 / Session 1.7)
    The generic `.form-group input` rule below pads and boxes every input, which

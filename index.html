@@ -1002,15 +1002,21 @@
         </section>
 
         <!-- 5. TASKHUB VIEW PANEL (Phase 1 / Session 1.5, contract C9) -->
+        <!-- Session 1.10 / scope §15.2: this panel is exactly the height of
+             #canvas-body's content box and manages its own overflow, so the
+             page never scrolls while TaskHub is active. #canvas-body itself is
+             UNCHANGED — it is shared by all six hubs. Height is inherited
+             (height:100%), never calc(100vh - header). -->
         <section id="view-tasks" class="view-panel">
-          <div class="dashboard-list-card" style="display:flex; flex-direction:column; gap:16px;">
+          <div class="dashboard-list-card taskhub-panel-card" style="display:flex; flex-direction:column; gap:16px;">
 
-            <!-- Top bar: orphan chip (rendered only when count > 0) + New Task -->
+            <!-- Top bar: orphan chip (rendered only when count > 0) + Settings.
+                 §15.4 removed "+ New Task": tasks are created in the Prospect
+                 Hub inspector only. Its listener went in the same edit. -->
             <div class="view-intro-actions">
               <div id="taskhub-orphan-chip-slot" style="flex:1; display:flex; align-items:center; gap:10px;"></div>
               <div class="action-btn-group" style="margin:0;">
                 <button id="btn-tasks-settings" class="header-action-btn secondary-btn">⚙️ Settings</button>
-                <button id="taskhub-new-btn" class="header-action-btn primary-btn">+ New Task</button>
               </div>
             </div>
 
@@ -1028,6 +1034,27 @@
               </label>
             </div>
 
+            <!-- §15.1: the bulk action bar moved here from the bottom of the
+                 panel — the controls now sit with the rows they act on. The
+                 SLOT keeps its height whether or not anything is selected; the
+                 contents toggle, the box does not. If the bar simply appeared
+                 it would push every row down by its own height, under the
+                 cursor, mid-click. The bar's own markup, id, controls and
+                 handlers are unchanged — this is a move, not a rebuild. -->
+            <div id="taskhub-bulk-slot">
+              <!-- Bulk action bar (Session 1.6). Hidden at zero selected.
+                   Clear Selection stays because the selection can span pages,
+                   which the header checkbox cannot reach. Edit Due Date joined
+                   it in Session 1.7 — same bar, not a second one. -->
+              <div id="taskhub-bulk-actions" class="hidden"
+                style="flex-shrink:0; border-top:1px solid var(--color-border); padding-top:16px; display:flex; align-items:center; flex-wrap:wrap; gap:12px;">
+                <p style="margin:0; font-size:13px; font-weight:600;"><span id="taskhub-selected-count">0</span> selected</p>
+                <button id="btn-taskhub-bulk-complete" class="header-action-btn primary-btn">✅ Mark Complete</button>
+                <button id="btn-taskhub-bulk-duedate" class="header-action-btn secondary-btn">📅 Edit Due Date</button>
+                <button id="btn-taskhub-clear-selection" class="text-btn">Clear Selection</button>
+              </div>
+            </div>
+
             <!-- Per page + result summary -->
             <div style="display:flex; align-items:center; flex-wrap:wrap; gap:14px;">
               <label style="font-size:12px; color:var(--color-text-muted); display:flex; align-items:center; gap:4px;">
@@ -1040,10 +1067,14 @@
               <p id="taskhub-summary" style="margin:0; font-size:13px; color:var(--color-text-muted);">No tasks yet.</p>
             </div>
 
-            <div class="table-scroll-container"
+            <!-- The ONLY scrollbar in the hub (§15.2). Copies the Advanced
+                 Query results wrapper's pattern rather than inventing a
+                 second one. min-height:0 is required here AND on every flex
+                 ancestor up to #view-tasks. -->
+            <div class="table-scroll-container taskhub-table-wrap"
               style="border:1px solid var(--color-border); border-radius:6px; background:rgba(0,0,0,0.15);">
-              <table class="premium-table">
-                <thead id="taskhub-thead"></thead>
+              <table id="taskhub-table" class="premium-table">
+                <thead id="taskhub-thead" class="task-table-head"></thead>
                 <tbody id="taskhub-body"></tbody>
               </table>
             </div>
@@ -1053,18 +1084,6 @@
               <span id="taskhub-page-indicator"
                 style="font-size:12px; color:var(--color-text-muted);">Page 1 of 1</span>
               <button id="btn-taskhub-next-page" class="text-btn">Next →</button>
-            </div>
-
-            <!-- Bulk action bar (Session 1.6). Hidden at zero selected.
-                 Clear Selection stays because the selection can span pages,
-                 which the header checkbox cannot reach. Edit Due Date joined
-                 it in Session 1.7 — same bar, not a second one. -->
-            <div id="taskhub-bulk-actions" class="hidden"
-              style="flex-shrink:0; border-top:1px solid var(--color-border); padding-top:16px; display:flex; align-items:center; flex-wrap:wrap; gap:12px;">
-              <p style="margin:0; font-size:13px; font-weight:600;"><span id="taskhub-selected-count">0</span> selected</p>
-              <button id="btn-taskhub-bulk-complete" class="header-action-btn primary-btn">✅ Mark Complete</button>
-              <button id="btn-taskhub-bulk-duedate" class="header-action-btn secondary-btn">📅 Edit Due Date</button>
-              <button id="btn-taskhub-clear-selection" class="text-btn">Clear Selection</button>
             </div>
           </div>
         </section>
@@ -2238,7 +2257,11 @@
       <div class="table-scroll-container"
         style="border:1px solid var(--color-border); border-radius:6px; background:rgba(0,0,0,0.15);">
         <table class="premium-table">
-          <thead>
+          <!-- §15.3: the SAME class TaskHub's thead carries. This table is
+               reachable only from TaskHub and is the same kind of table, so it
+               must not read as a different component. One class, one pair of
+               values — do not fork it into a second near-identical hex. -->
+          <thead class="task-table-head">
             <tr>
               <th style="width:96px;">Due Date</th>
               <th>Task Title</th>
