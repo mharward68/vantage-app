@@ -468,7 +468,7 @@ That one row is the whole of its DIRECTIVES §4 coverage, and it reaches every p
   5. **Mark Complete**: confirm with the count, set `status` and `completedDate`, and append one C5 history entry per task.
   6. Single completion in the editor writes the same C5 entry through the same function.
   7. ~~A task completed while the active filter excludes completed tasks stays visible, struck through and dimmed.~~ **Landed in 1.5** as `taskStickyCompletedIds` + `markTaskStickyCompleted(id)`, called from `saveTaskFromEditor()`. **`bulkCompleteTasks(ids)` must call `markTaskStickyCompleted()` per task** or bulk-completed rows vanish under the cursor — the exact thing scope §5 forbids. This is the one carry-in that is easy to miss.
-  9. Bump `CACHE_NAME`.
+  8. Bump `CACHE_NAME`.
 - **Inputs needed from me:** none.
 - **Done when:**
   - Console: select 3 rows on page 1, turn to page 2 and back; `taskSelectedIds.size === 3`. Change the filter; `taskSelectedIds.size === 0`. Paste both.
@@ -567,8 +567,8 @@ That one row is the whole of its DIRECTIVES §4 coverage, and it reaches every p
 - **Compartment:** UI, with DATA · **Depends on:** 1.5 (1.9 not required)
 - **Two compartments justified:** a column layout that does not survive a reload is not the feature Michael asked for, and the store is the smaller half. Splitting them ships a resize that forgets itself.
 - **Goal:** TaskHub is exactly one screen tall with only the task list scrolling, its header block stays put while rows scroll under it, the bulk action bar sits at the top where the selection is, the column header carries the hub's cyan, columns resize by dragging their right border, and the resulting widths survive a reload, a ZIP backup and a restore.
-- **Size: L** (unchanged — §15 is three layout changes to the same panel this session already rebuilds) · My time: ~15 min · **Confidence: Medium**
-- **Scope:** §13.3 and §13.4 (resize half), plus **§15.1, §15.2 and §15.3** (added 2026-08-30 from Michael's review of the shipped hub). Contracts C15, C16, C17. **Read §15 before §13.3** — §15.2 is what makes §13.3 achievable, and §15.3's color decision is forced by §13.3's sticky header.
+- **Size: L** (unchanged — §15 is four changes to the same panel this session already rebuilds; three are layout and the fourth removes a button) · My time: ~15 min · **Confidence: Medium**
+- **Scope:** §13.3 and §13.4 (resize half), plus **§15.1, §15.2, §15.3 and §15.4** (added 2026-08-30 from Michael's review of the shipped hub). Contracts C15, C16, C17. **Read §15 before §13.3** — §15.2 is what makes §13.3 achievable, and §15.3's color decision is forced by §13.3's sticky header.
 - **Files:** modified `index.html`, `style.css`, `app.js`, `sw.js`
 - **Tasks:**
   1. **§13.3 + §15.2 layout — do this first and verify it before anything else in this session.** `#view-tasks` fills its parent exactly and becomes a fixed-height flex column; the table wrapper takes `flex: 1 1 auto; overflow-y: auto; min-height: 0`; the header row goes `position: sticky; top: 0` with an opaque background. **Copy the Advanced Query results modal's pattern**; do not invent a second one.
@@ -582,7 +582,7 @@ That one row is the whole of its DIRECTIVES §4 coverage, and it reaches every p
   6. C17 settings CSV row, both directions, behind `sawColumnLayouts`. Add `columnLayouts` to `wipeAllData()` — BUILD_NOTES records that it clears an explicit list and a new store gets missed.
   7. C16 hit test, **all three zones**, even though only resize is built. Cursor changes to `col-resize` in the 5px zone.
   8. Resize drag: live width update, min width floor, persist on mouseup (not on every mousemove).
-  8. Bump `CACHE_NAME`.
+  9. Bump `CACHE_NAME`.
 - **Inputs needed from me:** none.
 - **Done when:**
   - `python check_ids.py` passes. Paste the output.
