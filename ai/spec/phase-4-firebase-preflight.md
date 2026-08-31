@@ -2,9 +2,18 @@
 
 **Written:** 2026-08-30, during Session 1.8 (Phase 1 close)
 **Status:** planning input, not an approved scope. Phase 4 still needs its own intake and plan.
-**Authority:** `DECISIONS.md` (2026-08-27 persistence, stack; 2026-08-28 phase order) and `DIRECTIVES.md` §0/§1 remain the standard of truth. Where this file adds anything new, it is marked **[new 1.8]**.
+**Amended:** 2026-08-30, after the "Commercial path" decision — see the banner below.
+**Authority:** `DECISIONS.md` (2026-08-27 persistence, stack; 2026-08-28 phase order; **2026-08-30 commercial path**) and `DIRECTIVES.md` §0/§1 remain the standard of truth. Where this file adds anything new, it is marked **[new 1.8]**.
 
 > **Phase number.** Hosting is **Phase 4**, per `DECISIONS.md` 2026-08-28, which superseded the 2026-08-27 order. `DIRECTIVES.md` §0, `DECLARATIONS.md` and `BUILD_NOTES.md` still say "Phase 2" in several places — corrected in the 1.8 drift audit. If a standing file says Firebase arrives in Phase 2, it is stale, not a competing decision.
+
+> ## ⚠️ AMENDED 2026-08-30 — §1 is no longer irreversible. Read this before doing its work.
+>
+> `DECISIONS.md` 2026-08-30 ("Commercial path") settled that **Phase 4 is host-for-myself, not the foundation of a multi-tenant product.** If Vantage is ever sold, the enterprise version is a deliberate rebuild from the standing documents, not a migration of this codebase.
+>
+> This file was written on the opposite assumption. **§1's two items were ranked "cannot be deferred — Gate B" because multi-user was expected to arrive by migration.** It will not. The eventual rebuild re-keys every record on import regardless of what is chosen here, so both drop to ordinary decisions: **pick whatever is simplest to ship.** They are rewritten in place below rather than deleted, because the *reasoning* in them is still the reasoning a rebuild will want.
+>
+> **What did NOT change:** everything in §2 through §6. Granular writes, the origin trap, secrets in a public repo, telemetry, the snapshot demotion, the concurrency defect and the compliance question are all unaffected — and §2.2 got **more** important, because the export path is now the bridge carrying this data into whatever gets built next.
 
 ---
 
@@ -31,17 +40,19 @@ Measured against the real database on 2026-08-30:
 
 ---
 
-## 1. Cannot be deferred — Gate B
+## 1. ~~Cannot be deferred — Gate B~~ → Ordinary decisions, amended 2026-08-30
 
-### 1.1 Every record gets an owner field during the migration
+*Both items below were ranked irreversible on the assumption that multi-user arrives by migrating this database. Per `DECISIONS.md` 2026-08-30 it arrives by rebuild, which re-keys on import. **Choose the cheapest option for a single user and move on.** The reasoning is preserved because the rebuild's planning conversation will face the same two questions with real stakes.*
 
-`DIRECTIVES.md` Gate B: multi-user later must not require migrating anyone's data. Adding an owner field to ~1,791 existing documents afterwards **is** that migration, so it fails the gate by definition.
+### 1.1 Owner field — optional now, mandatory in the rebuild
 
-Write `ownerId` (or equivalent) on every document as part of the initial import, while there is one user and the value is a constant. Cost now: one field. Cost later: a data migration plus a window where old and new records disagree.
+The original argument: Gate B says multi-user later must not require migrating anyone's data, and adding an owner field to ~1,791 documents afterwards **is** that migration.
 
-The same applies to security rules: write them as "a user reads only documents they own" from the first deploy, even though today that is a tautology. Rules written permissively "because it's just me" are the thing nobody remembers to tighten.
+**That clause is relaxed.** Adding `ownerId` costs one constant field at import and is cheap insurance, so write it if it is free — but nothing depends on it and it is not worth designing around.
 
-### 1.2 Decide the document ID scheme before 1,791 documents exist
+**What does still apply, and is not optional:** write security rules **owner-scoped from the first deploy**, even though today that is a tautology. This has nothing to do with multi-tenancy and everything to do with Gate A — the repo is public, and public web config keys plus permissive rules is an open database holding 651 real people. Rules written loosely "because it's just me" are the thing nobody remembers to tighten. **This is the one item in §1 that did not soften.**
+
+### 1.2 Document ID scheme — still worth getting right, no longer irreversible
 
 **[new 1.8]** Production `prospectId` values are **email addresses** — `first.last@example-org.org` (redacted — real values are live prospect addresses), not `pros-1788…`. Discovered during the 1.8 restore drill; they round-trip through CSV correctly, so nothing is broken today.
 
@@ -51,7 +62,9 @@ On Firestore this deserves a decision rather than a default:
 - They change. People move jobs. A Firestore document ID cannot be edited — only copied to a new document and the old one deleted.
 - Contract **C1** makes `prospectId` the *only* stored link from a task to a person. Every task pointing at a changed ID becomes an orphan, silently. Session 1.8 saw exactly this shape: restoring prospects whose IDs differed from the tasks' references orphaned all 31 tasks at once, with no error.
 
-Recommended: a stable synthetic document ID with email as an ordinary indexed field. Reversing this after import is a full re-key of every prospect, task and audience-list membership.
+Recommended: a stable synthetic document ID with email as an ordinary indexed field.
+
+**Amended 2026-08-30.** Reversing this after import is still a full re-key of every prospect, task and audience-list membership — but a re-key is exactly what the eventual rebuild does anyway, so it is a cost you pay once whichever way this goes. **The recommendation stands on its own merits and not on Gate B:** email-in-the-path conflicts with §3.1's rule that telemetry never carries prospect data, and C1's `prospectId`-as-only-link means a changed email silently orphans every task pointing at it. Session 1.8 saw that exact shape at scale — 31 tasks orphaned in one step, no error. Those reasons are about correctness and Gate A, and they did not change.
 
 ---
 
@@ -166,11 +179,15 @@ Not urgent for a single-operator tool. Important before anyone else touches it, 
 
 ## Checklist
 
-**Irreversible — settle in the Phase 4 plan, before any import**
+**Before any import — one hard item, two soft ones (re-ranked 2026-08-30)**
 
-- [ ] Owner field on every document, written during import (§1.1)
-- [ ] Security rules written owner-scoped from the first deploy (§1.1)
-- [ ] Document ID scheme decided — synthetic vs email (§1.2)
+- [ ] **Security rules written owner-scoped from the first deploy (§1.1) — Gate A, not optional.** Public repo, public web config keys; permissive rules is an open database.
+- [ ] Document ID scheme decided — synthetic vs email (§1.2). Recommended synthetic, on correctness grounds.
+- [ ] Owner field on every document during import (§1.1) — cheap, no longer load-bearing.
+
+**Protected above everything else (§2.2, elevated 2026-08-30)**
+
+- [ ] The ZIP/CSV export path stays whole and is re-proved at every phase close. It is how 651 prospects, 1,090 companies and 659 history entries reach whatever gets built next.
 
 **Before the migration session**
 

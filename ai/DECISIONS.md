@@ -303,3 +303,71 @@ The detail view sits at Phase 2 rather than being folded into Phase 1 deliberate
 **Chose:** the `VantagePRMFiles` IndexedDB store is not extended to prospect records. No Files tab in the detail view.
 
 **Because:** decided outright rather than deferred, so a future session doesn't propose it as an obvious gap. Media lives in the Media Hub against media records; prospects carry notes and history, not attachments.
+
+---
+
+## 2026-08-30 — Estimating: session count is the unstable number, not attention time
+
+**Chose:** from Phase 2 onward, size phases with a **+35% session-count contingency** where the phase ships new UI, and **never size a phase-close session below M**. Attention-time estimates are kept as they are — they are working.
+
+**Because:** Phase 1 was measured at close, plan against archived actuals. Attention time was predicted at ~105 minutes and came in at ~88 — 16% **under**, with per-session sizes correct in 10 of 11 cases. Session *count* was predicted at 8 and ran 11: 37.5% over. The two errors are not the same error at different scales, and treating them as one would produce the wrong correction.
+
+**What actually went wrong:** all three added sessions (1.9, 1.10, 1.11) came out of a single review pass over a single session (1.5), on the day it shipped. Nothing about their content was unforeseeable — they were UI refinements to a hub that had just been seen working for the first time. **The plan had no line item for "what looking at it will produce."** That is a structural omission in the estimate, not a series of surprises, which is why the fix is a contingency rather than more careful sizing.
+
+**The one mis-sized session is the informative one.** 1.8 was sized **S** and ran **L** — the only miss in the phase, and it was the QA-and-close session. Its tasks genuinely are small; what made it L is that it was the first session to run against the real database, and verification against real data is where the surprises live. It absorbed a live defect, a mid-session frozen-contract amendment and two new documents. It also consumed 45 of the phase's 88 attention minutes — **more than the other ten sessions combined.** A phase close is not a small session and must not be sized as one.
+
+**Rejected — inflating every session's size.** The sizes were right. Padding them would hide the fact that the real variance sits in two specific places (review-driven additions, and the close) behind uniform pessimism, and would make the next phase's estimate less informative rather than more.
+
+**Rejected — treating the 8→11 overrun as a failure.** The three added sessions were the right call and the phase is better for them. What is being corrected is the *estimate*, not the decision to add them.
+
+---
+
+## 2026-08-30 — Local snapshots are the sole protection for three phases, not one
+
+**Chose:** record explicitly that Tier 1 local snapshots carry disaster recovery through **Phases 1, 2 and 3**, and that any change to the snapshot system in that window is a Gate C matter rather than routine maintenance.
+
+**Because:** this is an unrecorded consequence of the 2026-08-28 phase reorder. `DIRECTIVES.md` §0 says Tier 1 is the "sole protection during Phase 1" and Tier 2 (Firebase) arrives "from Phase 2" — written when hosting *was* Phase 2. Hosting moved to Phase 4 the same day. Nobody restated the recovery consequence, so the standing files still imply a one-phase exposure that is now three phases long, across a period in which real outreach data accumulates continuously.
+
+**Because, second:** the exposure is not merely longer, it is qualitatively different. Phase 1's snapshot work was itself under active development and under a session's attention every day. Phases 2 and 3 touch UI and sequencing; nothing in them will exercise the snapshot path, and a silent regression in it would surface only when someone needs a restore. The staleness watchdog and the read-back confirmation are what make that survivable, and they are now load-bearing for months rather than weeks.
+
+**Consequence adopted:** a snapshot restore is re-verified at each phase close, not only at Phase 1's. It is one drill against the newest snapshot and it is the only thing that distinguishes a backup from a folder of files.
+
+**Note this supersedes nothing in `DIRECTIVES.md`** — the §0 phase numbers there are stale and their correction is proposed separately; this entry is the reasoning that correction will point at.
+
+---
+
+## 2026-08-30 — Commercial path: build for one user, rewrite to sell. Phase 4 is host-for-myself.
+
+**Chose:** Vantage continues as a single-user tool built to be *used*, not as the foundation of a product. If it is ever sold, the enterprise version is a **deliberate rebuild from the standing documents**, not a migration of this codebase. Phase 4 is therefore "host it so Michael can use it from anywhere," not "lay the groundwork for multi-tenancy."
+
+**Supersedes, in part:** the 2026-08-27 hosting entry's *"the data model is built so a multi-user version later doesn't require migrating anyone's data."* That clause is **relaxed, not deleted** — see Gate B below.
+
+**Because:** the question "should this be multi-tenant on Firebase" was raised on 2026-08-30 and answered by working out what actually stands between here and a sellable product. The data model is the cheap part — one field or one path segment, written once while there is a single tenant. What is expensive is everything else: auth, billing, onboarding, support, a build step and test surface for a 13,124-line single file with neither, a read path that loads ~1,791 documents per boot and multiplies that per user, and a compliance position that changes category entirely. Paying the multi-tenancy tax now buys down the *cheapest* of those risks and none of the expensive ones.
+
+**Because, second — the rewrite is unusually safe here, and that is not an accident.** The standard argument against rewriting is that years of hard-won knowledge live invisibly in the source and are lost. This project has spent since 2026-08-27 deliberately storing that knowledge *outside* the code. What survives a change of stack:
+
+- `DECISIONS.md` — entirely. It is product reasoning, not implementation.
+- `ai/spec/` — entirely. Behaviour, not code.
+- `DECLARATIONS.md` — the Conventions survive; the Stack section does not.
+- `BUILD_NOTES.md` — roughly half. "Data, migrations and backup" and "Dates" are portable (CSV round-trip behaviour, `hist-${Date.now()}` collisions, reachout semantics, UTC day-stepping). "Working inside `app.js`", "DOM and rendering" and "Service worker and caching" are findings about *this* implementation and expire with it.
+- Specific code, because it was written pure on purpose: `shiftTaskDate()` with its C11 vectors, `planSnapshotRetention()`, the CSV contracts.
+
+The codebase is months old, not years. There is no decade of edge cases to lose.
+
+**Rejected — hardening this codebase into a multi-tenant SaaS.** It is a different product with different constraints, and building it before a second user exists is spending months on infrastructure nobody has asked for. Reversible: if the sellable version turns out to be *this product with logins* rather than a genuinely different one, hardening beats rebuilding and this entry should be revisited. **That is the open question, and a year of real use is what answers it.**
+
+**Rejected — deciding the compliance position now.** It remains `NOT DECIDED` in `DIRECTIVES.md` §0 and that is correct for a single-operator tool. It becomes load-bearing at the point of selling, not before: hosting other people's prospect databases likely makes Michael a data *processor* rather than a controller, which is a different set of obligations. It is a question for a lawyer at the start of any commercialisation, and it is a go/no-go input, not a checkbox.
+
+### Consequences adopted
+
+1. **Gate B's multi-user clause is relaxed.** `DIRECTIVES.md` §1B currently reads "multi-user later without migrating anyone's data." The multi-user half is now insurance on a scenario handled by rebuilding; stop paying it. **The rest of Gate B stands unchanged** — nothing may foreclose scale in ways that lose or corrupt data, and the single-blob rejection remains correct on its own merits (state already exceeds Firestore's 1 MiB document limit).
+
+2. **The Phase 4 pre-flight's §1 is downgraded from irreversible to ordinary.** The owner-field and document-ID decisions were ranked "cannot be deferred — Gate B" on the assumption that multi-user arrives by migration. Under this decision the eventual rebuild re-keys everything on import regardless. Pick whatever is simplest to ship. Recorded in that file directly, because a stale "cannot be deferred" heading would have a future session doing irreversible-decision work that no longer needs doing.
+
+3. **The export path becomes the most protected thing in the app.** The ZIP/CSV bundle is the bridge to whatever is built next — it is how 651 prospects, 1,090 companies and 659 history entries survive a change of stack. Session 1.8 proved it carries real volume character-identically. **Every future phase keeps it whole and re-proves it at close.** This replaces multi-tenant readiness as the thing Gate B protects.
+
+4. **Standard raised: no workarounds.** Michael's own framing, 2026-08-30: *"build this out and avoid workarounds, instead make it work."* This is the mitigation for the one real failure mode of a rewrite-later plan — that "I'll rebuild it properly later" becomes licence to make a mess now, which destroys the documented reasoning that makes the rebuild safe in the first place. **The code is disposable; the thinking is not, and the discipline of building it properly is how the thinking gets produced.**
+
+   **This is not licence to abandon compartments.** A session still puts out-of-compartment work in the backlog rather than fixing it on sight — the standard governs *how* something is built when it is built, not *when*. Concretely, it converts the two known workarounds-in-place from "carried indefinitely" to "fixed properly in Phase 2": `state.taskSettings` missing from `wipeAllData()`, and `--color-danger` undefined across six call sites.
+
+5. **The handoff mechanism is recorded so it is not reinvented.** When commercialisation is on the table, the standing documents and the code are handed to a fresh planning conversation, which produces a build plan for the enterprise version. The multi-user problems are solved there, with the benefit of a year of real use. **That is why the standing files are the asset and must stay true** — they are the input to that conversation, and a stale one silently degrades the plan it produces.

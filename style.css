@@ -1168,7 +1168,14 @@ body {
   display: grid;
   grid-template-columns: 1fr 0fr;
   gap: 0px;
-  height: calc(100vh - 120px);
+  /* Phase 2A / Session 2A.1: this was a hardcoded viewport constant (100vh
+     minus 120px). The flex column above it (#main-canvas → #canvas-body → the
+     view panel) has already solved "screen minus header"; the constant was a
+     second, stale copy of a number the layout owned, and it broke the moment
+     the header height changed. See the 🧱 HUB SHELL block at the END of this
+     file. Do not reintroduce one — a phase-wide grep depends on its absence. */
+  height: 100%;
+  min-height: 0;
   /* Anchors the inspector overlay (see .prospect-inspector-panel below) so it
      can be positioned relative to this container instead of the viewport,
      and clips it while off-screen (translated out to the right) so it can't
@@ -1794,7 +1801,11 @@ body {
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
   gap: 24px;
-  height: calc(100vh - 200px);
+  /* Phase 2A / Session 2A.1: this was a hardcoded viewport constant (100vh
+     minus 200px). Same reason as .prospects-layout-container above — see the
+     🧱 HUB SHELL block at the END of this file. */
+  height: 100%;
+  min-height: 0;
 }
 
 .campaign-creator-card,
@@ -3145,4 +3156,65 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 input[type="date"]::-webkit-calendar-picker-indicator:hover {
   background: var(--color-secondary);
+}
+
+/* ==========================================================================
+   🧱 HUB SHELL — the scroll idiom, named once
+   (Phase 2A / Session 2A.1 · frozen contract S5 of ai/phases/phase-2a-app-shell.md)
+
+   THIS BLOCK IS LAST IN THE FILE ON PURPOSE, AND MUST STAY LAST.
+   Nothing is appended to style.css after it except further entries in this
+   same block. In this file a NEW rule loses to an OLDER one at equal
+   specificity on source order alone — Session 1.10 lost two rules to that in
+   one sitting, and the symptom never points at CSS. Declaring the idiom after
+   every pre-existing layout rule removes the failure mode by construction
+   instead of by vigilance. That is also why `.hub-scroll` can beat
+   `.table-scroll-container`'s own `overflow`/`flex-grow` without a prefix.
+
+   The worked precedent is the ✅ TASKHUB LAYOUT block near the top of this
+   file (search `#view-tasks {`). TaskHub was converted first, alone, so it
+   used a view-id-prefixed bespoke block; five more bespoke blocks would be
+   five dialects of one rule. The reasoning is written out there in full and
+   is deliberately NOT duplicated here — read it there, once.
+
+   The two rules that matter, restated in one line each:
+   · #canvas-body is the app's scroll owner and is SHARED BY ALL SIX HUBS.
+     It is never edited. A hub fills it exactly and owns its own overflow, so
+     while that hub is active #canvas-body has nothing left to scroll.
+   · min-height:0 appears at EVERY level of the flex chain. A flex child
+     defaults to min-height:auto and refuses to shrink below its content, so
+     ONE missing min-height:0 anywhere makes the panel grow instead of the
+     list scrolling — and the symptom looks like a sticky header failing.
+
+   Rules for every later session:
+   · No hub invents a variant. A hub needing something extra prefixes with its
+     view id — #view-campaigns .hub-scroll { … } — and that override lives
+     HERE, in this block.
+   · Exactly ONE .hub-scroll per visible region. Two scrolling ancestors in
+     one chain is the bug this idiom exists to prevent.
+   ========================================================================== */
+
+/* Fills the panel and owns nothing else. One per hub. */
+#view-campaigns { height: 100%; min-height: 0; gap: 12px; }
+
+/* Panel gap, per plan Assumption 8: 12px, not .view-panel's 24px. The
+   CampaignHub sub-tab bar already carries `padding-bottom: 12px` AND
+   `margin-bottom: 12px` of its own, so 24px on top of that put 36px of dead
+   space above every sub-view in a hub that now has exactly one screen to
+   spend. 12px keeps the intro and the sub-tab bar visibly separated. */
+
+/* A mutually-exclusive sub-view inside a hub panel.
+   .hidden's `display: none !important` still wins over this display:flex. */
+.hub-subview {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The ONE region in a hub (or in a sub-view) that scrolls. */
+.hub-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }

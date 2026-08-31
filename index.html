@@ -623,7 +623,7 @@
           </div>
 
           <!-- SUB-VIEW 1: CAMPAIGN DASHBOARD -->
-          <div id="campaign-dashboard-view">
+          <div id="campaign-dashboard-view" class="hub-subview">
             <!-- Phase Filters Row -->
             <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
               <div class="media-filter-bar" id="campaign-phase-filters-bar">
@@ -631,7 +631,7 @@
               </div>
             </div>
 
-            <div class="media-hub-layout">
+            <div class="media-hub-layout hub-scroll">
               <!-- Left Area: Grid of Campaigns -->
               <div class="media-hub-left">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -659,8 +659,14 @@
           </div>
 
           <!-- SUB-VIEW 2: AUDIENCE LISTS MANAGER -->
-          <div id="audience-lists-view" class="hidden">
-            <div class="prospects-layout-container" style="height: calc(100vh - 280px); grid-template-columns: 1.2fr 0.9fr; gap: 16px;">
+          <div id="audience-lists-view" class="hub-subview hidden">
+            <!-- `grid-template-columns: 1.2fr 0.9fr; gap: 16px` is LOAD-BEARING and stays:
+                 .prospects-layout-container defaults to `1fr 0fr`, which collapses this
+                 inspector to zero width while the DOM updates correctly and nothing appears
+                 to happen. Session 2A.1 removed ONLY the hardcoded viewport height that used
+                 to sit in front of it; the height now comes from the sub-view class on the
+                 parent plus the container's own height:100%. -->
+            <div class="prospects-layout-container" style="grid-template-columns: 1.2fr 0.9fr; gap: 16px;">
               <!-- Left Side: Audience Lists Directory -->
               <div class="prospects-directory-card" style="padding: 16px;">
                 <div
@@ -675,7 +681,7 @@
                   </div>
                 </div>
                 <div id="audience-status-tabs" style="display:flex; gap:6px; margin-bottom:10px;"></div>
-                <div class="table-scroll-container">
+                <div class="table-scroll-container hub-scroll">
                   <table class="premium-table" id="audiences-table">
                     <thead>
                       <tr>
@@ -738,7 +744,7 @@
           </div>
 
           <!-- SUB-VIEW 3: EMAIL ACCOUNTS MANAGER -->
-          <div id="email-accounts-view" class="hidden">
+          <div id="email-accounts-view" class="hub-subview hidden">
             <div class="view-intro-actions" style="margin-bottom: 12px;">
               <div class="search-box-wrapper" style="flex: 1; max-width: 400px; margin: 0;">
                 <input type="text" id="email-account-search" placeholder="Search email, provider, domain, or notes...">
@@ -777,7 +783,7 @@
               </div>
             </div>
 
-            <div class="table-scroll-container" style="overflow-x: auto;">
+            <div class="table-scroll-container hub-scroll" style="overflow-x: auto;">
               <table class="premium-table" id="email-accounts-table">
                 <thead>
                   <tr>
@@ -798,7 +804,7 @@
           </div>
 
           <!-- SUB-VIEW 4: DOMAIN MANAGEMENT -->
-          <div id="domain-management-view" class="hidden">
+          <div id="domain-management-view" class="hub-subview hidden">
             <div class="view-intro-actions" style="margin-bottom: 12px;">
               <div class="search-box-wrapper" style="flex: 1; max-width: 400px; margin: 0;">
                 <input type="text" id="domain-search" placeholder="Search URL, registrar, host, IP, user ID, or notes...">
@@ -838,7 +844,7 @@
               </div>
             </div>
 
-            <div class="table-scroll-container" style="overflow-x: auto;">
+            <div class="table-scroll-container hub-scroll" style="overflow-x: auto;">
               <table class="premium-table" id="domains-table">
                 <thead>
                   <tr>
@@ -859,7 +865,7 @@
           </div>
 
           <!-- SUB-VIEW 5: DECOUPLED AUDIENCE QUERY BUILDER -->
-          <div id="campaign-query-view" class="hidden">
+          <div id="campaign-query-view" class="hub-subview hidden">
             <div style="margin-bottom: 20px; border-bottom: 1px solid var(--color-border); padding-bottom: 16px;">
               <button id="btn-back-to-campaign-dash" class="text-btn" style="margin-bottom: 12px;">← Back to
                 Dashboard</button>
@@ -870,7 +876,11 @@
 
             <div class="campaigns-grid-container" style="grid-template-columns: 350px 1fr;">
               <!-- Query Engine (Left Sidebar) -->
-              <div class="campaign-creator-card" style="padding: 16px; height: auto;">
+              <!-- hub-scroll (Session 2A.1): .campaign-creator-card is `overflow: hidden`, so
+                   before this the query form was silently CLIPPED at the bottom of the grid
+                   row rather than scrolling. The right column's own scroller is
+                   .checkbox-scroller inside .query-selection-list-wrapper. -->
+              <div class="campaign-creator-card hub-scroll" style="padding: 16px; height: auto;">
                 <div
                   style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--color-border); padding-bottom:8px; margin-bottom:16px;">
                   <h4 style="margin:0;">Query Parameters</h4>
