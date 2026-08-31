@@ -20,6 +20,23 @@
   --color-text-muted: #a1a1aa;
   --color-shadow: rgba(0, 0, 0, 0.5);
 
+  /* DESTRUCTIVE RED — defined 2026-08-31 by Session 2B.3, the first session
+     to need it (Delete Prospect on the prospect detail view). It had SIX live
+     call sites before it existed anywhere: app.js 7775 / 8024 / 8065 / 8498
+     and index.html 1680 / 2582 / 2704. An undefined custom property makes the
+     whole declaration invalid at computed-value time, so five destructive
+     controls across three hubs rendered in inherited text colour and
+     renderDomainsView()'s expired-domain highlight was simply dead. All six
+     repair on this one declaration; NOTHING ELSE was converted to the token.
+
+     THIS DOES NOT REPEAL THE FILE'S LITERAL-HEX CONVENTION. TaskHub's row
+     states and the status chips stay literal with real .light-theme classes.
+     The three comments elsewhere in this file that warn "var(--color-danger)
+     is NOT defined anywhere" are now HISTORY rather than live warnings — they
+     have been updated in place. Reach for this token for a destructive
+     CONTROL, not for body text or a row state. */
+  --color-danger: #ef4444;
+
   --font-display: 'Outfit', 'Inter', sans-serif;
   --font-body: 'Inter', sans-serif;
 
@@ -94,6 +111,10 @@
   --color-text-main: #18181b;
   --color-text-muted: #6b7280;
   --color-shadow: rgba(0, 0, 0, 0.05);
+  /* One step darker than the dark-theme #ef4444: on the light ground that
+     value reads washed out, and it is the same relationship the row-state
+     classes already use (#b91c1c against their own lighter surface). */
+  --color-danger: #dc2626;
 }
 
 /* ==========================================================================
@@ -209,8 +230,10 @@ body.module-tasks.light-theme {
    Overdue red, due today green, completed dimmed and struck through.
    Defined as classes rather than inline styles so the light theme can carry
    its own darker values — the same pattern the module colors above use.
-   NOTE: var(--color-danger) is NOT defined anywhere in this file; do not
-   reach for it here.
+   NOTE, corrected by Session 2B.3 (2026-08-31): var(--color-danger) IS now
+   defined, in :root and .light-theme. It is still not what belongs here — it
+   is for destructive CONTROLS, and a row state wants its own class with its
+   own light-theme value, which is what these are.
    ========================================================================== */
 .taskhub-row-overdue td { color: #f87171; }
 .taskhub-row-overdue .taskhub-due { font-weight: 700; }
@@ -335,9 +358,10 @@ body.module-tasks.light-theme {
    the opaque requirement exists to prevent.
 
    Literal hexes with a .light-theme sibling, following .taskhub-row-overdue /
-   .taskhub-row-today. Do NOT invent a custom property: var(--color-danger) is
-   used in renderDomainsView() and defined nowhere, which is why the
-   expired-domain highlight is silently dead.
+   .taskhub-row-today. Keep them literal. (var(--color-danger) was defined by
+   Session 2B.3 on 2026-08-31, which repaired renderDomainsView()'s
+   expired-domain highlight — but that token is for destructive CONTROLS; a
+   surface colour still wants its own light-theme value here.)
 
    The selector is thead.task-table-head th (0,1,2) so it beats
    .premium-table th (0,1,1) regardless of source order. */
@@ -401,9 +425,10 @@ thead.task-table-head th {
        body grid and far too faint for something you are meant to aim at.
        Literal hexes with a .light-theme sibling, following
        .taskhub-row-overdue / .taskhub-row-today and the §15.3 header rule.
-       Do NOT swap these for a custom property: var(--color-danger) is read by
-       renderDomainsView() and defined nowhere, and that highlight is silently
-       dead as a result.
+       Do NOT swap these for a custom property. (var(--color-danger) is read
+       by renderDomainsView() and WAS defined nowhere; Session 2B.3 defined it
+       on 2026-08-31 and that highlight now works. It is still the wrong tool
+       for a border weight — this one is chosen against a specific surface.)
      - The BODY line is structure, not a target, so it stays on
        var(--color-border) — which IS defined, in both themes. It should read
        as a grid without competing with the contact data in it.
@@ -3778,9 +3803,10 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
    the body scrolling — and the symptom points at the scroll container, which
    is not where the fault is.
 
-   The three visual rules below (padding, muted colour, dashed outline) dress
-   SCAFFOLD content only. Sessions 2B.3 / 2B.4 / 2B.5 replace the contents of
-   these containers; the dashed outline goes with them.
+   The dashed-outline rule below dresses SCAFFOLD content only. Session 2B.3
+   removed .detail-identity from it — that container now holds the real
+   identity block. The tab strip and the tab body keep it until 2B.4 and 2B.5
+   fill them, and it goes entirely with the last placeholder.
    -------------------------------------------------------------------------- */
 #view-prospect-detail {
   height: 100%;
@@ -3799,10 +3825,11 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
    second rule here restating any of that — one .hub-scroll per visible
    region, and no hub (or panel) invents a variant.
 
-   Scaffold dressing — Session 2B.1 ONLY. It makes the three empty containers
-   visible so the S1 shape can be screenshotted and reviewed. Delete this rule
-   along with the placeholder text it dresses. */
-#view-prospect-detail .detail-identity,
+   Scaffold dressing — Session 2B.1, NARROWED BY 2B.3. It makes the remaining
+   empty containers visible so the S1 shape can be screenshotted and reviewed.
+   .detail-identity was dropped from the selector list when the real block
+   landed. Delete this rule entirely along with the last placeholder text it
+   dresses (Session 2B.5). */
 #view-prospect-detail .detail-tabstrip,
 #view-prospect-detail .detail-body {
   border: 1px dashed var(--color-border);
@@ -3810,4 +3837,156 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   padding: 16px;
   color: var(--color-text-muted);
   font-size: 13px;
+}
+
+/* --------------------------------------------------------------------------
+   THE IDENTITY BLOCK — Session 2B.3, frozen contract P5.
+
+   THREE COLUMNS, chosen with the screen up (scope Assumption 3). The canvas
+   gives roughly 1,590px with the sidebar pinned and roughly 1,790px unpinned.
+   At three columns the 17 fields land in six rows and the whole block clears
+   the tab strip with room; at four they land in five rows but each field is
+   ~370px, which is narrower than the LinkedIn URLs and conference names this
+   app actually holds, and a truncating field on a record view is worse than
+   one more row. Three also degrades honestly: minmax(0, 1fr) plus the
+   auto-fit fallback below means the block reflows to two columns on a narrow
+   window without a media query of its own.
+
+   minmax(0, 1fr) NOT 1fr. A bare 1fr track is min-content-sized, so one long
+   unbroken value (a LinkedIn URL, an email) widens its column and squeezes
+   the other two. The inputs already carry min-width: 0 from .form-group, and
+   this is the other half of that same fix.
+
+   THE COUNT IS PINNED AT THREE, NOT repeat(auto-fit, minmax(280px, 1fr)).
+   That was this session's first draft and it is wrong: auto-fit gives THREE
+   columns in a 937px canvas and FIVE in the ~1,590px canvas this block is
+   actually specified against, so the layout that gets reviewed is not the
+   layout that ships. A track count that reads off the window is not a
+   decision, it is the absence of one. The two breakpoints below are the
+   graceful degradation, and they are explicit. */
+
+   THE BLOCK IS flex: 0 0 auto (set above with the tab strip): it is
+   content-height and never scrolls. That is only safe because Notes is
+   FIXED-HEIGHT — see #pd-notes. Every other control is one line by
+   construction, so this block's height is a constant six rows.
+   -------------------------------------------------------------------------- */
+#view-prospect-detail .detail-identity {
+  padding: 4px 2px 0;   /* not the scaffold's 16px: the panel already has
+                           .view-panel's padding, and a second inset here
+                           costs a row of vertical space the S1 shape needs */
+}
+
+.pd-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px 20px;
+}
+
+/* The breakpoints are on VIEWPORT width, and the canvas is roughly the
+   viewport minus the sidebar (280px pinned, 76px collapsed), so these are
+   deliberately generous: measured on 2026-08-31, a 1,269px window gives a
+   937px canvas and three 299px columns, which still holds a LinkedIn URL.
+   1,150 is the floor for that; below ~820 one column is the only honest
+   answer. .pd-span-2 collapses with the second one — a span of 2 in a
+   one-track grid silently overflows the row. */
+@media (max-width: 1150px) {
+  .pd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 820px) {
+  .pd-grid { grid-template-columns: minmax(0, 1fr); }
+  .pd-span-2 { grid-column: span 1; }
+}
+
+/* .form-group ships margin-bottom: 16px for the modals' stacked rows. In a
+   grid the gap owns the spacing, and both would double it. */
+.pd-grid .form-group {
+  margin-bottom: 8px;
+}
+
+/* Purple labels, matching #modal-prospect's — this view carries ProspectHub's
+   colours (scope Assumption 2). Deliberately var(--color-primary) rather than
+   the modal's literal #8b5cf6: body.module-prospect-detail already resolves
+   that token to ProspectHub's purple in BOTH themes, so this tracks the theme
+   where a literal would not. */
+#view-prospect-detail .form-group label {
+  color: var(--color-primary);
+}
+
+.pd-span-2 {
+  grid-column: span 2;
+}
+
+/* The label and its ✏️ button share a line, so the tags cell keeps the same
+   height as every other field and the six rows stay flush. */
+.pd-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.pd-label-row .text-btn {
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+/* min-height matches an input's box (10px + 13px line + 10px + 2px border)
+   so an untagged prospect does not leave a short cell in the grid. */
+.pd-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  cursor: pointer;
+  padding: 8px 10px;
+  min-height: 39px;
+  box-sizing: border-box;
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--color-border);
+  background-color: rgba(0, 0, 0, 0.2);
+  transition: var(--transition-smooth);
+  overflow-y: auto;
+  max-height: 78px;   /* two rows of chips, then it scrolls — a prospect with
+                         a dozen tags must not be able to grow this block */
+}
+
+.pd-tags-empty {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+/* FIXED HEIGHT WITH INTERNAL SCROLL (scope Assumption 6), and resize
+   disabled. This is the one control that could otherwise grow without bound,
+   and the identity block is flex: 0 0 auto — a growing Notes box would push
+   the tab strip and the tab body off the bottom of the screen, which is
+   exactly the shape contract S1 exists to prevent. Do not swap this for
+   resize: vertical "as a convenience". */
+#pd-notes {
+  height: 76px;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.4;
+}
+
+/* Delete Prospect. It is the only destructive control on this view and it
+   lives here rather than on a directory row — Michael: "I don't want to
+   delete from a directory with scant information." Right-aligned and small
+   on purpose: it must be findable, not adjacent to the caret. */
+.pd-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+.pd-delete-btn {
+  color: var(--color-danger);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pd-delete-btn:hover {
+  color: var(--color-danger);
+  opacity: 0.75;
 }

@@ -1283,12 +1283,147 @@
              content-height; the TAB BODY is the one region that scrolls, via
              the shared .hub-scroll idiom. #canvas-body is not touched.
 
-             The three children are EMPTY OF REAL CONTENT this session and
-             carry scaffold text written by renderProspectDetail(). 2B.3 fills
-             the identity block, 2B.4 the tab strip and the first two tab
-             bodies, 2B.5 the remaining three. -->
+             THE IDENTITY BLOCK IS REAL AS OF SESSION 2B.3 (see below). The
+             remaining two children still carry 2B.1's scaffold text written
+             by renderProspectDetail(): 2B.4 fills the tab strip and the first
+             two tab bodies, 2B.5 the remaining three. -->
         <section id="view-prospect-detail" class="view-panel">
-          <div id="prospect-detail-identity" class="detail-identity"></div>
+
+          <!-- IDENTITY BLOCK — Phase 2B / Session 2B.3 · frozen contract P5.
+
+               All 17 EDITABLE FIELDS, in the field order of #modal-prospect,
+               three columns at canvas width. The pairing here is the modal's
+               own sequence re-flowed from two columns into three, so the 17
+               fields occupy SIX rows rather than ten — which is what makes the
+               one-screen shape of contract S1 achievable at all.
+
+               STATIC MARKUP, NOT BUILT BY JS, and that is deliberate. Every
+               control has a stable id, so check_ids.py can see it, so the
+               field-level listener can be delegated ONCE at boot rather than
+               re-bound on every render, and so a render never destroys the
+               control the user is currently typing into.
+
+               data-pd-key IS THE CONTRACT BETWEEN THIS MARKUP AND app.js.
+               The delegated `change` listener on #prospect-detail-identity
+               reads it and hands it to commitProspectField(). A control
+               without that attribute is inert by construction — which is how
+               the Delete button and the tag chooser sit inside this container
+               without being mistaken for fields.
+
+               THE FIVE MODAL-ONLY FIELDS ARE HERE: seniority plus the four
+               conference fields. They are written by saveProspect() and read
+               back by openProspectModal() and displayed by NO OTHER SURFACE
+               in the app. Until this session, a conference name was
+               unviewable and uneditable outside the Add/Edit modal.
+
+               THE CONFERENCE FIELDS RENDER ALWAYS, blank or not (Michael,
+               2026-08-30). No collapsing, no "+ add conference" affordance.
+
+               Metro's record key is `location`, NOT `metro`. Company's is
+               `companyId` and the control holds the company NAME — the only
+               field in this block that is not a straight assignment.
+
+               #modal-prospect is UNTOUCHED and remains the create path
+               (scope Assumption 5). These ids are pd-*; the modal's are
+               pros-*. They must never be merged. -->
+          <div id="prospect-detail-identity" class="detail-identity">
+
+            <div class="pd-grid">
+              <div class="form-group">
+                <label for="pd-first-name">First Name</label>
+                <input type="text" id="pd-first-name" data-pd-key="firstName" placeholder="John">
+              </div>
+              <div class="form-group">
+                <label for="pd-last-name">Last Name</label>
+                <input type="text" id="pd-last-name" data-pd-key="lastName" placeholder="Doe">
+              </div>
+              <div class="form-group">
+                <label for="pd-email">Email Address</label>
+                <input type="email" id="pd-email" data-pd-key="email" placeholder="john.doe@company.com">
+              </div>
+
+              <div class="form-group">
+                <label for="pd-phone">Phone Number</label>
+                <input type="text" id="pd-phone" data-pd-key="phone" placeholder="+1 (555) 123-4567">
+              </div>
+              <div class="form-group">
+                <label for="pd-linkedin">LinkedIn URL</label>
+                <input type="url" id="pd-linkedin" data-pd-key="linkedin" placeholder="https://linkedin.com/in/janesmith">
+              </div>
+              <div class="form-group">
+                <label for="pd-title">Job Title</label>
+                <input type="text" id="pd-title" data-pd-key="title" placeholder="VP of Engineering">
+              </div>
+
+              <div class="form-group">
+                <label for="pd-seniority">Seniority</label>
+                <select id="pd-seniority" data-pd-key="seniority">
+                  <option value="C-Level">C-Level / Executive</option>
+                  <option value="VP">VP</option>
+                  <option value="Director">Director</option>
+                  <option value="Manager">Manager</option>
+                  <option value="Individual Contributor">Individual Contributor</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="pd-company">Company</label>
+                <input type="text" id="pd-company" data-pd-key="companyId" placeholder="Stripe">
+              </div>
+              <div class="form-group">
+                <label for="pd-city">City</label>
+                <input type="text" id="pd-city" data-pd-key="city" placeholder="San Francisco">
+              </div>
+
+              <div class="form-group">
+                <label for="pd-state">State</label>
+                <input type="text" id="pd-state" data-pd-key="state" placeholder="CA">
+              </div>
+              <div class="form-group">
+                <label for="pd-location">Metro</label>
+                <input type="text" id="pd-location" data-pd-key="location" placeholder="Bay Area">
+              </div>
+              <div class="form-group">
+                <div class="pd-label-row">
+                  <label for="btn-pd-edit-tags">Associated Tags</label>
+                  <button id="btn-pd-edit-tags" type="button" class="text-btn">✏️ Choose Tags</button>
+                </div>
+                <div id="pd-display-tags" class="interactive-tags-container pd-tags"></div>
+              </div>
+
+              <div class="form-group">
+                <label for="pd-conference-name">Conference Name</label>
+                <input type="text" id="pd-conference-name" data-pd-key="conferenceName" placeholder="AV Summit 2026">
+              </div>
+              <div class="form-group">
+                <label for="pd-conference-venue">Conference City / Venue</label>
+                <input type="text" id="pd-conference-venue" data-pd-key="conferenceVenue" placeholder="Nashville">
+              </div>
+              <div class="form-group">
+                <label for="pd-conference-start">Conference Start Date</label>
+                <input type="text" id="pd-conference-start" data-pd-key="conferenceStart" placeholder="March 3, 2026">
+              </div>
+
+              <div class="form-group">
+                <label for="pd-conference-end">Conference End Date</label>
+                <input type="text" id="pd-conference-end" data-pd-key="conferenceEnd" placeholder="March 5, 2026">
+              </div>
+              <!-- Notes spans the remaining two columns and is FIXED HEIGHT
+                   with internal scroll (scope Assumption 6), so a long note
+                   cannot grow the identity block and push the tab strip off
+                   the screen. resize is disabled for the same reason. -->
+              <div class="form-group pd-span-2">
+                <label for="pd-notes">Notes</label>
+                <textarea id="pd-notes" data-pd-key="notes" placeholder="Enter notes here..."></textarea>
+              </div>
+            </div>
+
+            <!-- Delete Prospect lives HERE and nowhere else gains one (scope
+                 Assumption 8) — not on a directory row, not in a tab. It
+                 passes detailProspectId, never state.selectedProspectId. -->
+            <div class="pd-actions">
+              <button id="btn-pd-delete-prospect" type="button" class="text-btn pd-delete-btn">🗑️ Delete Prospect</button>
+            </div>
+          </div>
           <div id="prospect-detail-tabs" class="detail-tabstrip"></div>
           <div id="prospect-detail-body" class="detail-body hub-scroll"></div>
         </section>

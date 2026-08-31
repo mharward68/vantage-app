@@ -5961,15 +5961,13 @@ function renderProspectDetail() {
     subtitleEl.style.display = "block";
   }
 
-  // Session 2B.1 ships the three containers EMPTY of real content. The
-  // scaffold notes below are this session's one logged assumption: without
-  // them the panel is a blank rectangle and the S1 shape cannot be
-  // screenshotted or reviewed. Sessions 2B.3, 2B.4 and 2B.5 replace them.
-  const identityEl = document.getElementById("prospect-detail-identity");
-  if (identityEl) {
-    identityEl.textContent = "Identity block — 17 editable fields. Session 2B.3.";
-  }
+  // Session 2B.3 replaced the identity scaffold with the real block. The
+  // markup is STATIC in index.html and this only fills it, so a render never
+  // destroys the control the user happens to be typing into.
+  renderProspectDetailIdentity(prospect);
 
+  // Still 2B.1 scaffold. 2B.4 replaces the tab strip and the first two tab
+  // bodies; 2B.5 the remaining three.
   const tabsEl = document.getElementById("prospect-detail-tabs");
   if (tabsEl) {
     tabsEl.textContent = "Tab strip — Interactions · Tasks · Audiences · Campaigns · Company · Sequences. Sessions 2B.4 and 2B.5.";
@@ -5979,6 +5977,211 @@ function renderProspectDetail() {
   if (bodyEl) {
     bodyEl.textContent = "Tab body — the ONLY region of this view that scrolls (Phase 2A contract S1). Session 2B.4.";
   }
+}
+
+/* --- P5: the identity block, and the single field writer -----------------
+
+   THE FIELD TABLE IS THE ONLY LIST OF THE 17. Nothing else in this block
+   enumerates them: the fill loop reads it, and the commit path reads
+   data-pd-key off the control the user touched. Adding an 18th field is one
+   row here plus one .form-group in index.html.
+
+   `tags` is not in the table because it is not an <input> — it is a chip
+   strip plus a chooser button, and it commits through the same writer from
+   saveChosenTags(). 16 controls + tags = the 17 of contract P5.
+
+   TWO KEYS ARE NOT WHAT THEY LOOK LIKE, and both have burned this codebase
+   before:
+     · Metro's record key is `location`, NOT `metro`.
+     · Company's control holds the company NAME; the record key is
+       `companyId`. It is the one field that is not a straight assignment.
+   ------------------------------------------------------------------------ */
+
+const PROSPECT_DETAIL_FIELDS = [
+  { key: "firstName",       id: "pd-first-name" },
+  { key: "lastName",        id: "pd-last-name" },
+  { key: "email",           id: "pd-email" },
+  { key: "phone",           id: "pd-phone" },
+  { key: "linkedin",        id: "pd-linkedin" },
+  { key: "title",           id: "pd-title" },
+  { key: "seniority",       id: "pd-seniority", fallback: "Individual Contributor" },
+  { key: "companyId",       id: "pd-company",   asCompanyName: true },
+  { key: "city",            id: "pd-city" },
+  { key: "state",           id: "pd-state" },
+  { key: "location",        id: "pd-location" },
+  { key: "conferenceName",  id: "pd-conference-name" },
+  { key: "conferenceVenue", id: "pd-conference-venue" },
+  { key: "conferenceStart", id: "pd-conference-start" },
+  { key: "conferenceEnd",   id: "pd-conference-end" },
+  { key: "notes",           id: "pd-notes" }
+];
+
+/* Fill, never build. Called by renderProspectDetail() on every entry into the
+   view. It writes .value and nothing else — no innerHTML on the grid — so the
+   delegated listener bound once at boot survives, and so does focus. */
+function renderProspectDetailIdentity(prospect) {
+  if (!prospect) return;
+
+  PROSPECT_DETAIL_FIELDS.forEach(f => {
+    const el = document.getElementById(f.id);
+    if (!el) return;
+    if (f.asCompanyName) {
+      el.value = getCompanyName(prospect.companyId) || "";
+      return;
+    }
+    el.value = prospect[f.key] || f.fallback || "";
+  });
+
+  renderProspectDetailTags(prospect);
+}
+
+/* The chip strip. Its own function because commitProspectField() repaints
+   ONLY this when `tags` changes — never the whole block. */
+function renderProspectDetailTags(prospect) {
+  const box = document.getElementById("pd-display-tags");
+  if (!box) return;
+  box.innerHTML = "";
+  const tags = (prospect && prospect.tags) || [];
+  if (!tags.length) {
+    box.innerHTML = `<span class="pd-tags-empty">No tags linked.</span>`;
+    return;
+  }
+  tags.forEach(t => {
+    const chip = document.createElement("span");
+    chip.className = "tag-badge";
+    chip.textContent = `# ${t}`;
+    box.appendChild(chip);
+  });
+}
+
+/* Keeps the header band's subtitle honest while a name is being edited.
+   renderProspectDetail() sets it on entry; this is the same line, called
+   from the writer, so the band never shows a name the record no longer has. */
+function syncProspectDetailSubtitle(prospect) {
+  const subtitleEl = document.getElementById("view-subtitle");
+  if (!subtitleEl || !prospect) return;
+  const name = `${prospect.firstName || ""} ${prospect.lastName || ""}`.trim();
+  subtitleEl.textContent = name || "(unnamed prospect)";
+}
+
+/* THE ONLY WRITER FOR THIS SURFACE (contract P5), and the single-writer rule
+   that completeTask() / logTaskCompletionHistory() established in Session 1.6.
+
+   It trims, assigns, saves, and REPAINTS ONLY WHAT DEPENDS ON THE FIELD.
+   Never a whole-view render and never the tab body — a full render here would
+   blow away the caret on every keystroke-committing control, which is the
+   specific failure that makes edit-in-place surfaces feel broken.
+
+   Commit is on `change`, not `input` (plan Assumption 4): there is no Save
+   button and no dirty state, because the modal already owns "fill in a form
+   and press Save" and a second dirty-state machine on the app's most-used
+   screen is where "the app lied about what it saved" comes from. The
+   reversible fallback if this proves twitchy is commit on `blur` for text
+   inputs — same writer, one listener changed. */
+function commitProspectField(prospect, key, value) {
+  if (!prospect || !key) return;
+
+  // tags arrives as an ARRAY, from the chooser — not from a control's .value.
+  // Empty commits ["No Prospect Tag"], matching saveProspect().
+  if (key === "tags") {
+    const list = Array.isArray(value) ? value.filter(t => String(t).trim() !== "") : [];
+    prospect.tags = list.length ? [...list] : ["No Prospect Tag"];
+    saveState();
+    if (prospect.id === detailProspectId) renderProspectDetailTags(prospect);
+    return;
+  }
+
+  const clean = typeof value === "string" ? value.trim() : value;
+
+  // The one field that is not a straight assignment. The control holds a
+  // NAME; the record holds an id. One company-creation path, shared with
+  // saveProspect() — two copies is how two kinds of company record appear.
+  if (key === "companyId") {
+    prospect.companyId = resolveCompanyByName(clean, prospect.email, prospect.location);
+    saveState();
+    const el = document.getElementById("pd-company");
+    // Repaint the control from the RESOLVED record, so typing "stripe" against
+    // an existing "Stripe" visibly snaps to the stored casing rather than
+    // leaving the screen disagreeing with the database.
+    if (el && prospect.id === detailProspectId) el.value = getCompanyName(prospect.companyId) || "";
+    return;
+  }
+
+  /* ⚠️ P6 HOOK — SESSION 2B.7, NOT THIS ONE. Contract P5 says `email` routes
+     through prospectByEmail() before it commits and reverts on a duplicate.
+     That resolver does not exist yet: contract P6 and all three of its callers
+     are Session 2B.7's task list, item 3 of which is exactly this line. Until
+     then the detail view's email field commits like any other text field, the
+     same as #modal-prospect does today. Do not write a second duplicate check
+     here — one rule, one implementation. */
+
+  prospect[key] = clean;
+  saveState();
+
+  if (prospect.id === detailProspectId && (key === "firstName" || key === "lastName")) {
+    syncProspectDetailSubtitle(prospect);
+  }
+}
+
+/* Delegated ONCE at boot onto #prospect-detail-identity. data-pd-key is the
+   opt-in: the Delete button and the tag chooser live inside this container and
+   carry no such attribute, so they are inert here by construction rather than
+   by a special case. The record is re-found from state every time (Gate E). */
+function handleProspectDetailFieldChange(e) {
+  const el = e.target;
+  const key = el && el.dataset ? el.dataset.pdKey : null;
+  if (!key) return;
+  const prospect = detailProspectId ? state.prospects.find(p => p.id === detailProspectId) : null;
+  if (!prospect) return;
+  commitProspectField(prospect, key, el.value);
+}
+
+/* Contract P5, extracted from saveProspect() so there is ONE company-creation
+   path. The seed object is that function's, verbatim.
+
+   THE THIRD PARAMETER IS OPTIONAL AND THE FROZEN TWO-ARGUMENT CALL SHAPE IS
+   UNCHANGED. P5 writes the signature as (name, email); saveProspect() also
+   seeded the new company's `location` from the typed Metro, and extracting at
+   exactly two arguments would have silently dropped that — an extraction that
+   changes behaviour is not an extraction. DIRECTIVES §5: no gate eliminates
+   either option, and Ladder rung 1 (Stability) decides it — a caller that
+   omits it gets today's "Unknown" fallback and nothing else moves. */
+function resolveCompanyByName(name, email, location = "") {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return "";
+
+  const existing = state.companies.find(c => (c.name || "").toLowerCase() === trimmed.toLowerCase());
+  if (existing) return existing.id;
+
+  const compId = `comp-${Date.now()}`;
+  state.companies.push({
+    id: compId,
+    name: trimmed,
+    domain: (email || "").split("@")[1] || "domain.com",
+    location: location || "Unknown",
+    industry: "General",
+    address: "",
+    phone: "",
+    website: "",
+    linkedin: "",
+    tags: [],
+    employees: "",
+    employeeRange: "",
+    description: "",
+    specialities: "",
+    headquarters: ""
+  });
+  return compId;
+}
+
+/* The detail view's Delete. It passes detailProspectId, NEVER
+   state.selectedProspectId — the two are separate cursors and do not converge
+   in this phase. On success it replays the origin (scope Assumption 10), which
+   closeProspectDetail() already does; the render inside deleteProspectById()
+   is what leaves ProspectHub correct for that replay. */
+function handleProspectDetailDelete() {
+  if (!detailProspectId) return;
+  if (deleteProspectById(detailProspectId)) closeProspectDetail();
 }
 
 /* ==========================================================================
@@ -9934,33 +10137,12 @@ function saveProspect() {
     return;
   }
 
-  // Handle company allocation dynamically
-  let compId = "";
-  if (compVal) {
-    let comp = state.companies.find(c => c.name.toLowerCase() === compVal.toLowerCase());
-    if (!comp) {
-      compId = `comp-${Date.now()}`;
-      state.companies.push({
-        id: compId,
-        name: compVal,
-        domain: email.split("@")[1] || "domain.com",
-        location: loc || "Unknown",
-        industry: "General",
-        address: "",
-        phone: "",
-        website: "",
-        linkedin: "",
-        tags: [],
-        employees: "",
-        employeeRange: "",
-        description: "",
-        specialities: "",
-        headquarters: ""
-      });
-    } else {
-      compId = comp.id;
-    }
-  }
+  // Handle company allocation dynamically. Session 2B.3 extracted this to
+  // resolveCompanyByName() (contract P5) and calls it from here and from
+  // commitProspectField(). Behaviour is unchanged including the `loc` seed —
+  // do not re-inline it; two company-creation paths is how two kinds of
+  // company record appear.
+  const compId = resolveCompanyByName(compVal, email, loc);
 
   if (editingProspectId) {
     const p = state.prospects.find(x => x.id === editingProspectId);
@@ -10015,24 +10197,42 @@ function saveProspect() {
   refreshAqAfterEdit();
 }
 
-function deleteProspect() {
-  if (!state.selectedProspectId) return;
-  const p = state.prospects.find(x => x.id === state.selectedProspectId);
-  const ok = confirm(`Are you sure you want to permanently delete contact ${p.firstName} ${p.lastName}?`);
-  if (!ok) return;
+/* Contract P5. The body of the old zero-argument deleteProspect() takes an
+   explicit id; the zero-argument function survives as a one-line caller so the
+   inspector's button and the DEFERRED Advanced Query drawer are untouched.
 
-  const deletedId = state.selectedProspectId;
-  state.prospects = state.prospects.filter(x => x.id !== deletedId);
-  state.selectedProspectId = null;
+   RETURNS TRUE ONLY IF A RECORD WAS ACTUALLY REMOVED. The detail view's Delete
+   needs that answer: it must replay the origin on success and stay put when
+   the user cancels the confirm, and "did it happen" is not recoverable from
+   state afterwards without re-searching for a record that may never have
+   existed. */
+function deleteProspectById(id) {
+  if (!id) return false;
+  const p = state.prospects.find(x => x.id === id);
+  if (!p) return false;
+
+  const ok = confirm(`Are you sure you want to permanently delete contact ${p.firstName} ${p.lastName}?`);
+  if (!ok) return false;
+
+  state.prospects = state.prospects.filter(x => x.id !== id);
+  // Guarded, where the old code assigned unconditionally: the deleted record
+  // is no longer necessarily the selected one. Deleting from the detail view
+  // must not clear a directory selection pointing at somebody else.
+  if (state.selectedProspectId === id) state.selectedProspectId = null;
   // A deleted record needs to disappear from any open Advanced Query results
   // too — those aren't re-filtered from state until the next Run Query, so
   // without this the row would keep showing (just with a closed drawer).
-  aqResults = aqResults.filter(x => x.id !== deletedId);
-  aqSelectedIds.delete(deletedId);
-  if (aqInspectorRecordId === deletedId) closeAqInspectorDrawer();
+  aqResults = aqResults.filter(x => x.id !== id);
+  aqSelectedIds.delete(id);
+  if (aqInspectorRecordId === id) closeAqInspectorDrawer();
   saveState();
   renderProspectsView();
   refreshAqAfterEdit();
+  return true;
+}
+
+function deleteProspect() {
+  deleteProspectById(state.selectedProspectId);
 }
 
 function deleteCompany() {
@@ -11269,6 +11469,17 @@ function setupEventListeners() {
   // Prospect detail view — the back arrow in the header band (Session 2B.1,
   // contract P2). It replays detailOrigin; it is NOT history.back().
   document.getElementById("btn-prospect-detail-back")?.addEventListener("click", closeProspectDetail);
+
+  // Identity block (Session 2B.3, contract P5). ONE delegated `change`
+  // listener on the container, bound once here, for all 16 input/select
+  // controls — the markup is static, so there is nothing to re-bind on a
+  // render and nothing that can double-fire. data-pd-key is the opt-in.
+  document.getElementById("prospect-detail-identity")?.addEventListener("change", handleProspectDetailFieldChange);
+  document.getElementById("btn-pd-edit-tags")?.addEventListener("click", () => {
+    if (detailProspectId) openChooseTagsModalForProspectInspector(detailProspectId);
+  });
+  document.getElementById("btn-pd-delete-prospect")?.addEventListener("click", handleProspectDetailDelete);
+
   document.getElementById("btn-export-contacts-filtered")?.addEventListener("click", exportFilteredContactsCSV);
   document.getElementById("btn-export-companies-filtered")?.addEventListener("click", exportFilteredCompaniesCSV);
 
@@ -13068,9 +13279,24 @@ function renderTagsChecklistGrid(availableTags, selectedTags) {
   });
 }
 
-function openChooseTagsModalForProspectInspector() {
-  const p = state.prospects.find(x => x.id === state.selectedProspectId);
+/* Which prospect the "prospect-inspector" tag target is currently editing.
+   Module scope, navigation-shaped, deliberately not persisted — same class as
+   detailProspectId and selectedCompanyId. */
+let tagProspectTargetId = null;
+
+/* Session 2B.3 gave this an EXPLICIT ID PARAMETER (contract P5, task 5). It
+   was keyed on state.selectedProspectId, which the detail view must never
+   write — the two cursors do not converge in this phase.
+
+   THE DEFAULT IS WHAT KEEPS THE EXISTING CALLERS UNTOUCHED. Both of them —
+   the prospect inspector's ✏️ button and editAqInspectorTags() in the
+   DEFERRED Advanced Query drawer — call it with no arguments and get exactly
+   today's behaviour, so neither call site needed editing and the AQ surface
+   was not entered. The detail view passes detailProspectId. */
+function openChooseTagsModalForProspectInspector(prospectId = state.selectedProspectId) {
+  const p = state.prospects.find(x => x.id === prospectId);
   if (!p) return;
+  tagProspectTargetId = p.id;
   tagSelectionTarget = "prospect-inspector";
   renderTagsChecklistGrid(state.prospect_tags, p.tags || []);
   document.getElementById("modal-choose-tags").classList.remove("hidden");
@@ -13121,14 +13347,19 @@ function saveChosenTags() {
   }
 
   if (tagSelectionTarget === "prospect-inspector") {
-    const p = state.prospects.find(x => x.id === state.selectedProspectId);
+    // The target id is set by the opener. The fallback keeps the old
+    // behaviour if anything ever reaches this branch without going through
+    // it. The write itself goes through commitProspectField() — one writer
+    // for prospect fields, including this one — which is also what repaints
+    // the detail view's chip strip when that is the surface being edited.
+    const p = state.prospects.find(x => x.id === (tagProspectTargetId || state.selectedProspectId));
     if (p) {
-      p.tags = selectedTags.length ? selectedTags : ["No Prospect Tag"];
-      saveState();
+      commitProspectField(p, "tags", selectedTags);
       renderInspector();
       renderProspectsView();
       refreshAqAfterEdit();
     }
+    tagProspectTargetId = null;
     document.getElementById("modal-choose-tags").classList.add("hidden");
     return;
   }
