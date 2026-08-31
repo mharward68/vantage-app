@@ -256,8 +256,13 @@
                 </div>
               </div>
 
-              <!-- Split Tables Container -->
-              <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 16px;">
+              <!-- Split Tables Container. The class is the only thing added
+                   here (Phase 2A / Session 2A.2) — it is the flex hook the
+                   🧱 HUB SHELL block at the END of style.css hangs the
+                   ProspectHub scroll chain on. The inline styles are the
+                   original layout and are deliberately left alone. -->
+              <div class="prospect-directory-tables"
+                style="display: flex; flex-direction: column; gap: 16px; margin-top: 16px;">
                 <!-- Contacts List Table -->
                 <div class="table-section">
                   <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px;">
@@ -267,7 +272,12 @@
                       title="Export currently shown contacts to CSV (or the full database if no filters are applied)">⬇️
                       Export CSV</button>
                   </div>
-                  <div class="table-scroll-container" style="max-height: 35vh;">
+                  <!-- Phase 2A / Session 2A.2: the inline max-height here was
+                       a viewport-relative constant (35% of the viewport) — the
+                       same family this phase removes. It is now a flex share of
+                       whatever the panel has left, so the two directory tables
+                       split the space and each still scrolls on its own. -->
+                  <div class="table-scroll-container hub-scroll">
                     <table class="premium-table" id="prospects-table">
                       <thead>
                         <tr>
@@ -296,7 +306,9 @@
                       title="Export currently shown companies to CSV (or the full database if no filters are applied)">⬇️
                       Export CSV</button>
                   </div>
-                  <div class="table-scroll-container" style="max-height: 35vh;">
+                  <!-- Was a viewport-relative inline max-height; see the note on
+                       the contacts table above. Phase 2A / Session 2A.2. -->
+                  <div class="table-scroll-container hub-scroll">
                     <table class="premium-table" id="companies-table">
                       <thead>
                         <tr>
@@ -569,8 +581,13 @@
                 </div>
               </div>
 
-              <!-- Media Deck Grid -->
-              <div class="media-card-grid" id="media-deck">
+              <!-- Media Deck Grid. `.hub-scroll` (Phase 2A / Session 2A.2) makes
+                   this the ONE scrolling region in MediaHub's left column. The
+                   class does not change `display: grid` — it only adds the flex
+                   share, min-height:0 and overflow. `#campaign-deck` further
+                   down reuses .media-card-grid and is deliberately NOT given
+                   this class; its scrolling is CampaignHub's, set in 2A.1. -->
+              <div class="media-card-grid hub-scroll" id="media-deck">
                 <!-- Dynamic Media Cards -->
               </div>
             </div>

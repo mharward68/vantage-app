@@ -3218,3 +3218,137 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   min-height: 0;
   overflow-y: auto;
 }
+
+/* --------------------------------------------------------------------------
+   ProspectHub — Session 2A.2
+
+   ProspectHub LOOKED converted before this session and was not. It fit one
+   screen only because its two directory tables carried an inline
+   `max-height: 35vh` each, which happens to add up to less than a screen —
+   #view-prospects itself had no height, so `.prospects-layout-container`'s
+   `height: 100%` resolved against an auto-height parent, i.e. to auto.
+   Setting the panel height here is what makes that 100% real, and it is what
+   let the two viewport-relative constants be deleted.
+
+   The two tables stay TWO tables with TWO scrollbars (scope §2.4: they do not
+   need splitting, tabbing or restructuring). They are siblings, not nested,
+   so this is not the "two scrolling ancestors in one chain" case the idiom
+   forbids — it is one .hub-scroll per visible region, and there are two
+   regions here.
+   -------------------------------------------------------------------------- */
+#view-prospects {
+  height: 100%;
+  min-height: 0;
+  /* gap is inert: this panel has exactly one child. Left at .view-panel's
+     24px rather than set to a number that does nothing. */
+}
+
+/* The directory card is a grid item that is already `height: 100%` and
+   `overflow: hidden`, so without min-height:0 it refuses to shrink below its
+   content and the tables below never get a bounded box to scroll inside.
+   The base rule is shared with .prospect-inspector-card, hence the prefix. */
+#view-prospects .prospects-directory-card {
+  min-height: 0;
+}
+
+/* Search, filters and the action buttons keep their natural height. */
+#view-prospects .card-header-actions {
+  flex: 0 0 auto;
+}
+
+/* The wrapper around the two tables takes whatever the header leaves. */
+#view-prospects .prospect-directory-tables {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Each table section is a flex column so its own <h4>/Export row stays put and
+   only the table under it scrolls. */
+#view-prospects .table-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The two sections are deliberately NOT an even split (that is what the first
+   pass of Session 2A.2 shipped, and Michael's review changed it).
+
+   Companies is sized by its own content and capped; Contacts takes everything
+   left over. Two company results should contract to two rows' worth and hand
+   the space to Contacts — but Companies must never grow TALLER than the even
+   split it replaced, or a long company list starts crowding out the table
+   people actually work in.
+
+   `flex: 0 0 auto` — no grow, no shrink — is what makes this deterministic.
+   With shrink enabled both sections would flex in proportion to their content
+   heights instead, so the split would drift with the row counts and the cap
+   would rarely be the thing deciding it.
+
+   The cap is `calc(50% - 8px)`, not `50%`: the wrapper's `gap: 16px` is not
+   part of either child, so half the wrapper is 8px MORE than half the space
+   the two children actually share. Written this way the cap lands exactly on
+   the height the even split produced (366px in a 748px wrapper), so "never
+   taller than now" is literally true rather than approximately. */
+#view-prospects .table-section:first-child {
+  flex: 1 1 auto;
+}
+
+#view-prospects .table-section:last-child {
+  flex: 0 0 auto;
+  max-height: calc(50% - 8px);
+}
+
+/* "See All Contacts" / "See All Companies" — one directory at a time.
+   The classes are toggled in renderProspectsView() from the two
+   state.forceShowAll* flags that already drove those buttons; nothing new is
+   stored. Whichever section is left takes the whole panel, so its cap has to
+   be lifted along with the sibling being hidden — a `display: none` sibling
+   frees the space but `max-height` would still hold Companies at half. */
+#view-prospects .prospect-directory-tables.only-contacts .table-section:last-child,
+#view-prospects .prospect-directory-tables.only-companies .table-section:first-child {
+  display: none;
+}
+
+#view-prospects .prospect-directory-tables.only-companies .table-section:last-child {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
+/* --------------------------------------------------------------------------
+   MediaHub — Session 2A.2
+
+   `.media-hub-layout` is a grid shared with CampaignHub's dashboard sub-view,
+   so every rule here is view-id prefixed. Its `align-items: start` is what
+   has to give: a `start`-aligned grid item takes its content height, so the
+   left column could never be bounded and #media-deck could never scroll.
+   `stretch` gives both columns the row's full height.
+
+   `.media-hub-right` keeps its `position: sticky; top: 20px`. Sticky is now a
+   no-op there and that is the correct outcome, not a regression — the rail
+   sits OUTSIDE the scrolling region, so it has nothing left to stick against
+   and simply stays where it is. The rule stays because the max-width:900px
+   single-column fallback still stacks. `.tags-filter-scroller` keeps its own
+   `max-height: 400px` — a fixed pixel height, not a viewport constant, so it
+   is outside this phase's stated target.
+   -------------------------------------------------------------------------- */
+#view-media {
+  height: 100%;
+  min-height: 0;
+  /* gap left at .view-panel's 24px. Unlike CampaignHub, MediaHub's intro row
+     carries no padding or margin of its own, so there is nothing doubled up
+     to correct for. */
+}
+
+#view-media .view-intro-actions {
+  flex: 0 0 auto;
+}
+
+#view-media .media-hub-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+}
+
+#view-media .media-hub-left {
+  min-height: 0;
+}

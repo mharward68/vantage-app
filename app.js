@@ -3291,6 +3291,21 @@ function renderProspectsView() {
 
   const isBlankState = !query && !geoQueryStr && tagTerms.length === 0;
 
+  // Phase 2A / Session 2A.2, added at Michael's review. "See All Contacts" and
+  // "See All Companies" each mean "I am reading this one now" — so the other
+  // directory collapses out of the way and the one being read gets the whole
+  // panel. This is a CLASS TOGGLE ONLY: it reads the two flags that already
+  // exist and writes nothing, so it adds no state field, no persistence and no
+  // backup surface. The rules it drives live in the 🧱 HUB SHELL block at the
+  // END of style.css. Both flags are cleared the moment any search, geography
+  // or tag filter is applied (just above) and by Clear Filters, so neither
+  // section can get stranded off-screen.
+  const dirTables = document.querySelector("#view-prospects .prospect-directory-tables");
+  if (dirTables) {
+    dirTables.classList.toggle("only-contacts", !!state.forceShowAllContacts);
+    dirTables.classList.toggle("only-companies", !!state.forceShowAllCompanies);
+  }
+
   // --- FILTER COMPANIES ---
   const compBody = document.getElementById("companies-table-body");
   compBody.innerHTML = "";
