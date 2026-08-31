@@ -3016,6 +3016,23 @@ function switchView(viewName) {
     }
   });
 
+  // Phase 2B / Session 2B.1 · contract P3. The prospect detail view is a
+  // SEVENTH .view-panel, NOT a seventh hub — there is no seventh nav tab and
+  // there is not going to be one, so "six hubs" in DECLARATIONS stays true.
+  // The loop above matches on data-view, and no tab carries
+  // data-view="prospect-detail", so without this line every tab goes dark the
+  // moment a prospect is opened and the sidebar stops answering "where am I".
+  // The detail view belongs to ProspectHub, so ProspectHub's tab stays lit.
+  if (viewName === "prospect-detail") {
+    document.getElementById("nav-prospects")?.classList.add("active-tab");
+  }
+
+  // The back arrow is part of the band, not part of the panel, so it never
+  // scrolls away. It exists for exactly one view; showing it anywhere else
+  // would offer a "back" with nothing to go back to.
+  const detailBackBtn = document.getElementById("btn-prospect-detail-back");
+  if (detailBackBtn) detailBackBtn.classList.toggle("hidden", viewName !== "prospect-detail");
+
   // Dynamic colors: apply appropriate CSS variables
   updateThemeColors();
 
@@ -3032,7 +3049,13 @@ function switchView(viewName) {
     "media": "MediaHub",
     "campaigns": "CampaignHub",
     "tasks": "TaskHub",
-    "data-management": "DataHub"
+    "data-management": "DataHub",
+    // Session 2B.1 · P3. The band reads ProspectHub here ON PURPOSE — the
+    // detail view is a view of a ProspectHub record, not a new place, and the
+    // record's own name is written into #view-subtitle by
+    // renderProspectDetail(). A seventh hub name here would claim a seventh
+    // hub exists.
+    "prospect-detail": "ProspectHub"
   };
 
   // One map, six entries, the same six emoji the sidebar nav already uses.
@@ -3044,7 +3067,8 @@ function switchView(viewName) {
     "media": "📁",
     "campaigns": "🎯",
     "tasks": "✅",
-    "data-management": "🗄️"
+    "data-management": "🗄️",
+    "prospect-detail": "👥"   // ProspectHub's, for the same reason as its title
   };
 
   const subtitles = {
@@ -3057,6 +3081,11 @@ function switchView(viewName) {
     "campaigns": "",
     "tasks": "",
     "data-management": "Securely back up database structures as standard ZIP/CSVs and restore existing tables."
+    // "prospect-detail" is DELIBERATELY ABSENT from this map. Its subtitle is
+    // the open prospect's name, which is per-record and cannot be a static
+    // string; renderProspectDetail() writes it after this block runs (the
+    // renderApp() call at the end of this function). Adding a key here would
+    // put a constant on screen for one frame and then be overwritten.
   };
 
   document.getElementById("view-title").textContent = titles[viewName] || "Vantage PRM";
@@ -3112,6 +3141,11 @@ function renderApp() {
     renderTasksView();
   } else if (state.activeView === "data-management") {
     renderDataManagementView();
+  } else if (state.activeView === "prospect-detail") {
+    // Session 2B.1 · P3. The panel lookup above is generic — it shows
+    // #view-${state.activeView} — so the panel appears with no change there.
+    // Only the render needed a branch.
+    renderProspectDetail();
   }
 }
 
@@ -5764,6 +5798,187 @@ function renderTaskOrphanWindow() {
 
     body.appendChild(tr);
   });
+}
+
+/* ==========================================================================
+   👤 RENDER VIEW: PROSPECT DETAIL
+   (Phase 2B / Session 2B.1 · frozen contracts P1 · P2 · P3
+    of ai/phases/phase-2b-prospect-detail-view.md)
+
+   WHAT THIS IS. The full-screen prospect record view that replaces the
+   ProspectHub slide-out prospect card. This session lands the NAVIGATION
+   SUBSTRATE only — the cursor, the origin record, the open/exit pair, and an
+   empty seventh .view-panel. The identity block is Session 2B.3; the tab
+   strip and its bodies are 2B.4 and 2B.5; the four entry points are repointed
+   in 2B.6. Until then NOTHING in the app calls openProspectDetail() — the view
+   is reachable from the console only, deliberately, so the app is exactly as
+   usable after this session as before it (plan Assumption 3).
+
+   WHERE THIS BLOCK SITS AND WHY. After § ✅ RENDER VIEW: TASKHUB and before
+   § 📁 RENDER VIEW: MEDIA MANAGER. It is deliberately NOT placed next to
+   renderInspector(): BUILD_NOTES' MAP records that § ✅ INSPECTOR MEMBERSHIPS
+   & TASKS sits IMMEDIATELY after renderInspector(), and the four task blocks
+   are contiguous on purpose. Slotting this between either pair would make two
+   MAP entries false to buy nothing.
+
+   THREE THINGS A LATER SESSION MUST NOT UNDO:
+
+   1. detailProspectId IS NOT state.selectedProspectId, AND THE TWO NEVER
+      CONVERGE IN THIS PHASE (plan risk 4). state.selectedProspectId stays
+      exactly as it is — written by the directory, the create path and the
+      DEFERRED Advanced Query drawer, read at 13 sites — so that a click in
+      that drawer cannot retarget an open detail view. Nothing added by
+      Phase 2B reads or writes it. Tidying the two into one is the specific
+      mistake the plan names.
+
+   2. THESE ARE MODULE SCOPE, NOT STATE FIELDS. They must NOT survive a
+      reload: this is navigation, and selectedCompanyId / campaignViewSubState
+      / selectedAudienceListId are the established precedent. No
+      ensureStateDefaults() entry, no wipeAllData() line, no CSV column.
+
+   3. NO COPY OF THE RECORD IS HELD (Gate E). Every render re-finds the
+      prospect from state, the same way renderInspector() does.
+
+   NO ROUTING, EVER (contract P9). No location.hash, no history.pushState, no
+   prospect id in document.title. This is Gate A, not taste: imported
+   prospectId values ARE EMAIL ADDRESSES (see the import and restore paths),
+   so a hash route would put a live third party's address into the address
+   bar, browser history, autocomplete and — from Phase 4 — server logs and
+   referrer headers. "Add a hash route so the back arrow works" is the obvious
+   wrong turn and it is forbidden.
+   ========================================================================== */
+
+/* --- P1: the subject cursor and the origin record ------------------------ */
+
+let detailProspectId = null;
+
+/* Shape, frozen by P1:
+     { view,              // "prospects" | "tasks" | "campaigns"  — required
+       taskId,            // task id | null  — replayed via openTaskEditor()
+       audienceListId,    // audience list id | null
+       campaignSubState } // "audiences" | "campaigns" | null — NOT OPTIONAL
+
+   campaignSubState is not optional because reaching a CampaignHub audience
+   takes THREE assignments plus a render, not two. switchView("campaigns")
+   alone lands the user on whichever sub-tab was last open — see BUILD_NOTES,
+   "Navigating from the inspector to a Campaign Hub record takes three steps."
+   An origin record that omits it silently loses the user's place. */
+let detailOrigin = null;
+
+/* Reset to "interactions" on every open. Tab and scroll position are NOT
+   persisted (P4). If a later phase wants them they join state.columnLayouts
+   under their own key — never a new top-level store. */
+let detailTab = "interactions";
+
+/* --- P2: the one entry point and the one exit ---------------------------- */
+
+/* The ONLY way into the detail view. Four callers arrive in Session 2B.6;
+   until then this is called from the console and from nowhere else.
+   openAqInspectorDrawer()'s own openProspectModal() call is NOT one of them
+   and is not touched — the Advanced Query drawer is deferred, not reversed. */
+function openProspectDetail(prospectId, origin) {
+  detailProspectId = prospectId;
+
+  // Normalised here, once, so every consumer downstream can read all four
+  // keys without guarding. A caller that omits `view` is treated as having
+  // come from ProspectHub, which is where three of the four entry points are.
+  detailOrigin = {
+    view: (origin && origin.view) || "prospects",
+    taskId: (origin && origin.taskId) || null,
+    audienceListId: (origin && origin.audienceListId) || null,
+    campaignSubState: (origin && origin.campaignSubState) || null
+  };
+
+  detailTab = "interactions";
+  switchView("prospect-detail");
+}
+
+/* The back arrow. Replays detailOrigin — it does NOT call history.back(),
+   which would leave the app's real navigation and the browser's idea of it
+   permanently out of step (P9). */
+function closeProspectDetail() {
+  // Read the origin BEFORE clearing, then clear before navigating: switchView
+  // re-enters renderApp(), and a half-cleared cursor read mid-replay is how a
+  // closed view renders itself again.
+  const origin = detailOrigin || { view: "prospects", taskId: null, audienceListId: null, campaignSubState: null };
+
+  detailProspectId = null;
+  detailOrigin = null;
+  detailTab = "interactions";
+
+  if (origin.view === "tasks") {
+    switchView("tasks");
+    // The task editor is rebuilt from state.tasks on every call, so this is
+    // one call against a remembered id and never saved DOM. A task deleted
+    // while the detail view was open simply leaves the editor closed.
+    if (origin.taskId) openTaskEditor(origin.taskId);
+    return;
+  }
+
+  if (origin.view === "campaigns") {
+    // The three-assignment rule, written out literally per P2. switchView()
+    // already ends in renderApp() → renderCampaignsView(), but that render
+    // runs against the PREVIOUS sub-state; the assignments and the second
+    // render are what put the user back on the audience they left from.
+    switchView("campaigns");
+    campaignViewSubState = origin.campaignSubState || "audiences";
+    if (origin.audienceListId) selectedAudienceListId = origin.audienceListId;
+    renderCampaignsView();
+    return;
+  }
+
+  switchView("prospects");
+}
+
+/* --- P3: the render ------------------------------------------------------ */
+
+function renderProspectDetail() {
+  // Gate E: re-find the record every time. No cached copy, no stale name in
+  // the header band.
+  const prospect = detailProspectId
+    ? state.prospects.find(p => p.id === detailProspectId)
+    : null;
+
+  // An unresolvable id closes the view and replays the origin — NO
+  // PLACEHOLDER. This matches renderInspector()'s handling of a stale
+  // selection, and it is what makes "delete the prospect you are looking at"
+  // land somewhere real in Session 2B.3. The recursion terminates: the close
+  // path never routes back to "prospect-detail".
+  if (!prospect) {
+    closeProspectDetail();
+    return;
+  }
+
+  // The band reads ProspectHub (switchView's titles map) and the prospect's
+  // own name goes in #view-subtitle. switchView() has already hidden that
+  // element by the time we get here — `subtitles` has no "prospect-detail"
+  // key, because this one is per-record and cannot live in a static map — so
+  // this is the only place that shows it for this view.
+  const subtitleEl = document.getElementById("view-subtitle");
+  if (subtitleEl) {
+    const name = `${prospect.firstName || ""} ${prospect.lastName || ""}`.trim();
+    subtitleEl.textContent = name || "(unnamed prospect)";
+    subtitleEl.style.display = "block";
+  }
+
+  // Session 2B.1 ships the three containers EMPTY of real content. The
+  // scaffold notes below are this session's one logged assumption: without
+  // them the panel is a blank rectangle and the S1 shape cannot be
+  // screenshotted or reviewed. Sessions 2B.3, 2B.4 and 2B.5 replace them.
+  const identityEl = document.getElementById("prospect-detail-identity");
+  if (identityEl) {
+    identityEl.textContent = "Identity block — 17 editable fields. Session 2B.3.";
+  }
+
+  const tabsEl = document.getElementById("prospect-detail-tabs");
+  if (tabsEl) {
+    tabsEl.textContent = "Tab strip — Interactions · Tasks · Audiences · Campaigns · Company · Sequences. Sessions 2B.4 and 2B.5.";
+  }
+
+  const bodyEl = document.getElementById("prospect-detail-body");
+  if (bodyEl) {
+    bodyEl.textContent = "Tab body — the ONLY region of this view that scrolls (Phase 2A contract S1). Session 2B.4.";
+  }
 }
 
 /* ==========================================================================
@@ -11050,6 +11265,10 @@ function setupEventListeners() {
   document.getElementById("btn-clear-prospects-filters")?.addEventListener("click", clearProspectsFilters);
   document.getElementById("btn-prospects-settings")?.addEventListener("click", openSettingsModal);
   document.getElementById("btn-close-inspector-panel")?.addEventListener("click", closeInspectorPanel);
+
+  // Prospect detail view — the back arrow in the header band (Session 2B.1,
+  // contract P2). It replays detailOrigin; it is NOT history.back().
+  document.getElementById("btn-prospect-detail-back")?.addEventListener("click", closeProspectDetail);
   document.getElementById("btn-export-contacts-filtered")?.addEventListener("click", exportFilteredContactsCSV);
   document.getElementById("btn-export-companies-filtered")?.addEventListener("click", exportFilteredCompaniesCSV);
 

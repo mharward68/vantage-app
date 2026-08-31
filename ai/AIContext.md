@@ -1,99 +1,70 @@
 # AI Context
 
-**Updated:** 2026-08-31 16:47 (America/New_York)
-**Last run:** Phase 2A / **Session 2A.6 — PHASE CLOSE.** QA + documents. **Phase 2A is complete.**
-**State:** `node --check app.js` clean · `check_ids.py` at its standing baseline of two (`{'export-backup-btn', 'restore-backup-input'}`) · `CACHE_NAME` **v95, unchanged — this session bumped nothing** · `app.js` 13,272 / `index.html` 3,254 / `style.css` 3,681 · console clean, 0 errors across three reloads · deployed n/a
-**Estimate vs actual:** sized **M / ~20 min / High**; ran **M**, **zero `CACHE_NAME` bumps** (no code file was opened for edit), and roughly **4 min of Michael's time** — two blocking questions answered up front, nothing else. Phase totals below.
-**One-glance version tell:** unchanged from 2A.5 — **in LIGHT theme, look where the sidebar meets the header.** One shade, no vertical join = v95. This session shipped no code, so no new reload is needed.
+**Updated:** 2026-08-31 17:16 (America/New_York)
+**Last run:** Phase 2B / **Session 2B.1 — Navigation substrate.** `detailProspectId`, the origin record, the empty seventh view panel.
+**State:** `node --check app.js` clean (run against the file as it sits in the repo, re-staged after writing) · `check_ids.py` at its standing baseline of two (`{'export-backup-btn', 'restore-backup-input'}`) · `CACHE_NAME` **v95 → v96, one bump** · `app.js` 13,491 / `index.html` 3,293 / `style.css` 3,813 · console clean, 0 errors across a boot plus a seven-view sweep · deployed n/a
+**Estimate vs actual:** sized **M / ~5 min / High**; ran **M**, **one `CACHE_NAME` bump** (v96 — but see the note below before recording that as a win), and roughly **2 min of Michael's time** — the boot report and this summary, no blocking questions.
+**One-glance version tell:** open any prospect from the console — `openProspectDetail("pros-sarah", { view: "prospects" })` — and look at the **header band**. A **← arrow left of the 👥 icon**, the band reading **ProspectHub** with **Sarah Chen** underneath it = v96. Nothing in the app's own UI changed, so this is the only tell there is.
 
-## Phase 2A is closed — all five goals verified, real output
+## What was done
 
-| Goal | Check | Result |
-| --- | --- | --- |
-| 1. No hub scrolls the page | `getComputedStyle('#view-<name>').height` per hub | **All six `997.333px`** — a definite value, never `auto` — with `min-height: 0px`, each filling `#canvas-body`'s client height minus its 48px padding **exactly**. `#canvas-body.scrollHeight > clientHeight` **false** on all six. |
-| 2. No `calc(100vh - <constant>)` | `grep -n "calc(100vh" style.css index.html` | **4 hits, all correct**: two comments (`style.css` 221, `index.html` 1044) and the two modal rules (`style.css` 2551, 2555). The three live constants are gone. |
-| 3. `#canvas-header` is a hub band | `getBoundingClientRect().height` on `#sidebar-brand` and `#canvas-header` | **72 and 72, `equal: true`, both `top: 0`** — expanded and collapsed. Tokens resolve `--app-strip-height: 72px`, `--brand-logo-size: 68px`. |
-| 4. Both `.welcome-banner` cards gone | `grep -n "welcome-banner" index.html` | **Zero hits.** The CSS rules survive by Assumption 7; `app.js` retains only a comment. |
-| 5. Hub names are one word | sidebar labels + `titles` map + `data-view` values | **Dashboard / ProspectHub / MediaHub / CampaignHub / TaskHub / DataHub.** All six `data-view` values and all six `body.module-*` classes **unchanged** — contract S4 held. |
+P1, P2 and P3 exist in code, and nothing in the app calls any of it — the view is reachable from the console only, by plan Assumption 3. **The app is exactly as usable as it was before this session.** The old prospect inspector is untouched and is still the only prospect surface a user can reach.
 
-**Frozen contracts S1–S6 all intact at close.** S5's `🧱 HUB SHELL` block runs from `style.css` 3388 to 3681 — it **is** the last thing in the file. `#canvas-body` was never edited and still reports `overflow-y: auto`. `#sidebar` has `border-right: 0` with the rule redrawn as `#sidebar::after` at `top: 72px; width: 1px`.
+- **P1** — `detailProspectId` / `detailOrigin` / `detailTab` at module scope. Not state fields, no `ensureStateDefaults()` entry, no `wipeAllData()` line, no CSV column. Proved not to survive a reload.
+- **P2** — `openProspectDetail(id, origin)` and `closeProspectDetail()`. The close replays all three origin shapes; the unresolvable-id path closes and replays with no placeholder.
+- **P3** — `#view-prospect-detail`, a **seventh `.view-panel`** inside `#main-canvas`. `renderApp()` branch, `switchView()` keeps `#nav-prospects` lit, `body.module-prospect-detail` carries ProspectHub's purple in both themes, back arrow in 2A's header band, prospect name in `#view-subtitle`.
 
-**Screenshotted every hub**, light theme, plus CampaignHub in dark and the collapsed rail. Collapsed rail re-measured: logo `left: 4, right: 72` in a 76px rail, `clipped: false`.
+## Verified — real output, not a claim
 
-## Estimate calibration — Phase 2A vs. the plan
+| Check | Result |
+| --- | --- |
+| Open from `{view:"prospects"}` | `activeView` `"prospect-detail"`, active panel `view-prospect-detail`, `--color-primary` `#6d28d9` (light), `nav-prospects` = `nav-tab active-tab`, title `ProspectHub`, subtitle `Sarah Chen` |
+| Origin replay 1 — prospects | back → `view-prospects`, `detailProspectId` `null`, back arrow re-hidden |
+| Origin replay 2 — tasks | back → `view-tasks` **with the editor open**: `#modal-task` = `modal-overlay` (not hidden), `#task-title` = `"Confirm AV requirements"`, `editingTaskId` = `task-demo-01` |
+| Origin replay 3 — campaigns | `campaignViewSubState` and `selectedAudienceListId` were **deliberately poisoned to `"domains"`/`null` before the back click**; after it they read `"audiences"` / `aud-1788023350145`, audience sub-view shown, domains hidden. Without the poison the test would have passed on a bare `switchView("campaigns")` |
+| Unresolvable id | `openProspectDetail("pros-does-not-exist", …)` → `activeView` `"prospects"`, no placeholder. With a `tasks` origin it replays **that** origin, editor open on `"Send follow-up email"` |
+| Two cursors are independent | `selectProspect("pros-marcus")` then `openProspectDetail("pros-sarah", …)`: `detailProspectId` `pros-sarah`, `state.selectedProspectId` **`pros-marcus` before, during and after**, including after the back click |
+| Reload with `activeView` persisted | `localStorage` held `"prospect-detail"`; boot landed on `view-dashboard`, `nav-dashboard` lit, `detailProspectId`/`detailOrigin` **`null`**, `detailTab` `"interactions"` |
+| Whole-shell sweep, seven panels | Six hubs + the detail panel all report a **definite** height with `min-height: 0px` and `#canvas-body` not scrolling. Six read `997.333px`; **MediaHub reads `977.333px` — pre-existing, see below** |
+| S1 shape, proved not assumed | 80 tagged filler rows into the tab body: body `scrollHeight/clientHeight` `1220/872`, scrolled to `348`; identity block `top` **96 before and 96 after**; `#canvas-body.scrollTop` `0` and not scrolling. Filler removed, `0` synthetic nodes left |
+| Screenshots | Sidebar pinned and unpinned (panel `left` 304 → 100, sidebar 280 → 76, height still `997.333px`), the tab body mid-scroll, and dark theme (`--color-primary` `#8b5cf6`, back arrow and title both `rgb(139,92,246)`) |
+| `check_ids.py` | Run against the re-staged repo file: `{'export-backup-btn', 'restore-backup-input'}` — the standing pair, nothing more |
+| `grep -n "calc(100vh"` | **4 hits, unchanged.** A draft of the new markup comment briefly made it 5 by spelling the literal; reworded into words before commit, per the existing convention |
 
-| | Planned | Forecast (+35%) | **Actual** |
-| --- | :---: | :---: | :---: |
-| Sessions | 6 | 8 | **6** |
-| Michael's attention | ~60 min | ~75 min | **~32 min** |
-| `CACHE_NAME` bumps | ~12 (v84→v96) | — | **11 (v84→v95)** |
+Record counts identical at start, after the sweep and at the end: **4 prospects / 5 companies / 30 media / 31 tasks / 0 campaigns / 1 audience list.**
 
-Per session: 2A.1 **L**/~10 → L/~4 · 2A.2 **M**/~8 → M/~6 · 2A.3 **M**/~6 → M/~0 (unattended) · 2A.4 **M**/~10 → M/~5 · 2A.5 **S**/~6 → **S for the edit, M for the session**/~13 · 2A.6 **M**/~20 → M/~4.
+## Files changed
 
-- **Sizes were right 5 times out of 6.** The miss was 2A.5, sized S because the *edit* was two token values — and it was, but the session around it (mockup artifact, a defect the verification pass found, a review-pass seam fix) ran M. **The lesson is narrower than "inflate S": a session whose deliverable is one number Michael picks by eye is never S, because the picking is the work.**
-- **The session count did NOT overrun, and Phase 1's pattern did not repeat — but read why before trusting it.** The +35% contingency was budgeted against 2A.4 specifically, and 2A.4's review did produce three extra items. They were absorbed *inside* 2A.5 rather than spun out as 2A.7/2A.8, and one more (CampaignHub's double title) was deferred rather than run. **So the count held by absorption and deferral, not because review produced less work.** The honest figure for 2B is that review still generates roughly one session's worth of work per UI-shipping session; whether it shows up in the count depends on whether the next session swallows it.
-- **Attention time came in at ~53% of plan** — the second phase running well under (Phase 1: 88 actual vs 105 predicted). Two phases in the same direction is a pattern, not noise. **The time estimates are systematically high by roughly a third on UI phases.** Do not "correct" them by inflating; the useful read is that a ~60 min phase plan costs Michael ~35.
-- **The bump budget was exactly right.** Two per session predicted v96; actual v95. **Three of six sessions took a third bump, every one of them from the review pass, never from the build being wrong.** Keep the two-per-session budget and keep refusing to record a one-bump win before review.
-- **For 2B, 3 and 4:** keep session sizes as planned, keep the +35% count contingency (it was needed in Phase 1 and only *looked* unnecessary here), and cut planned attention-time figures by about a third when telling Michael what a phase will cost him.
+`app.js`, `index.html`, `style.css`, `sw.js` (v96), `ai/BUILD_NOTES.md`, `ai/AIContext.md`, `ai/archive/2026-08-31_1716_AIContext.md` (new).
 
-## Files changed this session
+**No `ai/DECLARATIONS.md` or `ai/DECISIONS.md` change.** The seventh view panel is an amendment 2B.10 already owes (scope §9) — **propose at close, do not apply mid-phase**, and the "six hubs" line stays true and must not be edited to say seven.
 
-`ai/BUILD_NOTES.md` (curated — see below), `ai/DECLARATIONS.md` (line counts + amendment log), `ai/DECISIONS.md` (two new entries), `ai/AIContext.md` (this file), `ai/archive/2026-08-31_1647_AIContext.md` (new — verified present at 13,871 bytes, byte-identical to the AIContext it replaced).
+## Assumptions logged this session
 
-**NOT deleted, though you approved it: `ai/phases/phase-2-RUNSHEET.md` and `ai/phases/Vantage-Phase-2-Run-Sheet.docx`.** This session had **no shell and no delete capability on the machine** — the device bridge can write a file but cannot remove one. Both are still in the tree carrying their DO-NOT-USE banners. **Delete them by hand alongside the git commit; `ai/phases/phase-2a-RUNSHEET.md` is also disposable now that this close has run.** Same root cause as open item (a): no session in this phase had a shell.
-
-**No code file was opened for edit** — `app.js`, `index.html`, `style.css` and `sw.js` are byte-identical to what 2A.5 left.
-
-## BUILD_NOTES curation — what was cut
-
-Every cut was a line that had become **factually wrong**, which is this file's own stated failure mode ("a stale note is discarded wholesale the moment one grep disproves it, and the true half goes with it").
-
-- **`style.css` 3,659 → 3,681** and **`app.js` "~13,100" → "~13,270"** (two sites) — MAP and the sizing note.
-- **`CACHE_NAME` "last observed v94" → v95.**
-- **"`getBoundingClientRect().height` is 88 on both" → 72.** The most dangerous line in the file: 88 came from the "logo plus 24px padding" derivation that 2A.5 explicitly killed, and the strip is now *shorter* than that padding allowed. Rewritten to say 72, to say 88 is stale, and to record the 72px ceiling on `--brand-logo-size`.
-- **`--hub-tint-strong` (14%) / `--hub-tint-soft` (4%) → 30% / 0%**, with the three-stop sidebar ramp recorded and the note that the soft stop going to **0** is the load-bearing half.
-- **"If `--hub-tint-strong` is ever raised much past 14%, check the active tab"** → rewritten as settled: it *was* raised to 30%, the tab survived, and the structural reason (the strong stop sits at the top where no nav tab does) is now written down instead of the warning.
-- **`vh` grep count 23 → 22** (13 css + 9 html), re-counted.
-- **Two duplicate pairs merged.** The two `Page.captureScreenshot`-times-out entries — the second literally said "this is the same note as the entry above" — became one with the known cause. The `getBoundingClientRect` vs `getComputedStyle` note became a corollary of the backgrounded-tab note it is a special case of, rather than a separate entry a session might read alone.
-- **One entry added:** the whole-shell check as a reusable script (definite `#view-<name>` height is the real contract; `#canvas-body` not scrolling is the weak companion), so the next phase close does not re-derive it.
-- **Plan task 2 needed nothing.** It asked for the three dead `calc(100vh - N)` constants to be recorded. Session 2A.1 already wrote that entry, thoroughly, including the "a fifth hit means someone reintroduced one" test and 2A.2's wider-net caveat. Writing a second copy is exactly what the curation rule forbids. **Verified present, left alone.**
-
-## DECLARATIONS — one correction applied, two amendments PROPOSED not applied
-
-**Applied:** the Stack line counts, re-measured rather than estimated. `style.css` is now larger than `index.html`, which changes how a session sizes a CSS change.
-
-**Proposed, awaiting Michael — neither is in force:**
-
-1. **One-word hub display names**, added to the Conventions block, **extending** the existing Routing warning rather than replacing it: the hubs display as Dashboard / ProspectHub / MediaHub / CampaignHub / TaskHub / DataHub, while `data-management` remains the identifier in all eight of its code sites. The old trap (trusting a declared name of `data`) and the new one (trusting the displayed name `DataHub`) are different mistakes with the same cure, so both notes are wanted.
-2. **The in-app-navigation principle**: all navigation happens inside the app; the address bar and back/forward are not navigation surfaces. This permanently forecloses hash and path routing. **The reason is Gate A, not taste** — production `prospectId` values are email addresses, so a URL-addressable prospect view leaks a live address into the address bar, browser history, autocomplete, and (from Phase 4) server logs and referrer headers.
-
-Reasoning for both is now in `ai/DECISIONS.md` with the rejected alternatives.
+1. **The three containers carry scaffold text.** `renderProspectDetail()` writes one muted line into each, and `style.css` dresses them with a dashed outline. Without it the panel is a blank rectangle and the S1 shape cannot be screenshotted or reviewed. **Reversible and expected to be deleted:** 2B.3 replaces the identity block, 2B.4 the tab strip and the first two bodies, 2B.5 the rest. The dashed-outline rule is commented "Session 2B.1 ONLY".
+2. **The new `app.js` block sits after `§ ✅ RENDER VIEW: TASKHUB` and before `§ 📁 RENDER VIEW: MEDIA MANAGER`**, not beside `renderInspector()`. Placing it there would falsify two MAP entries (the inspector block "immediately after `renderInspector()`", the four task blocks contiguous) to buy nothing.
+3. **`body.module-prospect-detail` copies ProspectHub's four colour values verbatim rather than sharing a token.** The per-hub blocks are a flat greppable list; one indirection for one entry is how that stops being readable. The rule carries a KEEP IN SYNC comment.
+4. **The MAP / DECLARATIONS line counts were left alone** (`app.js` "~13,270" against a real 13,491). Still approximate-and-true; 2B.10 re-measures at the close.
 
 ## Open items
 
-- **⚠️ NEEDS YOUR EYES — (a) is the phase's largest carried risk and it did not improve.**
-  **(a) `git status` is now SIX sessions deep** — 2A.2, 2A.3, 2A.4, 2A.5 and this close are all uncommitted; local `main` still `d282710`, `origin/main` still `ad7568d`, one commit unpushed. **No session in this entire phase had a shell on the machine**, this one included — every file was written through the device bridge, which cannot run git. `git checkout style.css` now discards five sessions of work and is no longer a fallback. **Commit and push before anything else.**
-  **(b) CampaignHub identifies itself TWICE** — the in-page "Outreach Campaign Manager" heading and subtitle still sit directly under a band that already says CampaignHub. Visible in this session's CampaignHub screenshots, both themes. **You chose at this close to record it as deferred rather than run 2A.7.** It is cosmetic, in-compartment for a future UI session, and carried to the 2B backlog.
-  **(c) The Dashboard/DataHub emptiness question from 2A.3 is still unanswered.** `renderDashboardView()`'s `slice(0, 5)` cap is the cause, not the layout.
-  **(d) NOT an open item — resolved before this session ended, recorded because the diagnosis is reusable.** The snapshot chip read **"Not protected"** for most of this session and it looked alarming on the DataHub screenshot. Nothing was wrong: `state.snapshotHealth` read `lastError: null, failed: false` throughout, and `lastMutationAt` was simply newer than `lastConfirmedAt` because the session kept touching the app — every reload and the theme toggle is a mutation, and each one resets the ~2-minute debounce. **Left alone for four minutes it wrote and went green on its own:** `lastConfirmedAt` now leads `lastMutationAt`, chip reads **"Protected"**. **The reusable part: an automated session that reloads repeatedly will hold this chip red for its whole run, and that is the debounce, not a failure. Read `lastError`/`failed` before believing the chip** — and if `lastError` is ever non-null, *then* the File System Access permission needs re-granting.
-- **Carried, unchanged:** MediaHub's tag rail off the right edge (pre-existing, min-content not scroll). `.checkbox-scroller`'s inline `max-height: 350px`. `.tags-filter-scroller`'s `max-height: 400px`. The prospect inspector's squeezed history table (2B replaces it). `state.taskSettings` missing from `wipeAllData()` → **2B.7**. `--color-danger` undefined, six call sites → **2B.3**.
-- **Unchanged from Phase 1:** two Vantage windows overwrite each other (one window at a time); `parseCSVRow()` `""` gap; repo is PUBLIC; DIRECTIVES §0 compliance undecided; stale `..\backups\`; `schema_update.sql` still deletable.
+- **⚠️ NEEDS YOUR EYES — (a) is unchanged and is now SEVEN sessions deep.**
+  **(a) `git status`.** 2A.2–2A.6 and now 2B.1 are all uncommitted. **This session had no shell on the machine either** — every file went through the device bridge, which writes but cannot run git and cannot delete. `git checkout style.css` now discards six sessions. **Commit and push before anything else.**
+  **(b) The back arrow's placement and weight, and the purple.** Both screenshots are above. The arrow sits between the hamburger slot and the 👥 icon, `-6px` left margin so it lines up with the row's optical left edge, `var(--color-primary)` so it tracks the theme. Say if it wants to be heavier, further left, or a different glyph.
+  **(c) The scaffold text.** It exists to be looked at once and then deleted. If the shape reads wrong to you now, it is cheaper to say so before 2B.3 builds the identity block into it.
+- **Carried, unchanged:** CampaignHub identifies itself twice (2A backlog → 2B backlog). Dashboard/DataHub emptiness is `renderDashboardView()`'s `slice(0, 5)`. MediaHub's tag rail off the right edge. `.checkbox-scroller` inline `max-height: 350px`. `.tags-filter-scroller` `max-height: 400px`. The prospect inspector's squeezed history table (2B.6 removes it). `state.taskSettings` missing from `wipeAllData()` → **2B.7**. `--color-danger` undefined, six call sites → **2B.3**.
+- **Unchanged from Phase 1:** two Vantage windows overwrite each other; `parseCSVRow()` `""` gap; repo is PUBLIC; DIRECTIVES §0 compliance undecided; stale `..\backups\`; `schema_update.sql` still deletable. **Also still undeleted:** `ai/phases/phase-2-RUNSHEET.md`, `ai/phases/Vantage-Phase-2-Run-Sheet.docx` and now `ai/phases/phase-2a-RUNSHEET.md` — the bridge cannot remove a file; delete them by hand alongside the commit.
 
 ## Backup coverage — DIRECTIVES §4
 
-**Not a data session, and neither was any session in Phase 2A.** Stated once for the phase: Phase 2A created and modified **no** store of user-writable data — no field, no CSV column, no migration, no `ensureStateDefaults()` or `wipeAllData()` edit, no export or restore function entered. This session opened no code file at all. Record counts identical at start, after a six-hub sweep, and after three reloads: **4 prospects / 5 companies / 30 media / 31 tasks / 0 campaigns / 1 audience list.**
+**Not a data session.** This session created and modified **no** store of user-writable data: no new field, no CSV column, no migration, no `ensureStateDefaults()` or `wipeAllData()` edit, no export or restore function entered. `detailProspectId`, `detailOrigin` and `detailTab` are module scope by contract P1 and are *required* not to persist — proved by reload. The only persisted value this session touches is `state.activeView`, which already existed and which boot overwrites.
 
-## What to back up, and the filename
+**The phase-level gate still fires**, through the carried-in `state.taskSettings` gap. **2B.7 must not reason "no data work → Gate C inert."**
 
-Run **Run Backup / Export Options → full ZIP** from DataHub and store it **outside** the project folder, in `C:\01_AppDevelopment\02_Vantage-Master-Folder\backups-production\`:
+## Next step
 
-**`vantage_backup_2026-08-31_phase-2a-close.zip`**
+**Session 2B.2 has already been run** (2026-08-31, ahead of the plan — the column-layout machinery is generalised and `COLUMN_TABLES` exists with `taskhub` as its only consumer). So the next session is **2B.3 — Identity block: 17 fields, `commitProspectField()`, Delete, `--color-danger`.** Size **L**, ~12 min.
 
-## Next step — Phase 2B, the Prospect Detail View
+**⚠️ 2B.3 is a flagged backup point. Take a manual ZIP before it** — it is the first session in the phase to add a write path to every prospect field. Store it outside the project folder, in `..\backups-production\`.
 
-1. **Commit and push the six outstanding sessions.** Before anything else.
-2. **Take the phase-close ZIP** under the filename above.
-3. **Decide the two proposed `DECLARATIONS.md` amendments** — apply, amend or reject.
-4. **Then Phase 2B.** Its scope `ai/spec/prospect-detail-view-scope.md` is **already approved and its intake is done** — do **not** run an intake for it. It goes straight to **Step 1 of `ai/phases/phase-2b-RUNSHEET.md`** (the planning conversation). Note that **Session 2B.2 has already been run** (2026-08-31, column-layout machinery generalised) ahead of the plan; the planner must account for it rather than re-plan it.
-
-**Carry forward:** the `🧱 HUB SHELL` block must stay LAST in `style.css`. `#canvas-body` is never edited. `state` is not `window.state`. One Vantage window at a time. **The `titles` map's keys are view ids — "data-management" is DISPLAYED as "DataHub" and identified everywhere as `data-management`.** **`--brand-logo-size` cannot exceed 72px** — the 76px rail crops it. **Inject the transition kill-switch after every reload and every theme toggle**, and read `document.getAnimations().length === 0` before trusting any measurement.
+**Carry forward:** the `🧱 HUB SHELL` block must stay LAST in `style.css` — the detail panel's rules are its final entry. `#canvas-body` is never edited. `state` is not `window.state`. One Vantage window at a time. `state.selectedProspectId` and `detailProspectId` are two cursors and **do not converge in this phase**. No routing, ever — prospect ids are email addresses (P9, Gate A). Inject the transition kill-switch after every reload **and every theme toggle**, and read `document.getAnimations().length === 0` before trusting a measurement.

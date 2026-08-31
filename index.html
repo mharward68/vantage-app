@@ -145,6 +145,14 @@
           style="display: flex; flex-direction: column; gap: 2px; align-items: flex-start; justify-content: center;">
           <div style="display: flex; align-items: center; gap: 12px;">
             <button id="sidebar-toggle-btn" aria-label="Toggle Sidebar">☰</button>
+            <!-- Prospect detail view back arrow (Phase 2B / Session 2B.1,
+                 contract P2). It lives in the BAND, not in the panel, so it
+                 never scrolls away. switchView() toggles .hidden on it — it is
+                 shown for exactly one view. It replays detailOrigin and is
+                 deliberately NOT history.back(): this app has no routing, by
+                 contract P9, because prospect ids are email addresses. -->
+            <button id="btn-prospect-detail-back" type="button" class="header-back-btn hidden"
+              aria-label="Back to where this prospect was opened from" title="Back">←</button>
             <!-- Icon and title are both written by switchView(). -->
             <span id="view-icon" aria-hidden="true">📊</span>
             <h1 id="view-title" style="margin: 0; line-height: 1.2;">Dashboard</h1>
@@ -1252,6 +1260,37 @@
               </div>
             </div>
           </div>
+        </section>
+
+        <!-- 7. PROSPECT DETAIL VIEW PANEL (Phase 2B / Session 2B.1, contract P3)
+
+             A SEVENTH .view-panel, NOT A SEVENTH HUB. It is a sibling of the
+             six hub panels inside #canvas-body, which is what makes it stop at
+             the sidebar and reflow with it in both sidebar states with no
+             width calculation anywhere. There is no seventh nav tab and there
+             is not going to be one — #nav-prospects stays lit while this panel
+             is active (switchView()).
+
+             NEVER position: fixed. NEVER a computed left offset. NEVER a
+             hardcoded viewport constant — the three of those that used to be
+             live in this app were deleted in Session 2A.1, and the grep that
+             proves they are gone returns exactly four hits, all comments or
+             modal rules. A fifth means someone reintroduced one. The value is
+             spelled out in words here for that reason and must stay that way.
+
+             SHAPE (Phase 2A contract S1): the panel fills #canvas-body and
+             owns nothing else; the identity block and the tab strip are
+             content-height; the TAB BODY is the one region that scrolls, via
+             the shared .hub-scroll idiom. #canvas-body is not touched.
+
+             The three children are EMPTY OF REAL CONTENT this session and
+             carry scaffold text written by renderProspectDetail(). 2B.3 fills
+             the identity block, 2B.4 the tab strip and the first two tab
+             bodies, 2B.5 the remaining three. -->
+        <section id="view-prospect-detail" class="view-panel">
+          <div id="prospect-detail-identity" class="detail-identity"></div>
+          <div id="prospect-detail-tabs" class="detail-tabstrip"></div>
+          <div id="prospect-detail-body" class="detail-body hub-scroll"></div>
         </section>
 
       </div>

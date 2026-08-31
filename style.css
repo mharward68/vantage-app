@@ -124,6 +124,38 @@ body.module-prospects.light-theme {
   --color-secondary: #c026d3;
 }
 
+/* 2b. Prospect Detail View — Phase 2B / Session 2B.1, contract P3.
+
+   NOT A SEVENTH HUB, and this pair of rules is the reason it does not look
+   like one. updateThemeColors() writes body.module-${state.activeView}
+   generically, so a seventh view id arrives here needing a home whether or
+   not anybody wrote one — without these rules the detail view falls through
+   to :root and the whole shell (the band's color-mix tint, the sidebar ramp,
+   #view-title, every var(--color-primary) control on the screen) loses its
+   hub colour mid-navigation.
+
+   The four values are ProspectHub's OWN, copied verbatim from the block
+   directly above rather than picked: the detail view is a view of a
+   ProspectHub record, so it must read as ProspectHub and not as a new place.
+   KEEP THEM IN SYNC — if ProspectHub's purple is ever retuned, retune both.
+   (Deliberately not solved with a shared token: the per-hub blocks are a flat,
+   greppable list of six, and introducing one indirection for one hub is how
+   that list stops being readable.)
+
+   Note the glow tokens are set in the DARK rule only, matching every hub
+   above — see BUILD_NOTES: the per-hub colour system is only half themed, and
+   anything derived from a glow keeps its dark alpha in light mode. */
+body.module-prospect-detail {
+  --color-primary: #8b5cf6;
+  --color-primary-glow: rgba(139, 92, 246, 0.15);
+  --color-secondary: #d946ef;
+  --color-secondary-glow: rgba(217, 70, 239, 0.15);
+}
+body.module-prospect-detail.light-theme {
+  --color-primary: #6d28d9;
+  --color-secondary: #c026d3;
+}
+
 /* 3. Media Module (Orange) */
 body.module-media {
   --color-primary: #f97316;
@@ -1070,6 +1102,41 @@ body {
   font-size: 22px;
   cursor: pointer;
   display: none; /* Desktop First: Hide hamburger */
+}
+
+/* The prospect detail view's back arrow (Phase 2B / Session 2B.1, contract
+   P2). It sits inside .header-left's inner row, between the hamburger and
+   #view-icon, so it reads as part of the band rather than as something
+   floating over the panel — and being in the band is what keeps it on screen
+   when the tab body scrolls.
+
+   It takes --color-primary, so it is ProspectHub purple here for the same
+   reason #view-title is, and it tracks the light theme for free. Sized to sit
+   on the same optical line as the 22px icon beside it. Focus is visible: an
+   authoring habit from DIRECTIVES §0, not Gate F, and it costs nothing at the
+   moment of writing. */
+.header-back-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-primary);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+  margin-left: -6px;   /* pull the glyph back to the row's optical left edge */
+  border-radius: var(--border-radius-sm);
+  flex: 0 0 auto;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.header-back-btn:hover {
+  background-color: var(--color-primary-glow);
+  transform: translateX(-2px);
+}
+
+.header-back-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 /* The hub's name, at #brand-name's size so the band and the sidebar logo read
@@ -3678,4 +3745,69 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
    permission is missing. `.hub-scroll` on the card supplies the overflow. */
 #view-data-management .dashboard-list-card {
   min-height: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Prospect Detail View — Phase 2B / Session 2B.1 (frozen contract P3)
+
+   The SEVENTH .view-panel, and the first entry in this block that is not a
+   hub. That changes nothing about the idiom: it fills #canvas-body exactly,
+   it owns its own overflow, and #canvas-body is not touched. "Six hubs" in
+   DECLARATIONS stays true — this is a view panel, not a hub.
+
+   Placed here, at the end of the 🧱 HUB SHELL block, because that is where
+   contract S5 says every entry of this kind lives and because being last in
+   the file is what lets `.hub-scroll` beat `.table-scroll-container`'s own
+   overflow/flex-grow at equal specificity with no prefix. Nothing is appended
+   to style.css after this block except further entries IN it.
+
+   THE SHAPE, three layers, and every one of them is load-bearing:
+     · the panel is height:100% / min-height:0 — a definite height, never
+       auto, which is the actual contract (verify by reading
+       getComputedStyle('#view-prospect-detail').height, not by checking
+       whether #canvas-body happens to scroll: a short panel passes that check
+       while owning none of the shape);
+     · the identity block and the tab strip are flex:0 0 auto, so they are
+       content-height and stay put;
+     · the tab body is `.hub-scroll` — the shared idiom, NOT a variant. It is
+       the ONE scrolling region in this panel.
+
+   min-height:0 appears at every level for the usual reason: a flex child
+   defaults to min-height:auto and refuses to shrink below its content, so one
+   missing declaration anywhere in the chain makes the panel grow instead of
+   the body scrolling — and the symptom points at the scroll container, which
+   is not where the fault is.
+
+   The three visual rules below (padding, muted colour, dashed outline) dress
+   SCAFFOLD content only. Sessions 2B.3 / 2B.4 / 2B.5 replace the contents of
+   these containers; the dashed outline goes with them.
+   -------------------------------------------------------------------------- */
+#view-prospect-detail {
+  height: 100%;
+  min-height: 0;
+  gap: 12px;   /* not .view-panel's 24px: this panel has three stacked bands
+                  and one screen to spend, the same trade as #view-campaigns */
+}
+
+#view-prospect-detail .detail-identity,
+#view-prospect-detail .detail-tabstrip {
+  flex: 0 0 auto;
+}
+
+/* .detail-body carries `.hub-scroll` in the markup, which already supplies
+   flex:1 1 auto, min-height:0 and overflow-y:auto. There is deliberately no
+   second rule here restating any of that — one .hub-scroll per visible
+   region, and no hub (or panel) invents a variant.
+
+   Scaffold dressing — Session 2B.1 ONLY. It makes the three empty containers
+   visible so the S1 shape can be screenshotted and reviewed. Delete this rule
+   along with the placeholder text it dresses. */
+#view-prospect-detail .detail-identity,
+#view-prospect-detail .detail-tabstrip,
+#view-prospect-detail .detail-body {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--border-radius-md);
+  padding: 16px;
+  color: var(--color-text-muted);
+  font-size: 13px;
 }
