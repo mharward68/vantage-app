@@ -22,7 +22,54 @@
 
   --font-display: 'Outfit', 'Inter', sans-serif;
   --font-body: 'Inter', sans-serif;
-  
+
+  /* App strip — frozen contract S6, written by Session 2A.4.
+     ONE height, read by both #sidebar-brand and #canvas-header. Neither
+     hardcodes the other's value, and no view panel references it at all.
+
+     BOTH NUMBERS WERE CHOSEN BY EYE IN SESSION 2A.5 (2026-08-31), which is
+     the only thing this pair has ever been decided by. 2A.4 shipped 88/40
+     as a placeholder — 88 was simply what #sidebar-brand already measured
+     (a 40px logo with 24px above and below) so that the header could rise
+     to meet the sidebar without the sidebar moving. That derivation is
+     HISTORY, not a rule: the strip is now SHORTER than the logo's old
+     padding allowed and the logo is much larger, so do not reason from 88
+     or 40 again.
+
+     The two values stay deliberately LITERAL rather than calc()-coupled.
+     At 68/72 they are only 4px apart — 2px of clearance above and below —
+     so a derived relationship would be carrying almost no information and
+     would make either number impossible to nudge on its own.
+
+     THE BINDING CONSTRAINT IS THE COLLAPSED RAIL, NOT THE STRIP. #sidebar
+     collapses to 76px when unpinned and unhovered, and #sidebar-brand drops
+     its 24px side padding there, so the logo has 4px either side at 68px.
+     68 is the practical ceiling; the app-shell scope's guidance of "around
+     56px is safe, past roughly 64px it gets tight" was written before the
+     strip shrank and describes a more conservative fit than the one chosen.
+     Raising --brand-logo-size past 68 without widening the rail crops it. */
+  --app-strip-height: 72px;
+  --brand-logo-size: 68px;
+
+  /* Hub tint strength — the TWO stops of the hub-coloured chrome, in one
+     place. Both the #canvas-header band and the #sidebar column mix these
+     against the live --color-primary, so the whole shell is one pair of
+     numbers to tune rather than four.
+
+     Set to 30% → 0% in Session 2A.5, from the screen, answering the open
+     item 2A.4 left. 2A.4's 14% → 4% was a first guess and read as almost
+     nothing on Dashboard's blue in light theme. The SOFT stop is now 0%:
+     the far end of each gradient is fully transparent, so the strong end
+     can carry real colour without the whole surface turning into a wash.
+     That is the trade — a steeper ramp, not a uniformly bolder shell.
+
+     At 30% the warning in the #sidebar block below is live, not theoretical:
+     .nav-tab.active-tab marks itself with --color-primary-glow on what is
+     now a strongly same-hue background. It still reads on its other three
+     markers. Check it in a screenshot before raising this further. */
+  --hub-tint-strong: 30%;
+  --hub-tint-soft: 0%;
+
   --backdrop-blur: blur(16px);
   --border-radius-lg: 16px;
   --border-radius-md: 10px;
@@ -554,30 +601,137 @@ body {
 /* ==========================================================================
    SIDEBAR LAYOUT
    ========================================================================== */
+/* The sidebar carries the hub colour too (2026-08-31, Michael's call at the
+   2A.4 review). Same derivation as the #canvas-header band and deliberately
+   the same two stops, so the shell reads as one coloured surface rather than
+   a tinted header next to a neutral column:
+
+   - VERTICAL, strong at top, and HELD AT FULL STRENGTH FOR THE FIRST
+     --app-strip-height BEFORE IT BEGINS TO FADE (the three-stop ramp below;
+     Session 2A.5 review). The header's gradient runs horizontally, so along
+     the seam it sits at --hub-tint-strong for the strip's whole 72px. A
+     plain two-stop vertical ramp does not: it starts decaying immediately
+     and by the bottom of the strip had fallen to 27.5% against the header's
+     30% — measured as a 1/5/2 RGB wedge, faint but the kind of thing the eye
+     reads as a join. Holding the strong stop to the strip height makes the
+     two gradients identical down the entire seam, and the decay becomes what
+     it should be: a property of the COLUMN below the band, not of the band.
+     Fading downward also leaves the bottom of the column nearly untinted,
+     which is where the red Wipe Data / Reset Sandbox controls and the
+     snapshot chip live — a flat tint at full strength fights all three.
+   - background-IMAGE again, so --color-sidebar-bg and its .light-theme value
+     are untouched underneath and this stays one declaration, not two themed
+     rules. Same reasoning as the header block; see it for why the tint is
+     mixed from --color-primary rather than --color-primary-glow.
+   - The gradient is vertical, so the 280px→76px collapse does not stretch or
+     reposition it. Widths change; the ramp does not.
+
+   NOTE the interaction with `.nav-tab.active-tab`, which marks the active hub
+   with --color-primary-glow behind --color-primary text. That glow sits on a
+   background of the same hue, so it carries less of the signal than it used
+   to — the active tab still reads because it has THREE other markers (the
+   inset 4px primary bar, the primary text colour, weight 600).
+
+   THE TINT HAS SINCE BEEN RAISED TO 30% (Session 2A.5), and this is the
+   reason the ramp is now 30% → 0% rather than a flat 30%: the strong stop
+   is at the TOP, where #sidebar-brand sits and no nav tab does, and it has
+   decayed substantially by the time it reaches the tabs. Verified by
+   screenshot at 30/0 in both themes across all six hubs. Raise it further
+   and the active tab is the thing that breaks first — check it there. */
 #sidebar {
   width: 280px;
   background-color: var(--color-sidebar-bg);
-  border-right: 1px solid var(--color-border);
+  background-image: linear-gradient(180deg,
+      color-mix(in srgb, var(--color-primary) var(--hub-tint-strong), transparent) 0,
+      color-mix(in srgb, var(--color-primary) var(--hub-tint-strong), transparent) var(--app-strip-height),
+      color-mix(in srgb, var(--color-primary) var(--hub-tint-soft), transparent) 100%);
+  /* NO border-right. See THE UNBROKEN STRIP below — the vertical rule is
+     drawn by #sidebar::after so that it can START at the bottom of the band
+     instead of running up through it. position: relative is what that
+     pseudo-element is positioned against and is the only reason it is here;
+     #sidebar's z-index worked without it (z-index applies to flex items). */
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   z-index: 100;
   overflow: hidden;
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.4s ease;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.4s ease, background-image 0.4s ease;
 }
 
+/* ==========================================================================
+   THE UNBROKEN STRIP — Session 2A.5 (Michael's call, 2026-08-31)
+
+   The top strip is ONE bar. Nothing divides it — no vertical rule crossing
+   it at x=280, no horizontal rule running along its underside inside the
+   sidebar half. The two lines that do exist start where the band ends:
+
+       ┌──────────────────────────────────────────┐
+       │  logo   Vantage      🗄️  DataHub          │  ← the band, no lines
+       ├──────────────┐- - - - - - - - - - - - - -   ← #canvas-header's
+       │              │                              border-bottom, CANVAS
+       │   sidebar    ┆  hub panel                   HALF ONLY
+       │              ┆ ← #sidebar::after, STARTS at --app-strip-height
+       └──────────────┴──────────────────────────────
+
+   They meet at one corner and neither continues past it. Two edits make it:
+
+   1. #sidebar-brand's border-bottom is GONE (see its rule below).
+   2. #sidebar's border-right is GONE, redrawn here as a pseudo-element
+      inset from the top by --app-strip-height.
+
+   WHY A PSEUDO-ELEMENT rather than moving the border onto #sidebar-nav and
+   #sidebar-settings: those are two boxes today and a third would be a third
+   edit, whereas this is one rule that reads the same token the band does —
+   change the strip height and the rule follows it with no second number to
+   keep in sync. It also leaves the sidebar's own box geometry alone.
+
+   WIDTH IS UNCHANGED. box-sizing is border-box, so the deleted 1px border
+   sat INSIDE the declared 280px; the pseudo-element sits inside that same
+   280px at right: 0. The line lands on exactly the pixel column it used to.
+   The 76px collapsed rail is unaffected for the same reason.
+
+   The rule does not fade with the tint — it is --color-border, the same
+   neutral every other divider in the app uses, in both themes.
+   ========================================================================== */
+#sidebar::after {
+  content: "";
+  position: absolute;
+  top: var(--app-strip-height);
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-border);
+  pointer-events: none;
+}
+
+/* S6 (Session 2A.4): the strip height comes from --app-strip-height and the
+   vertical padding is gone, so this box and #canvas-header are the same
+   height by construction rather than by two numbers that agree today.
+   box-sizing is border-box globally, so a border on either box would sit
+   inside the token's value — which is what makes the 2A.5 check
+   (getBoundingClientRect().height equal on the two) mean something whether
+   or not either one has a border.
+
+   ITS border-bottom IS GONE (Session 2A.5). It used to run the width of the
+   sidebar at exactly the y where #canvas-header's own border-bottom starts,
+   so the two read as one line cutting the whole app in half and dividing a
+   band that is supposed to be a single bar. #canvas-header keeps its border
+   — that one spans the canvas only and is wanted. See THE UNBROKEN STRIP
+   above; do not reinstate this border without reading it. */
 #sidebar-brand {
-  padding: 24px;
+  height: var(--app-strip-height);
+  flex: 0 0 auto;
+  padding: 0 24px;
   display: flex;
   align-items: center;
   gap: 12px;
-  border-bottom: 1px solid var(--color-border);
   transition: padding 0.3s ease, justify-content 0.3s ease;
 }
 
 .brand-logo-container {
-  width: 40px;
-  height: 40px;
+  width: var(--brand-logo-size);
+  height: var(--brand-logo-size);
   flex-shrink: 0;
   background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
   -webkit-mask-image: url('assets/vantag-V_no-bg.png');
@@ -698,7 +852,22 @@ body {
 /* Brand layout centering when collapsed */
 #sidebar:not(.sidebar-pinned):not(:hover) #sidebar-brand {
   justify-content: center;
-  padding: 24px 0;
+  /* Horizontal only — the height is the S6 token's job now, and a vertical
+     value here would put the collapsed strip out of line with the header. */
+  padding: 0;
+  /* gap: 0 IS LOAD-BEARING, not tidying (Session 2A.5). #sidebar-brand's
+     expanded `gap: 12px` still applies to the collapsed flex line even
+     though #brand-name is width: 0 there — gap is charged between items
+     regardless of their size. So the line measures logo + 12 + 0, and once
+     --brand-logo-size passed 64px that exceeded the 76px rail: centring an
+     overflowing line puts its start at a NEGATIVE offset and #sidebar's
+     `overflow: hidden` crops the left edge of the logo. Measured at 68px
+     before this rule existed: logo.left = -2, logo.right = 66, 2px shaved
+     off the left and 10px of dead space on the right. With gap: 0 it is
+     left = 4, right = 72 — properly centred, 4px either side. This is why
+     .nav-tab and .sidebar-action-btn zero their gaps here too; the brand
+     box was the one collapsed row that had never needed it. */
+  gap: 0;
 }
 
 /* Navigation tab centering when collapsed */
@@ -820,20 +989,72 @@ body {
   background-color: var(--color-base);
 }
 
+/* ==========================================================================
+   THE HUB BANNER BAND — Session 2A.4 (phase goal 3, contracts S2/S3/S6)
+
+   #canvas-header stopped being a title bar and became the band that the two
+   hardcoded .welcome-banner cards used to be. Three things make it work and
+   each of them is load-bearing:
+
+   1. HEIGHT COMES FROM THE TOKEN (S2). The inline `min-height: 80px` and
+      `padding: 12px 24px` that used to sit on this element in index.html are
+      DELETED — an inline value beats a custom property and would silently
+      reinstate the offset the token exists to remove. If the strip ever
+      looks 8px short again, look for an inline style before touching this.
+
+   2. THE TINT IS DERIVED FROM --color-primary, NOT WRITTEN PER HUB (S3).
+      color-mix() against the live token means the band recolours itself from
+      the same variable updateThemeColors() already sets via body.module-<view>,
+      and it tracks the SEPARATE .light-theme value of that token for free.
+      --color-primary-glow was the obvious alternative and is the wrong one:
+      the per-hub blocks set it only in their dark rules, so a glow-based band
+      would keep dark-theme alphas in light mode. Nothing here names a colour.
+
+   3. THE TINT IS A background-image, NOT a background-color, so the ground
+      underneath stays a single named token and the band is one declaration
+      rather than two themed rules.
+
+   4. THE GROUND IS --color-sidebar-bg, NOT --color-base (Session 2A.5 review).
+      This is the whole reason the strip reads as one bar and it is not
+      cosmetic. Until this fix the header sat on a translucent
+      rgba(244,245,247,.25) over #main-canvas's #f4f5f7 — which composites to
+      #f4f5f7 exactly, blending a colour with itself — while the sidebar sat
+      on #eaecef. **A 10/9/8 RGB step, right down the seam, in light theme.**
+      Dark theme hid it completely (#0c0c0e vs #09090b is a step of 3) which
+      is why it survived the twelve-screenshot sweep and was caught by eye
+      afterwards. Both halves of the strip now sit on the SAME token, so the
+      step is zero in both themes by construction rather than by two values
+      that happen to agree. The .light-theme override this rule used to carry
+      is deleted — the token already differs per theme.
+
+      backdrop-filter went with it. An opaque background makes a backdrop
+      blur inert, and nothing scrolls under this element anyway: #canvas-body
+      is its flex SIBLING, not content passing beneath it. Leaving the
+      declaration would have been a fossil that costs a future session a
+      read. The --backdrop-blur token has seven other live users and stays.
+   ========================================================================== */
 #canvas-header {
-  padding: 18px 24px;
+  height: var(--app-strip-height);
+  flex: 0 0 auto;
+  padding: 0 24px;
   border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background-color: rgba(9, 9, 11, 0.25);
-  backdrop-filter: var(--backdrop-blur);
+  background-color: var(--color-sidebar-bg);
+  background-image: linear-gradient(90deg,
+      color-mix(in srgb, var(--color-primary) var(--hub-tint-strong), transparent),
+      color-mix(in srgb, var(--color-primary) var(--hub-tint-soft), transparent));
   z-index: 50;
-  transition: border-color 0.4s ease;
+  transition: border-color 0.4s ease, background-color 0.4s ease, background-image 0.4s ease;
 }
 
-.light-theme #canvas-header {
-  background-color: rgba(244, 245, 247, 0.25);
+/* The hub's icon. Same six emoji as the sidebar nav, driven from switchView()
+   so there is one map of six entries and not a second copy in the markup. */
+#view-icon {
+  font-size: 22px;
+  line-height: 1;
+  flex: 0 0 auto;
 }
 
 .header-left {
@@ -851,11 +1072,16 @@ body {
   display: none; /* Desktop First: Hide hamburger */
 }
 
+/* The hub's name, at #brand-name's size so the band and the sidebar logo read
+   as one strip. #brand-name fills itself with a primary→secondary gradient;
+   the band uses a SOLID var(--color-primary) instead — a gradient behind a
+   tinted band of the same hue loses its second stop and reads as mush. */
 #view-title {
   font-family: var(--font-display);
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
   letter-spacing: -0.5px;
+  color: var(--color-primary);
 }
 
 .header-right {
@@ -3256,10 +3482,28 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   flex: 0 0 auto;
 }
 
-/* The wrapper around the two tables takes whatever the header leaves. */
+/* The wrapper around the two tables takes whatever the header leaves.
+
+   padding-inline added 2026-08-31 on Michael's report that "Export CSV" was
+   falling out of the window. It was not falling out — it was FLUSH.
+   `.prospects-directory-card` has `padding: 0` and `overflow: hidden`; the
+   search/filter row above supplies its own `padding: 20px`, which is why that
+   row looks correctly inset while everything below it ran edge to edge. The
+   Export CSV button is the right-most thing in the wrapper, so it landed
+   exactly on the card's border and read as clipped.
+
+   Measured A/B per this file's runtime-override technique: with every 2A.2 and
+   2A.4 rule force-disabled the button's right edge sat at 1245 against a card
+   ending at 1245 (0px), and with them on it sat at 1244 (1px). PRE-EXISTING,
+   and the phase had made it 1px better. Not caused by the scroll conversion.
+
+   20px is not an invented number — it is the header row's own padding, so the
+   "Contacts (0)" heading now lines up under the search box and the Export CSV
+   button under the buttons above it, instead of both hanging 20px wider. */
 #view-prospects .prospect-directory-tables {
   flex: 1 1 auto;
   min-height: 0;
+  padding-inline: 20px;
 }
 
 /* Each table section is a flex column so its own <h4>/Export row stays put and
@@ -3350,5 +3594,88 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 }
 
 #view-media .media-hub-left {
+  min-height: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Dashboard and DataHub — Session 2A.3
+
+   These two hubs are the same shape — a `.dashboard-split-grid` of
+   `.dashboard-list-card`s — so the conversion is one decision applied twice.
+   `.stats-grid` is Dashboard's only extra row and it keeps its natural height.
+   (Both hubs also had a hero card above the grid when 2A.3 wrote this block;
+   Session 2A.4 removed both and absorbed them into the #canvas-header band.)
+
+   `.dashboard-split-grid` IS SHARED by both hubs and is written once
+   and is written ONCE, unprefixed, per the plan. Nothing else in the app uses
+   it — TaskHub's panel is a `.dashboard-list-card`, not a split grid.
+
+   `grid-auto-rows: minmax(0, 1fr)` is the load-bearing line and it looks
+   optional. An implicit `auto` row is `minmax(min-content, max-content)`:
+   `align-content: stretch` only hands it LEFTOVER space, so a row whose
+   content is taller than the panel grows past it and the cards never get a
+   bounded box to scroll inside — the identical symptom to a missing
+   min-height:0, arrived at from grid instead of flex. `minmax(0, 1fr)` makes
+   every row exactly its share of the container. `grid-auto-rows` rather than
+   `grid-template-rows` because below 900px the grid stacks to one column and
+   TWO rows; template-rows would size only the first.
+
+   THE SCROLL REGION IS DIFFERENT IN THE TWO HUBS, ON PURPOSE.
+   Dashboard's cards are `<h3>` + one feed list, so the list scrolls and the
+   heading stays put. DataHub's cards are a heading followed by six loose
+   children with no wrapper, so the CARD itself scrolls; the alternative was
+   inventing a wrapper div inside markup that is almost entirely inline
+   styles, or a sticky h3 over a padded scrollport (BUILD_NOTES: sticky does
+   not cover a container's padding-top). Both are one class in index.html and
+   no structural change, which is the rung-1 call.
+   -------------------------------------------------------------------------- */
+#view-dashboard {
+  height: 100%;
+  min-height: 0;
+  /* gap left at .view-panel's 24px: the banner, the stats row and the split
+     grid are three separate cards and 24px is what already separated them. */
+}
+
+#view-data-management {
+  height: 100%;
+  min-height: 0;
+  /* gap left at .view-panel's 24px, same reason. */
+}
+
+/* The row above the split grid keeps its natural height and never shrinks.
+   Session 2A.4 trimmed two selectors out of this rule — both hubs' hero cards
+   were removed from index.html and absorbed into the #canvas-header band, so
+   the selectors named markup that no longer exists. The base rules for that
+   class are still in this file (plan Assumption 7); only the two dead
+   view-prefixed flex selectors went. DataHub now has nothing above its split
+   grid at all, which is why it is no longer named here. */
+#view-dashboard .stats-grid {
+  flex: 0 0 auto;
+}
+
+/* Shared by both hubs — written once. See the note above. */
+.dashboard-split-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+/* Dashboard: the card is a flex column, its <h3> stays, its feed scrolls.
+   Prefixed because .dashboard-list-card is also DataHub's two cards and
+   TaskHub's whole panel, both of which already set display:flex inline. */
+#view-dashboard .dashboard-list-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#view-dashboard .dashboard-list-card h3 {
+  flex: 0 0 auto;
+}
+
+/* DataHub: the card itself is the one scroll region. It already carries
+   `display:flex; flex-direction:column; gap:16px` inline; only the shrink
+   permission is missing. `.hub-scroll` on the card supplies the overflow. */
+#view-data-management .dashboard-list-card {
   min-height: 0;
 }

@@ -60,19 +60,19 @@
         <!-- Prospect Database View Tab -->
         <button id="nav-prospects" class="nav-tab" data-view="prospects">
           <span class="tab-icon">👥</span>
-          <span class="tab-label">Prospect Hub</span>
+          <span class="tab-label">ProspectHub</span>
         </button>
 
         <!-- Media Manager View Tab -->
         <button id="nav-media" class="nav-tab" data-view="media">
           <span class="tab-icon">📁</span>
-          <span class="tab-label">Media Hub</span>
+          <span class="tab-label">MediaHub</span>
         </button>
 
         <!-- Campaign Manager View Tab -->
         <button id="nav-campaigns" class="nav-tab" data-view="campaigns">
           <span class="tab-icon">🎯</span>
-          <span class="tab-label">Campaign Hub</span>
+          <span class="tab-label">CampaignHub</span>
         </button>
 
         <!-- TaskHub View Tab (Phase 1 / Session 1.5, contract C9) -->
@@ -84,7 +84,7 @@
         <!-- Data Management View Tab -->
         <button id="nav-data-management" class="nav-tab" data-view="data-management">
           <span class="tab-icon">🗄️</span>
-          <span class="tab-label">Data Management</span>
+          <span class="tab-label">DataHub</span>
         </button>
       </nav>
 
@@ -134,13 +134,20 @@
     <!-- Main Content Work Canvas -->
     <main id="main-canvas">
 
-      <!-- Header Bar -->
-      <header id="canvas-header" style="padding: 12px 24px; align-items: center; min-height: 80px;">
+      <!-- Hub banner band (Session 2A.4). This element used to carry an inline
+           minimum height of eighty pixels, plus twelve-by-twenty-four padding.
+           Both are GONE on purpose — contract S6: the strip height is
+           --app-strip-height, and an inline value beats a custom property.
+           Do not put either back. The numbers are spelled out in words so they
+           do not turn up in the grep that proves they are gone. -->
+      <header id="canvas-header">
         <div class="header-left"
           style="display: flex; flex-direction: column; gap: 2px; align-items: flex-start; justify-content: center;">
-          <div style="display: flex; align-items: center; gap: 16px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
             <button id="sidebar-toggle-btn" aria-label="Toggle Sidebar">☰</button>
-            <h1 id="view-title" style="margin: 0; line-height: 1.2;">Vantage Hub</h1>
+            <!-- Icon and title are both written by switchView(). -->
+            <span id="view-icon" aria-hidden="true">📊</span>
+            <h1 id="view-title" style="margin: 0; line-height: 1.2;">Dashboard</h1>
           </div>
           <span id="view-subtitle"
             style="font-size: 12px; color: var(--color-text-muted); display: none; line-height: 1.4; margin-top: 4px; font-weight: 500;"></span>
@@ -155,11 +162,12 @@
 
         <!-- 1. DASHBOARD VIEW PANEL -->
         <section id="view-dashboard" class="view-panel active-panel">
-          <!-- Welcome Hero Banner -->
-          <div class="welcome-banner">
-            <h2>Welcome back to <span class="brand-text-inject">Vantage PRM</span></h2>
-            <p>Accelerating your media reach, outreach campaigns, and prospect pipelines from one unified desk.</p>
-          </div>
+          <!-- The welcome hero card was removed in Session 2A.4 and absorbed
+               into the #canvas-header band. Its copy survives as
+               subtitles.dashboard in switchView(). Its CSS rules were LEFT in
+               style.css (plan Assumption 7) — search that file for the class,
+               which is deliberately not named here so it does not turn up in
+               the grep that proves this markup is gone. -->
 
           <!-- Statistics Grid -->
           <div class="stats-grid">
@@ -190,7 +198,7 @@
             <!-- Left Side: Recent Interaction Feed -->
             <div class="dashboard-list-card">
               <h3>Recent Reachout Interactions</h3>
-              <div id="dashboard-recent-reachouts" class="recent-feed">
+              <div id="dashboard-recent-reachouts" class="recent-feed hub-scroll">
                 <!-- Dynamically populated list of reachouts -->
               </div>
             </div>
@@ -198,7 +206,7 @@
             <!-- Right Side: Top Media engagement -->
             <div class="dashboard-list-card">
               <h3>High Performing Media Content</h3>
-              <div id="dashboard-top-media" class="media-ranking-list">
+              <div id="dashboard-top-media" class="media-ranking-list hub-scroll">
                 <!-- Dynamically populated media rankings -->
               </div>
             </div>
@@ -1117,16 +1125,16 @@
 
         <!-- 6. DATA MANAGEMENT VIEW PANEL -->
         <section id="view-data-management" class="view-panel">
-          <div class="welcome-banner"
-            style="background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(6, 182, 212, 0.1)); padding: 24px;">
-            <h2>🗄️ Vantage Data Management Hub</h2>
-            <p>Export database tables individually as standard CSV files, download a complete multi-table ZIP package,
-              or load backups to clear and restore tables.</p>
-          </div>
+          <!-- Hero card removed in Session 2A.4, absorbed into the
+               #canvas-header band. Its inline gradient was indigo→cyan on a RED
+               hub — copied from the Dashboard and never recoloured, which is
+               half the reason six hubs identifying themselves two different
+               ways had to end. Its copy is already subtitles["data-management"]
+               in switchView() and was not duplicated here. -->
 
           <div class="dashboard-split-grid" style="grid-template-columns: 1fr 1fr;">
             <!-- Left Side: Backup / Export Options -->
-            <div class="dashboard-list-card" style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="dashboard-list-card hub-scroll" style="display: flex; flex-direction: column; gap: 16px;">
               <h3>📦 Database Backups & Exports</h3>
               <p style="font-size: 13px; color: var(--color-text-muted); line-height: 1.5; margin-bottom: 8px;">Download
                 a complete ZIP package containing prospects, media card outlines, campaign records, and company
@@ -1217,7 +1225,7 @@
             </div>
 
             <!-- Right Side: Restore Database -->
-            <div class="dashboard-list-card" style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="dashboard-list-card hub-scroll" style="display: flex; flex-direction: column; gap: 16px;">
               <h3>📂 Complete Database Restore</h3>
               <p style="font-size: 13px; color: var(--color-text-muted); line-height: 1.5;">Select a previously exported
                 <strong>ZIP backup package</strong> or a <strong>single table CSV</strong> (e.g.

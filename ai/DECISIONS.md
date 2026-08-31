@@ -371,3 +371,31 @@ The codebase is months old, not years. There is no decade of edge cases to lose.
    **This is not licence to abandon compartments.** A session still puts out-of-compartment work in the backlog rather than fixing it on sight — the standard governs *how* something is built when it is built, not *when*. Concretely, it converts the two known workarounds-in-place from "carried indefinitely" to "fixed properly in Phase 2": `state.taskSettings` missing from `wipeAllData()`, and `--color-danger` undefined across six call sites.
 
 5. **The handoff mechanism is recorded so it is not reinvented.** When commercialisation is on the table, the standing documents and the code are handed to a fresh planning conversation, which produces a build plan for the enterprise version. The multi-user problems are solved there, with the benefit of a year of real use. **That is why the standing files are the asset and must stay true** — they are the input to that conversation, and a stale one silently degrades the plan it produces.
+
+---
+
+## 2026-08-31 — Hub display names are one word, and view ids are not display names
+
+**Chose:** the six hubs display as **Dashboard, ProspectHub, MediaHub, CampaignHub, TaskHub, DataHub**, in the sidebar nav labels and in `switchView()`'s `titles` map. **View ids, `data-view` values, panel ids and `body.module-*` class names are untouched** — this was frozen as contract S4 of the Phase 2A plan and held through all six sessions.
+
+**The consequence that needs writing down, because it is a trap rather than a preference:** `data-management` is **displayed as "DataHub" and identified everywhere in code as `data-management`**. The panel is `#view-data-management`, the class is `body.module-data-management`, the `titles` key is `"data-management"`. A session that trusts the displayed name and greps for `dataHub` or `#view-datahub` finds nothing and concludes the hub is missing. `DECLARATIONS.md`'s Routing line already carries a version of this warning about the older "Data Management" name; the amendment proposed at this close **extends** that note rather than replacing it, because the old failure mode (trusting a declared name of `data`) and the new one (trusting the displayed name `DataHub`) are different mistakes with the same cure.
+
+**Rejected — renaming the ids to match.** Eight code sites for `data-management` alone, across three files, for a rename that buys consistency in exactly the place where a mismatch is already documented. It is a Gate B non-issue (nothing is foreclosed) and loses on Ladder 3, Simplicity: the rename is more edits than the note.
+
+**Rejected — leaving the two-word names.** The names are the reason two of the six hubs carried a `.welcome-banner` card *and* a header title while the other four carried only the title. Absorbing the card into the band required the band to be able to say the hub's name in the space available, which two-word names did not survive.
+
+---
+
+## 2026-08-31 — All navigation happens inside the app; the address bar is not a navigation surface
+
+**Chose:** Vantage navigates through `switchView()` and in-page controls only. **The browser's address bar, back button and forward button are not navigation surfaces**, and no view, record or sub-tab is addressable by URL. Set by Michael on 2026-08-30 during the Phase 2 intake; recorded here at the Phase 2A close.
+
+**What it forecloses, permanently:** hash routing (`#/prospects/jane@example.com`), path routing, and any "deep link to this record" feature. This is the point of writing it down — each of those is a reasonable-sounding suggestion that a future session would otherwise cost a day of work before someone remembered why it was not done.
+
+**Why, and the reason is Gate A rather than taste:** production `prospectId` values **are email addresses** (recorded in `BUILD_NOTES.md`, confirmed against real data 2026-08-30). Any URL-addressable prospect view puts a live prospect's email address into the address bar, into browser history, into the autocomplete dropdown, and — the moment Vantage is hosted in Phase 4 — into server access logs and any referrer header the page emits. `DIRECTIVES.md` §0 records that this app holds contact data on people who never opted in. **Routing would leak it through five channels that have nothing to do with the database, and no amount of care in the app closes any of them.**
+
+**Rejected — hash routing with opaque ids.** It would work, and it costs an id-to-slug map, a migration for every existing record, and a second identity for every prospect to keep in sync forever. It solves a problem created by a feature nobody asked for. Ladder 3.
+
+**Rejected — leaving this unstated.** It was a spoken preference for a day, and a spoken preference is not something a future session can read. The whole reason `DECLARATIONS.md` exists is that "Michael mentioned it once" does not survive a context rotation.
+
+**Cost accepted, honestly:** refresh always lands on the Dashboard, and the back button leaves the app. Both are correct for a single-operator tool that runs as an installed PWA, where there is no address bar visible anyway. **If Vantage is ever commercialised this decision should be revisited under the rebuild** — a multi-tenant product with shareable views has different requirements and a different id scheme, which is exactly the kind of question the 2026-08-30 commercial-path entry hands to a fresh planning conversation.

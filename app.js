@@ -3019,26 +3019,49 @@ function switchView(viewName) {
   // Dynamic colors: apply appropriate CSS variables
   updateThemeColors();
 
-  // Title Bar Header rename
+  // The hub banner band (Session 2A.4). These are DISPLAY NAMES only —
+  // contract S4: the keys are the view ids and they never change. In
+  // particular "data-management" is DISPLAYED as "DataHub" and is still
+  // identified everywhere in this codebase as "data-management": the panel id
+  // #view-data-management, the data-view attribute, and body.module-data-management.
+  // A session that renames the key to match the label breaks routing, theming
+  // and the panel lookup in one edit.
   const titles = {
     "dashboard": "Dashboard",
-    "prospects": "Prospect Hub",
-    "media": "Media Hub",
-    "campaigns": "Campaign Hub",
+    "prospects": "ProspectHub",
+    "media": "MediaHub",
+    "campaigns": "CampaignHub",
     "tasks": "TaskHub",
-    "data-management": "Data Management"
+    "data-management": "DataHub"
   };
-  
+
+  // One map, six entries, the same six emoji the sidebar nav already uses.
+  // The band's icon is written here rather than in the markup so the nav and
+  // the band cannot drift apart.
+  const icons = {
+    "dashboard": "📊",
+    "prospects": "👥",
+    "media": "📁",
+    "campaigns": "🎯",
+    "tasks": "✅",
+    "data-management": "🗄️"
+  };
+
   const subtitles = {
-    "dashboard": "",
+    // Absorbed from the Dashboard's .welcome-banner when Session 2A.4 removed
+    // it. Both halves of that card's copy are here — the greeting and the
+    // sentence — because the band above now carries the hub's name instead.
+    "dashboard": "Welcome back to Vantage PRM — accelerating your media reach, outreach campaigns, and prospect pipelines from one unified desk.",
     "prospects": "",
     "media": "Formulate articles, videos, and newsletters from raw ideas to finished, published resources.",
     "campaigns": "",
     "tasks": "",
     "data-management": "Securely back up database structures as standard ZIP/CSVs and restore existing tables."
   };
-  
+
   document.getElementById("view-title").textContent = titles[viewName] || "Vantage PRM";
+  const iconEl = document.getElementById("view-icon");
+  if (iconEl) iconEl.textContent = icons[viewName] || "";
   const subtitleEl = document.getElementById("view-subtitle");
   if (subtitleEl) {
     const subText = subtitles[viewName];
