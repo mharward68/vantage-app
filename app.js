@@ -4449,6 +4449,12 @@ function deleteTask(id) {
 function refreshAfterTaskChange() {
   if (state.activeView === "prospects") renderProspectsView();
   else if (state.activeView === "tasks") renderTasksView();
+  /* Session 2B.4: the detail view's Tasks tab is the third surface that
+     renders a prospect's tasks, and the task editor opens OVER it. Without
+     this branch, completing or deleting a task from that editor leaves the
+     tab behind it showing the pre-edit list. The BODY only (contract P4), and
+     only when that tab is the one on screen. */
+  else if (state.activeView === "prospect-detail" && detailTab === "tasks") renderProspectDetailTabBody();
 
   /* Session 1.9, scope §13.1: repairing or deleting an orphan from the editor
      refreshes the list BEHIND it without closing it. The guard is the whole
@@ -5966,17 +5972,11 @@ function renderProspectDetail() {
   // destroys the control the user happens to be typing into.
   renderProspectDetailIdentity(prospect);
 
-  // Still 2B.1 scaffold. 2B.4 replaces the tab strip and the first two tab
-  // bodies; 2B.5 the remaining three.
-  const tabsEl = document.getElementById("prospect-detail-tabs");
-  if (tabsEl) {
-    tabsEl.textContent = "Tab strip — Interactions · Tasks · Audiences · Campaigns · Company · Sequences. Sessions 2B.4 and 2B.5.";
-  }
-
-  const bodyEl = document.getElementById("prospect-detail-body");
-  if (bodyEl) {
-    bodyEl.textContent = "Tab body — the ONLY region of this view that scrolls (Phase 2A contract S1). Session 2B.4.";
-  }
+  // Session 2B.4 replaced BOTH 2B.1 scaffolds with the real component. The
+  // strip is redrawn (it is six small buttons and its only state is which one
+  // is active) and the body renders the ACTIVE TAB ONLY — never all six.
+  renderProspectDetailTabs();
+  renderProspectDetailTabBody();
 }
 
 /* --- P5: the identity block, and the single field writer -----------------
@@ -6182,6 +6182,306 @@ function resolveCompanyByName(name, email, location = "") {
 function handleProspectDetailDelete() {
   if (!detailProspectId) return;
   if (deleteProspectById(detailProspectId)) closeProspectDetail();
+}
+
+/* --- P4: the tab component ------------------------------------------------
+
+   THE ARRAY IS THE ONLY LIST OF THE SIX TABS, and it is written literally as
+   contract P4 froze it. Adding a seventh is one row here plus one render
+   function; nothing else enumerates them. The shape is TASKHUB_FILTERS /
+   TASKHUB_COLUMNS — this codebase's own declarative-table precedent, not a
+   new pattern — and PROSPECT_DETAIL_FIELDS above is the third member of that
+   family.
+
+   EACH render(prospect) RETURNS AN ELEMENT. It never touches the DOM itself,
+   never reads detailTab, and never repaints anything outside what it returns.
+   renderProspectDetailTabBody() resets the one container and appends it.
+
+   THREE THINGS A LATER SESSION MUST NOT UNDO:
+
+   1. BODIES RENDER ON DEMAND AND HOLD NO CACHE (plan Assumption 9). Switching
+      tabs re-renders THAT BODY ONLY, from state, every time. No memoisation,
+      no stashed elements — the renderTaskHubTable() lesson and Gate E. A
+      cached element is a copy of the record by another name.
+
+   2. THE STRIP IS BUTTONS, NOT <div>s (DIRECTIVES §0 authoring habits), and
+      the click listener is DELEGATED ONCE at boot onto the static
+      #prospect-detail-tabs container — the same shape as the identity block's
+      change listener, and for the same reason: the buttons are rebuilt on
+      every render, so binding per-button would re-add a listener each time.
+      data-tab-key is the opt-in.
+
+   3. SEQUENCES IS `enabled: false` AND STAYS THAT WAY UNTIL PHASE 3 (plan
+      Assumption 10). It is rendered, visible and inert — a real <button
+      disabled>, which fires no click at all, so the delegated handler is
+      never even entered for it. Phase 3 flips one boolean and writes one
+      render. Do not hide it and do not delete it: a visible disabled slot is
+      the point.
+
+   THREE OF THE SIX RENDERERS ARE 2B.5's and are placeholders here. That is
+   deliberate, not an omission: contract P4 freezes the array with all six
+   rows present, and a session that shipped four tabs and three missing keys
+   would leave the strip disagreeing with the contract. See each stub below.
+   -------------------------------------------------------------------------- */
+
+const PROSPECT_DETAIL_TABS = [
+  { key: "interactions", label: "Interactions", enabled: true,  render: renderDetailInteractions },
+  { key: "tasks",        label: "Tasks",        enabled: true,  render: renderDetailTasks },
+  { key: "audiences",    label: "Audiences",    enabled: true,  render: renderDetailAudiences },
+  { key: "campaigns",    label: "Campaigns",    enabled: true,  render: renderDetailCampaigns },
+  { key: "company",      label: "Company",      enabled: true,  render: renderDetailCompany },
+  { key: "sequences",    label: "Sequences",    enabled: false, render: null }
+];
+
+/* Draws the strip. Whole-container reset then appendChild — never
+   `innerHTML +=`, which detaches listeners and has bitten this exact
+   inspector (BUILD_NOTES). The buttons carry no listeners of their own; the
+   container does. */
+function renderProspectDetailTabs() {
+  const strip = document.getElementById("prospect-detail-tabs");
+  if (!strip) return;
+
+  strip.innerHTML = "";
+
+  PROSPECT_DETAIL_TABS.forEach(t => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "detail-tab";
+    btn.dataset.tabKey = t.key;
+    btn.textContent = t.label;
+
+    if (!t.enabled) {
+      // A disabled <button> dispatches no click event, so the delegated
+      // handler cannot fire for it even by accident. That is why this is a
+      // real disabled attribute and not a class the handler has to check.
+      btn.disabled = true;
+      btn.title = "Sequences — Phase 3";
+    }
+
+    const isActive = t.enabled && t.key === detailTab;
+    if (isActive) btn.classList.add("is-active");
+    btn.setAttribute("aria-selected", isActive ? "true" : "false");
+
+    strip.appendChild(btn);
+  });
+}
+
+/* Resets the ONE scrolling region and appends the active tab's element.
+   Gate E: the record is re-found from state here, never passed in from a
+   caller that might be holding a stale one. */
+function renderProspectDetailTabBody() {
+  const body = document.getElementById("prospect-detail-body");
+  if (!body) return;
+
+  body.innerHTML = "";
+
+  const prospect = detailProspectId
+    ? state.prospects.find(p => p.id === detailProspectId)
+    : null;
+  if (!prospect) return;
+
+  const tab = PROSPECT_DETAIL_TABS.find(t => t.key === detailTab) || PROSPECT_DETAIL_TABS[0];
+  if (!tab || !tab.enabled || typeof tab.render !== "function") return;
+
+  const el = tab.render(prospect);
+  if (el) body.appendChild(el);
+}
+
+/* The only way detailTab changes after an open. It repaints the strip (for
+   the active marker) and the body, and NOTHING ELSE — the identity block is
+   not re-rendered, so a half-typed field survives a tab switch. */
+function setProspectDetailTab(key) {
+  const tab = PROSPECT_DETAIL_TABS.find(t => t.key === key);
+  if (!tab || !tab.enabled) return;
+  if (detailTab === key) return;
+
+  detailTab = key;
+  renderProspectDetailTabs();
+  renderProspectDetailTabBody();
+
+  // A new body inherits the old body's scroll offset otherwise, which lands
+  // the user mid-list in a tab they have just opened.
+  const body = document.getElementById("prospect-detail-body");
+  if (body) body.scrollTop = 0;
+}
+
+/* Delegated ONCE at boot onto #prospect-detail-tabs. */
+function handleProspectDetailTabClick(e) {
+  const btn = e.target.closest ? e.target.closest("button[data-tab-key]") : null;
+  if (!btn || btn.disabled) return;
+  setProspectDetailTab(btn.dataset.tabKey);
+}
+
+/* --- Tab 1: Interactions -------------------------------------------------
+
+   THE WHOLE OF p.history, UNFILTERED. There is one array and "interactions"
+   and "history" are the same data — this is the prospect's timeline, so an
+   auto-stamped "Task Completed" or "Added to Vantage" entry BELONGS here.
+
+   isRealReachout() is NOT applied. It excludes those types from the MATH —
+   getLastReachoutDate(), the dashboard reachout counts, the Advanced Query
+   date filters — and that distinction stays exactly where it already lives:
+   in each row's type chip, which names the type. Filtering the timeline by it
+   would hide a real event from the record of a real person, and the count
+   this tab shows would then disagree with p.history.length for no visible
+   reason. Session plan task 2, written out because "unfiltered" is the kind
+   of decision a later session tidies away.
+   -------------------------------------------------------------------------- */
+function renderDetailInteractions(prospect) {
+  const wrap = document.createElement("div");
+  wrap.className = "pd-tab-pane";
+
+  const history = prospect.history || [];
+
+  const head = document.createElement("div");
+  head.className = "pd-tab-head";
+
+  const count = document.createElement("span");
+  count.className = "pd-tab-count";
+  count.textContent = history.length === 1 ? "1 interaction" : `${history.length} interactions`;
+  head.appendChild(count);
+
+  const logBtn = document.createElement("button");
+  logBtn.type = "button";
+  logBtn.className = "header-action-btn primary-btn pd-tab-action";
+  logBtn.textContent = "+ Log Interaction";
+  // The explicit id is what keeps state.selectedProspectId out of this path —
+  // the two cursors do not converge in this phase.
+  logBtn.addEventListener("click", () => openInteractionModal(prospect.id));
+  head.appendChild(logBtn);
+
+  wrap.appendChild(head);
+
+  if (history.length === 0) {
+    const note = document.createElement("div");
+    note.className = "pd-empty";
+    note.textContent = "No reachout records stored.";
+    wrap.appendChild(note);
+    return wrap;
+  }
+
+  const table = document.createElement("table");
+  table.className = "premium-table pd-int-table";
+
+  const thead = document.createElement("thead");
+  const htr = document.createElement("tr");
+  [["Date", "112px"], ["Type", "150px"], ["Summary", ""], ["", "48px"]].forEach(([label, w]) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    if (w) th.style.width = w;
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+
+  // Same sort as the inspector's history table: newest first. Dates are
+  // YYYY-MM-DD strings (DECLARATIONS), so this is a copy of the shipped
+  // comparator and not a second date convention.
+  [...history].sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(h => {
+    const tr = document.createElement("tr");
+
+    const dateTd = document.createElement("td");
+    dateTd.className = "pd-int-date";
+    dateTd.textContent = h.date || "—";
+
+    const typeTd = document.createElement("td");
+    const chip = document.createElement("span");
+    chip.className = "feed-type-tag";
+    chip.textContent = h.type || "—";
+    typeTd.appendChild(chip);
+
+    const contentTd = document.createElement("td");
+    contentTd.className = "pd-int-content";
+    contentTd.textContent = h.content || "";
+
+    const actionTd = document.createElement("td");
+    actionTd.style.textAlign = "center";
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "delete-interaction-btn";
+    del.title = "Remove reachout log";
+    del.textContent = "✕";
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // deleteInteraction() is the shipped writer and already saves and
+      // refreshes the other surfaces; the repaint below is this tab's own,
+      // and it is the BODY only.
+      deleteInteraction(prospect.id, h.id);
+      renderProspectDetailTabBody();
+    });
+    actionTd.appendChild(del);
+
+    tr.appendChild(dateTd);
+    tr.appendChild(typeTd);
+    tr.appendChild(contentTd);
+    tr.appendChild(actionTd);
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  return wrap;
+}
+
+/* --- Tab 2: Tasks --------------------------------------------------------
+
+   A RE-PARENT, NOT A REWRITE. renderProspectInspectorTasks() already returns
+   an element, already lists ALL tasks for the prospect including completed
+   ones, already sorts due date DESCENDING, already opens the editor on a row
+   click, and already carries its own "+ New Task" header action. Contract C8
+   froze exactly one openTaskEditor() and this is the second consumer of the
+   same element — DECISIONS.md costed this at "roughly half a session" and the
+   intake found it cheaper. Do not inflate it into a second implementation:
+   two renderers for one prospect's tasks is the drift Phase 2B exists to end.
+
+   The subsection keeps its own "Tasks" heading inside a tab already labelled
+   Tasks. That redundancy is the honest cost of re-parenting rather than
+   rewriting, it is one line to remove later, and it is flagged for Michael's
+   review rather than decided here.
+   -------------------------------------------------------------------------- */
+function renderDetailTasks(prospect) {
+  const wrap = document.createElement("div");
+  wrap.className = "pd-tab-pane";
+  wrap.appendChild(renderProspectInspectorTasks(prospect));
+  return wrap;
+}
+
+/* --- Tabs 3–5: Audiences, Campaigns, Company — SESSION 2B.5 --------------
+
+   These three are placeholders ON PURPOSE. Contract P4 freezes all six rows
+   of PROSPECT_DETAIL_TABS with these three `enabled: true`, so the strip is
+   correct and complete from this session onward; 2B.5 fills the bodies by
+   re-parenting the memberships subsections from renderInspectorMemberships()
+   and building the company roster. Each returns a real element with a real
+   message rather than an empty container, so a click lands somewhere honest
+   instead of looking like a broken tab.
+
+   Do NOT set these to `enabled: false` as a tidy-up — a disabled tab says
+   "this feature does not exist yet", which is a different and wrong claim,
+   and it would put the strip out of step with the frozen contract.
+   -------------------------------------------------------------------------- */
+function buildDetailTabPending(text) {
+  const wrap = document.createElement("div");
+  wrap.className = "pd-tab-pane";
+  const note = document.createElement("div");
+  note.className = "pd-empty";
+  note.textContent = text;
+  wrap.appendChild(note);
+  return wrap;
+}
+
+function renderDetailAudiences(prospect) {
+  return buildDetailTabPending("Audience memberships arrive in Session 2B.5.");
+}
+
+function renderDetailCampaigns(prospect) {
+  return buildDetailTabPending("Campaign memberships arrive in Session 2B.5.");
+}
+
+function renderDetailCompany(prospect) {
+  return buildDetailTabPending("The company record and its roster arrive in Session 2B.5.");
 }
 
 /* ==========================================================================
@@ -10321,8 +10621,32 @@ function saveCompany() {
 }
 
 // Interaction Logs Table Actions
-function openInteractionModal() {
-  if (!state.selectedProspectId) return;
+
+/* Which prospect the interaction modal is currently logging against. Module
+   scope, navigation-shaped, deliberately not persisted — the same class as
+   tagProspectTargetId and detailProspectId. Session 2B.4, task 4. */
+let interactionTargetId = null;
+
+/* Session 2B.4 gave this an EXPLICIT ID, the same rehost 2B.3 did for the tag
+   chooser and for exactly the same reason: it read state.selectedProspectId,
+   which the detail view must never write.
+
+   THE ARGUMENT IS TYPE-CHECKED RATHER THAN DEFAULTED, and that is not
+   defensive padding — it is what kept BOTH existing call sites untouched.
+   Both are `addEventListener("click", openInteractionModal)` references, so
+   they arrive with a MouseEvent as the first argument; a plain
+   `prospectId = state.selectedProspectId` default would NOT fire for them
+   (an Event is not undefined) and the modal would target an object. One of
+   those two call sites is #btn-aq-insp-add-interaction in the DEFERRED
+   Advanced Query drawer, which this phase may not touch at all — so the
+   guard is what makes the rehost possible without entering that surface.
+   Anything that is not a non-empty string means "no explicit target" and
+   falls back to today's behaviour exactly. */
+function openInteractionModal(prospectId) {
+  const targetId = (typeof prospectId === "string" && prospectId) ? prospectId : state.selectedProspectId;
+  if (!targetId) return;
+  interactionTargetId = targetId;
+
   document.getElementById("int-date").value = new Date().toISOString().split("T")[0];
   
   // Only real contact types are offered here. The auto-stamped types stay
@@ -10351,11 +10675,20 @@ function recordInteraction() {
     return;
   }
 
-  const p = state.prospects.find(x => x.id === state.selectedProspectId);
+  /* The target id is set by the opener (Session 2B.4). The fallback keeps the
+     old behaviour if anything ever reaches this branch without going through
+     it — the same shape as saveChosenTags()'s prospect-inspector branch. */
+  const p = state.prospects.find(x => x.id === (interactionTargetId || state.selectedProspectId));
   if (p) {
     if (!p.history) p.history = [];
     p.history.push({
-      id: `hist-${Date.now()}`,
+      // newHistoryId() rather than a bare `hist-${Date.now()}` (Session 2B.4).
+      // The C5 entry SHAPE is unchanged; this only guarantees the id is
+      // unique within the prospect. deleteInteraction() filters on
+      // `h.id !== histId`, so a duplicate id would silently delete every
+      // twin, and there is no reason for the app's two history writers to
+      // mint ids two different ways.
+      id: newHistoryId(p),
       date,
       type,
       content
@@ -10366,6 +10699,15 @@ function recordInteraction() {
   document.getElementById("modal-interaction").classList.add("hidden");
   renderProspectsView();
   refreshAqAfterEdit();
+
+  // The detail view's Interactions tab, repainted in place — the BODY only,
+  // never the whole view (contract P4). Guarded so it is inert whenever the
+  // modal was opened from the inspector or the deferred AQ drawer instead.
+  if (p && state.activeView === "prospect-detail" && p.id === detailProspectId && detailTab === "interactions") {
+    renderProspectDetailTabBody();
+  }
+
+  interactionTargetId = null;
 }
 
 function deleteInteraction(prosId, histId) {
@@ -11480,6 +11822,13 @@ function setupEventListeners() {
   });
   document.getElementById("btn-pd-delete-prospect")?.addEventListener("click", handleProspectDetailDelete);
 
+  // Tab strip (Session 2B.4, contract P4). ONE delegated `click` listener on
+  // the static container, for all six buttons — the buttons themselves are
+  // rebuilt by renderProspectDetailTabs() on every render, so binding them
+  // individually would re-add a listener each time. data-tab-key is the
+  // opt-in; the disabled Sequences button fires no click at all.
+  document.getElementById("prospect-detail-tabs")?.addEventListener("click", handleProspectDetailTabClick);
+
   document.getElementById("btn-export-contacts-filtered")?.addEventListener("click", exportFilteredContactsCSV);
   document.getElementById("btn-export-companies-filtered")?.addEventListener("click", exportFilteredCompaniesCSV);
 
@@ -11657,6 +12006,9 @@ function setupEventListeners() {
   document.getElementById("btn-add-interaction").addEventListener("click", openInteractionModal);
   document.getElementById("int-modal-cancel").addEventListener("click", () => {
     document.getElementById("modal-interaction").classList.add("hidden");
+    // Clear the 2B.4 target so a cancelled dialog cannot leave a stale
+    // prospect id pointed at by the next opener that does not set one.
+    interactionTargetId = null;
   });
   document.getElementById("int-modal-confirm").addEventListener("click", recordInteraction);
 

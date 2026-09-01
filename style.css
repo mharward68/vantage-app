@@ -3825,19 +3825,11 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
    second rule here restating any of that — one .hub-scroll per visible
    region, and no hub (or panel) invents a variant.
 
-   Scaffold dressing — Session 2B.1, NARROWED BY 2B.3. It makes the remaining
-   empty containers visible so the S1 shape can be screenshotted and reviewed.
-   .detail-identity was dropped from the selector list when the real block
-   landed. Delete this rule entirely along with the last placeholder text it
-   dresses (Session 2B.5). */
-#view-prospect-detail .detail-tabstrip,
-#view-prospect-detail .detail-body {
-  border: 1px dashed var(--color-border);
-  border-radius: var(--border-radius-md);
-  padding: 16px;
-  color: var(--color-text-muted);
-  font-size: 13px;
-}
+   THE SCAFFOLD DRESSING IS GONE — Session 2B.4. Sessions 2B.1 and 2B.3 kept a
+   dashed-outline rule here to make the empty containers visible for review;
+   both of the containers it dressed now hold real content, so the rule went
+   with the last placeholder text exactly as its own comment said it should.
+   If a dashed box appears on this panel again, something is re-adding it. */
 
 /* --------------------------------------------------------------------------
    THE IDENTITY BLOCK — Session 2B.3, frozen contract P5.
@@ -3863,7 +3855,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
    actually specified against, so the layout that gets reviewed is not the
    layout that ships. A track count that reads off the window is not a
    decision, it is the absence of one. The two breakpoints below are the
-   graceful degradation, and they are explicit. */
+   graceful degradation, and they are explicit.
 
    THE BLOCK IS flex: 0 0 auto (set above with the tab strip): it is
    content-height and never scrolls. That is only safe because Notes is
@@ -3989,4 +3981,148 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 .pd-delete-btn:hover {
   color: var(--color-danger);
   opacity: 0.75;
+}
+
+/* --------------------------------------------------------------------------
+   THE TAB STRIP AND THE TAB BODIES — Session 2B.4, frozen contract P4.
+
+   Still inside the 🧱 HUB SHELL block, which is still the LAST thing in this
+   file (contract S5). Nothing is appended after this.
+
+   THE STRIP IS flex: 0 0 auto (set with the identity block near the top of
+   this sub-block) AND THE BODY IS THE ONE SCROLLING REGION. Do not give the
+   strip its own overflow: a horizontally scrolling tab strip on a record view
+   hides tabs behind an edge the user has no reason to look at. Six labels fit
+   the canvas at every width this app supports, and if a seventh ever does not
+   they wrap — which is why there is no `white-space: nowrap` on the strip
+   itself, only on each button.
+
+   THE ACTIVE MARKER IS A BOTTOM BORDER ON THE BUTTON, NOT A BACKGROUND.
+   Every button in the strip keeps a transparent 2px bottom border so the
+   active one does not change the strip's height when it is selected — the
+   identity block above it is content-height and the body below it is the
+   flex remainder, so a 2px shift here would move the scrollport on every tab
+   click. Same reason the font-weight change is on a fixed-width-safe
+   property pair rather than a size change.
+
+   COLOURS COME FROM --color-primary, which body.module-prospect-detail
+   already resolves to ProspectHub's purple in BOTH themes — the same choice
+   the identity block's labels made, and for the same reason: a literal
+   #8b5cf6 here would not track the theme.
+   -------------------------------------------------------------------------- */
+/* THE STRIP'S RULE IS AN INSET box-shadow, NOT border-bottom, AND THE TABS
+   CARRY NO NEGATIVE MARGIN. That pairing is the standard tab-strip idiom
+   written the one way that does not lie to a measurement.
+
+   The obvious version — `border-bottom: 1px` on the strip and
+   `margin-bottom: -1px` on each button, so the active underline sits ON the
+   rule rather than above it — was written first and measured here: it puts
+   each button's bottom border 1px BELOW the strip's content box, so the strip
+   reports `scrollHeight 34 > clientHeight 33` forever. Nothing is visible and
+   nothing scrolls (overflow is `visible`), but the standard whole-shell check
+   this project runs at every phase close — "does this region scroll" — then
+   answers YES for a strip that does not, and the next session spends its time
+   on it. An inset box-shadow paints inside the padding box and costs no
+   layout at all, so the geometry is identical and the number is honest:
+   measured after the swap, `scrollHeight === clientHeight === 34` and the
+   active tab's bottom edge is flush with the strip's (630 / 630). */
+.detail-tabstrip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 2px;
+  box-shadow: inset 0 -1px 0 var(--color-border);
+}
+
+.detail-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;   /* reserved on every tab; see above */
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.detail-tab:hover:not(:disabled) {
+  color: var(--color-text-main);
+}
+
+.detail-tab.is-active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* Sequences. Visible and inert until Phase 3 flips one boolean — NOT hidden,
+   because a visible disabled slot is what tells the user the feature is
+   coming rather than missing. `cursor: not-allowed` and the reduced opacity
+   are the whole of the affordance; a real disabled <button> fires no click,
+   so nothing has to guard against it in JS. */
+.detail-tab:disabled {
+  color: var(--color-text-muted);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Each tab's render() returns one of these. It is a plain block: the panel's
+   flex chain ends at .detail-body, which owns the overflow, so nothing inside
+   a pane needs a height of its own. */
+.pd-tab-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The count-and-action row at the top of a pane. */
+.pd-tab-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pd-tab-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pd-tab-action {
+  padding: 5px 12px;
+  font-size: 12px;
+  height: auto;
+  white-space: nowrap;
+}
+
+.pd-empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+/* The Interactions table. .premium-table supplies the chrome; these three
+   rules are only what a timeline needs that a directory does not — a
+   non-wrapping date, and a summary column that wraps instead of forcing the
+   table wider than the pane. */
+.pd-int-table {
+  width: 100%;
+  font-size: 12px;
+}
+
+.pd-int-date {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.pd-int-content {
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
