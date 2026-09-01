@@ -4126,3 +4126,146 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* --------------------------------------------------------------------------
+   THE MEMBERSHIP AND COMPANY PANES — Session 2B.5.
+
+   Still inside the 🧱 HUB SHELL block, which is still the LAST thing in this
+   file (contract S5). Nothing is appended after this.
+
+   NO PANE HERE DECLARES A HEIGHT OR AN overflow. .detail-body is the one
+   scrolling region on this view (contract S1) and every .pd-tab-pane inside it
+   is natural-height content. That is also what makes the 2B.11 identity-block
+   resize free: these panes simply get less room and scroll sooner.
+   -------------------------------------------------------------------------- */
+
+/* THE ADD-TO-AUDIENCE BLOCK IS VISUALLY SEPARATE FROM THE CHIPS ON PURPOSE.
+   BUILD_NOTES carries a standing warning that this control must not be folded
+   into the memberships list: it is the one path on this surface that mutates
+   ANOTHER entity, and the separation is what stops it reading as part of the
+   list it sits above. The border and the ground are the whole of that
+   separation — if either is removed the warning has been lost. */
+.pd-add-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.light-theme .pd-add-block {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.pd-add-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+/* The Campaigns tab's one line of explanation. Campaign membership is derived
+   from audience membership, so the tab has no add path; without this line the
+   absence reads as a missing button. */
+.pd-derived-note {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+/* --- The Company tab ---------------------------------------------------- */
+
+/* Read-only by decision (scope §3 keeps a company detail view out of this
+   phase), so this is a card and not a form. It must not grow inputs. */
+.pd-company-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.light-theme .pd-company-card {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.pd-company-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-main);
+}
+
+.pd-company-industry {
+  font-size: 12px;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* A two-column definition grid. The key column is fixed so the values line up
+   down the card; the value column takes the remainder and wraps, because a
+   long address or specialities string must not widen the pane and start the
+   whole shell scrolling sideways. */
+.pd-company-grid {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 4px 12px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.pd-company-key {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.pd-company-val {
+  color: var(--color-text-main);
+  word-break: break-word;
+}
+
+/* An empty field reads as an empty field, not as a missing row. */
+.pd-company-val.is-empty {
+  color: var(--color-text-muted);
+}
+
+.pd-company-val a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.pd-company-val a:hover {
+  text-decoration: underline;
+}
+
+.pd-company-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+}
+
+/* The roster. .premium-table supplies the chrome; the row is clickable and
+   says so, which is the only thing a directory row needs that a read-only
+   table does not. */
+.pd-roster-table {
+  width: 100%;
+  font-size: 12px;
+}
+
+.pd-roster-row {
+  cursor: pointer;
+}
+
+.pd-roster-row:hover {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.pd-roster-email {
+  word-break: break-all;
+}

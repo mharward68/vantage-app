@@ -3886,98 +3886,157 @@ function buildMembershipChip(text, bg, color, border, onClick) {
   return span;
 }
 
+/* --------------------------------------------------------------------------
+   SHARED MEMBERSHIP BUILDERS — Session 2B.5.
+
+   THESE ARE EXTRACTIONS, NOT NEW CODE, and each has a zero-behaviour-change
+   survivor. The prospect inspector (renderInspectorMemberships, below) and the
+   detail view's Audiences/Campaigns tabs both call them, so there is exactly
+   ONE implementation of "which audiences is this prospect in", ONE of the
+   three-assignment CampaignHub navigation (BUILD_NOTES), and ONE of the add
+   path that mutates another entity. Two copies of the nav rule is precisely
+   the drift Phase 2B exists to end, and it is what a second surface usually
+   introduces.
+
+   The two membership sets are derived TOGETHER because campaign membership is
+   derived FROM audience membership (Michael, 2026-08-30) — a campaign matches
+   when its audienceListId is one of the prospect's lists. Deriving them apart
+   in two places is how the two tabs would eventually disagree.
+   -------------------------------------------------------------------------- */
+
+function prospectAudienceLists(prospect) {
+  return state.audienceLists.filter(al => al.prospectIds && al.prospectIds.includes(prospect.id));
+}
+
+function prospectCampaignsFromLists(matchedLists) {
+  return state.campaigns.filter(c => matchedLists.some(al => al.id === c.audienceListId));
+}
+
+/* The chip rows. Each returns an Element — either the flex row of chips or the
+   empty note — so a caller appends one thing and never branches. The click
+   handlers are the SHIPPED navigation, moved verbatim: three assignments plus
+   a render for an audience, and switchView + sub-state + render +
+   openCampaignDetail for a campaign. */
+function buildCampaignChipRow(matchedCampaigns) {
+  if (matchedCampaigns.length === 0) return buildInspectorEmptyNote("Not in any outreach campaign.");
+
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex; flex-wrap:wrap; gap:6px;";
+  matchedCampaigns.forEach(c => {
+    row.appendChild(buildMembershipChip(
+      `${c.title} (${c.status})`,
+      "rgba(79, 70, 229, 0.15)", "var(--color-primary)", "rgba(79, 70, 229, 0.3)",
+      () => {
+        switchView("campaigns");
+        campaignViewSubState = "campaigns";
+        renderCampaignsView();
+        openCampaignDetail(c.id);
+      }
+    ));
+  });
+  return row;
+}
+
+function buildAudienceChipRow(matchedLists) {
+  if (matchedLists.length === 0) return buildInspectorEmptyNote("Not in any audience list.");
+
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex; flex-wrap:wrap; gap:6px;";
+  matchedLists.forEach(al => {
+    row.appendChild(buildMembershipChip(
+      al.name,
+      "rgba(6, 182, 212, 0.15)", "var(--color-secondary)", "rgba(6, 182, 212, 0.3)",
+      () => {
+        switchView("campaigns");
+        campaignViewSubState = "audiences";
+        selectedAudienceListId = al.id;
+        renderCampaignsView();
+      }
+    ));
+  });
+  return row;
+}
+
+/* The "Add to audience…" control — THE ONE PATH IN EITHER SURFACE THAT MUTATES
+   ANOTHER ENTITY, which is why it has always sat outside the three memberships
+   subsections and why BUILD_NOTES carries a warning against tidying it into
+   the Audiences list. It keeps that separateness in both consumers: a row of
+   its own in the inspector, a distinct block at the TOP of the Audiences tab.
+
+   `afterAdd` is the only difference between the two callers. The inspector
+   repaints ProspectHub; the detail view repaints its own tab body. The mutation
+   itself — push the id, tag the prospect, saveState() — is identical and lives
+   here once. */
+function buildAddToAudienceControl(prospect, afterAdd) {
+  const activeAuds = state.audienceLists.filter(al =>
+    (al.status || "active") === "active" && !(al.prospectIds || []).includes(prospect.id)
+  );
+
+  const addRow = document.createElement("div");
+  addRow.style.cssText = "display:flex; gap:6px; align-items:center;";
+
+  if (activeAuds.length === 0) {
+    const note = document.createElement("span");
+    note.style.cssText = "font-size:12px; color:var(--color-text-muted); font-style:italic;";
+    note.textContent = "Already in all active audiences.";
+    addRow.appendChild(note);
+    return addRow;
+  }
+
+  const sel = document.createElement("select");
+  sel.id = "inspector-aud-select";
+  sel.style.cssText = "flex:1; background:rgba(0,0,0,0.2); border:1px solid var(--color-border); color:var(--color-text-main); padding:5px 8px; border-radius:var(--border-radius-md); font-size:12px; outline:none;";
+  sel.innerHTML = `<option value="">Add to audience…</option>` +
+    activeAuds.map(al => `<option value="${al.id}">${escapeHTML(al.name)}</option>`).join("");
+
+  const addBtn = document.createElement("button");
+  addBtn.className = "header-action-btn primary-btn";
+  addBtn.style.cssText = "padding:5px 10px; font-size:12px; height:auto; white-space:nowrap;";
+  addBtn.textContent = "+ Add";
+  addBtn.addEventListener("click", () => {
+    const audId = sel.value;
+    if (!audId) return;
+    const aud = state.audienceLists.find(a => a.id === audId);
+    if (!aud) return;
+    if (!aud.prospectIds) aud.prospectIds = [];
+    aud.prospectIds.push(prospect.id);
+    addAudienceTagToProspects([prospect.id], aud.name);
+    saveState();
+    if (typeof afterAdd === "function") afterAdd();
+  });
+
+  addRow.appendChild(sel);
+  addRow.appendChild(addBtn);
+  return addRow;
+}
+
 function renderInspectorMemberships(prospect) {
   const memEl = document.getElementById("inspector-memberships");
   if (!memEl || !prospect) return;   // Missing element kills the whole render otherwise.
 
   memEl.innerHTML = "";
 
-  const matchedLists = state.audienceLists.filter(al => al.prospectIds && al.prospectIds.includes(prospect.id));
-  const matchedCampaigns = state.campaigns.filter(c => matchedLists.some(al => al.id === c.audienceListId));
+  const matchedLists = prospectAudienceLists(prospect);
+  const matchedCampaigns = prospectCampaignsFromLists(matchedLists);
 
   /* --- "Add to audience…" row — PRESERVED from the pre-1.4 block. It stays
          at the top of the memberships area, outside the three subsections,
-         so the restructure cannot break the add path. --- */
-  const activeAuds = state.audienceLists.filter(al =>
-    (al.status || "active") === "active" && !(al.prospectIds || []).includes(prospect.id)
-  );
-  const addRow = document.createElement("div");
-  addRow.style.cssText = "display:flex; gap:6px; align-items:center; margin-bottom:10px;";
-  if (activeAuds.length > 0) {
-    const sel = document.createElement("select");
-    sel.id = "inspector-aud-select";
-    sel.style.cssText = "flex:1; background:rgba(0,0,0,0.2); border:1px solid var(--color-border); color:var(--color-text-main); padding:5px 8px; border-radius:var(--border-radius-md); font-size:12px; outline:none;";
-    sel.innerHTML = `<option value="">Add to audience…</option>` +
-      activeAuds.map(al => `<option value="${al.id}">${escapeHTML(al.name)}</option>`).join("");
-    const addBtn = document.createElement("button");
-    addBtn.className = "header-action-btn primary-btn";
-    addBtn.style.cssText = "padding:5px 10px; font-size:12px; height:auto; white-space:nowrap;";
-    addBtn.textContent = "+ Add";
-    addBtn.addEventListener("click", () => {
-      const audId = sel.value;
-      if (!audId) return;
-      const aud = state.audienceLists.find(a => a.id === audId);
-      if (!aud) return;
-      if (!aud.prospectIds) aud.prospectIds = [];
-      aud.prospectIds.push(prospect.id);
-      addAudienceTagToProspects([prospect.id], aud.name);
-      saveState();
-      renderProspectsView();
-    });
-    addRow.appendChild(sel);
-    addRow.appendChild(addBtn);
-  } else {
-    const note = document.createElement("span");
-    note.style.cssText = "font-size:12px; color:var(--color-text-muted); font-style:italic;";
-    note.textContent = "Already in all active audiences.";
-    addRow.appendChild(note);
-  }
+         so the restructure cannot break the add path. Session 2B.5 moved the
+         BODY of this control into buildAddToAudienceControl() so the detail
+         view's Audiences tab uses the same one; the margin below is the
+         inspector's own spacing and stays here. --- */
+  const addRow = buildAddToAudienceControl(prospect, () => renderProspectsView());
+  addRow.style.marginBottom = "10px";
   memEl.appendChild(addRow);
 
   /* --- 1. Campaigns --- */
   const campSec = buildInspectorSubsection("Campaigns", "var(--color-primary)");
-  if (matchedCampaigns.length === 0) {
-    campSec._body.appendChild(buildInspectorEmptyNote("Not in any outreach campaign."));
-  } else {
-    const row = document.createElement("div");
-    row.style.cssText = "display:flex; flex-wrap:wrap; gap:6px;";
-    matchedCampaigns.forEach(c => {
-      row.appendChild(buildMembershipChip(
-        `${c.title} (${c.status})`,
-        "rgba(79, 70, 229, 0.15)", "var(--color-primary)", "rgba(79, 70, 229, 0.3)",
-        () => {
-          switchView("campaigns");
-          campaignViewSubState = "campaigns";
-          renderCampaignsView();
-          openCampaignDetail(c.id);
-        }
-      ));
-    });
-    campSec._body.appendChild(row);
-  }
+  campSec._body.appendChild(buildCampaignChipRow(matchedCampaigns));
   memEl.appendChild(campSec);
 
   /* --- 2. Audiences --- */
   const audSec = buildInspectorSubsection("Audiences", "var(--color-secondary)");
-  if (matchedLists.length === 0) {
-    audSec._body.appendChild(buildInspectorEmptyNote("Not in any audience list."));
-  } else {
-    const row = document.createElement("div");
-    row.style.cssText = "display:flex; flex-wrap:wrap; gap:6px;";
-    matchedLists.forEach(al => {
-      row.appendChild(buildMembershipChip(
-        al.name,
-        "rgba(6, 182, 212, 0.15)", "var(--color-secondary)", "rgba(6, 182, 212, 0.3)",
-        () => {
-          switchView("campaigns");
-          campaignViewSubState = "audiences";
-          selectedAudienceListId = al.id;
-          renderCampaignsView();
-        }
-      ));
-    });
-    audSec._body.appendChild(row);
-  }
+  audSec._body.appendChild(buildAudienceChipRow(matchedLists));
   memEl.appendChild(audSec);
 
   /* --- 3. Tasks --- */
@@ -6450,38 +6509,281 @@ function renderDetailTasks(prospect) {
 
 /* --- Tabs 3–5: Audiences, Campaigns, Company — SESSION 2B.5 --------------
 
-   These three are placeholders ON PURPOSE. Contract P4 freezes all six rows
-   of PROSPECT_DETAIL_TABS with these three `enabled: true`, so the strip is
-   correct and complete from this session onward; 2B.5 fills the bodies by
-   re-parenting the memberships subsections from renderInspectorMemberships()
-   and building the company roster. Each returns a real element with a real
-   message rather than an empty container, so a click lands somewhere honest
-   instead of looking like a broken tab.
+   `buildDetailTabPending()` WAS HERE AND IS GONE. It was the shared helper
+   behind the three stubs and 2B.4 said to delete it with the last one; this
+   is that session. If a "arrives in Session 2B.5" string turns up anywhere
+   again, something re-added it.
 
-   Do NOT set these to `enabled: false` as a tidy-up — a disabled tab says
-   "this feature does not exist yet", which is a different and wrong claim,
-   and it would put the strip out of step with the frozen contract.
+   THESE THREE PANES USE THE INTERACTIONS IDIOM — a .pd-tab-head count row and
+   then the content — AND DELIBERATELY DO NOT RE-PARENT
+   buildInspectorSubsection(). The subsection wrapper carries its own coloured
+   heading, which inside a tab already named "Audiences" produces the exact
+   redundancy the Tasks tab has and that is on Michael's review list. The
+   REUSE is at the level below: the chip rows, the empty notes and the add
+   path are the shared builders next to renderInspectorMemberships(), so the
+   navigation rule and the mutation still exist once. Re-parenting the
+   heading would have bought nothing and shipped a known defect twice.
    -------------------------------------------------------------------------- */
-function buildDetailTabPending(text) {
+
+/* Every pane opens with the same count-and-action row, so the three tabs read
+   as one component rather than three. `action` is optional. */
+function buildDetailPaneHead(countText, action) {
+  const head = document.createElement("div");
+  head.className = "pd-tab-head";
+
+  const count = document.createElement("span");
+  count.className = "pd-tab-count";
+  count.textContent = countText;
+  head.appendChild(count);
+
+  if (action) head.appendChild(action);
+  return head;
+}
+
+/* --- Tab 3: Audiences ----------------------------------------------------
+
+   THE "Add to audience…" CONTROL LIVES HERE NOW, AND ITS PLACEMENT IS THE
+   DECISION THIS SESSION TOOK. The phase plan relocates it into this tab; the
+   BUILD_NOTES warning it carries says it must not be folded INTO the
+   memberships list, because it is the one path on this surface that mutates
+   another entity. Both hold: it sits in its own bordered block at the top of
+   the pane, above the chips, visually separate from them. If it ever reads as
+   part of the list, that warning has been lost — put the separation back
+   rather than moving the control.
+   -------------------------------------------------------------------------- */
+function renderDetailAudiences(prospect) {
   const wrap = document.createElement("div");
   wrap.className = "pd-tab-pane";
-  const note = document.createElement("div");
-  note.className = "pd-empty";
-  note.textContent = text;
-  wrap.appendChild(note);
+
+  const matchedLists = prospectAudienceLists(prospect);
+
+  wrap.appendChild(buildDetailPaneHead(
+    matchedLists.length === 1 ? "1 audience" : `${matchedLists.length} audiences`
+  ));
+
+  // The add block. Repaints the BODY only — never the whole view, and never
+  // the identity block, which may hold a half-typed field (2B.4's rule).
+  const addBlock = document.createElement("div");
+  addBlock.className = "pd-add-block";
+  const addLabel = document.createElement("div");
+  addLabel.className = "pd-add-label";
+  addLabel.textContent = "Add this prospect to an audience";
+  addBlock.appendChild(addLabel);
+  addBlock.appendChild(buildAddToAudienceControl(prospect, () => {
+    renderProspectDetailTabBody();
+  }));
+  wrap.appendChild(addBlock);
+
+  wrap.appendChild(buildAudienceChipRow(matchedLists));
   return wrap;
 }
 
-function renderDetailAudiences(prospect) {
-  return buildDetailTabPending("Audience memberships arrive in Session 2B.5.");
-}
+/* --- Tab 4: Campaigns ----------------------------------------------------
 
+   CAMPAIGN MEMBERSHIP IS DERIVED FROM AUDIENCE MEMBERSHIP, AND THE TWO TABS
+   STAY SEPARATE (Michael, 2026-08-30). There is no add path here on purpose:
+   a prospect joins a campaign by joining an audience, and an "add to
+   campaign" control on this tab would imply a direct relationship the data
+   model does not have.
+   -------------------------------------------------------------------------- */
 function renderDetailCampaigns(prospect) {
-  return buildDetailTabPending("Campaign memberships arrive in Session 2B.5.");
+  const wrap = document.createElement("div");
+  wrap.className = "pd-tab-pane";
+
+  const matchedCampaigns = prospectCampaignsFromLists(prospectAudienceLists(prospect));
+
+  wrap.appendChild(buildDetailPaneHead(
+    matchedCampaigns.length === 1 ? "1 campaign" : `${matchedCampaigns.length} campaigns`
+  ));
+
+  const note = document.createElement("div");
+  note.className = "pd-derived-note";
+  note.textContent = "Campaign membership is derived from audience membership.";
+  wrap.appendChild(note);
+
+  wrap.appendChild(buildCampaignChipRow(matchedCampaigns));
+  return wrap;
 }
 
+/* --- Tab 5: Company ------------------------------------------------------
+
+   THIS TAB REPLACES A WORKFLOW: "who else do I have at Comcast" was an
+   Advanced Query run made by hand, constantly. That is why the roster is the
+   substance of the tab and the company's own fields are the header above it.
+
+   THE COMPANY FIELDS ARE READ-ONLY, AND THAT IS A BOUNDARY, NOT AN OMISSION.
+   Scope §3 puts a company detail view out of this phase and Assumption 7
+   keeps the company inspector exactly as it is; an editable company record
+   here would be that view, built in the prospect's phase. Read-only is the
+   whole of what this tab claims.
+
+   Each colleague row calls openProspectDetail(otherId, detailOrigin) — the
+   ORIGIN IS PASSED THROUGH UNCHANGED, so the back arrow still returns to
+   wherever the FIRST prospect was opened from. Handing it a fresh
+   { view: "prospects" } would strand a user who arrived from a task editor.
+   -------------------------------------------------------------------------- */
 function renderDetailCompany(prospect) {
-  return buildDetailTabPending("The company record and its roster arrive in Session 2B.5.");
+  const wrap = document.createElement("div");
+  wrap.className = "pd-tab-pane";
+
+  const company = prospect.companyId
+    ? state.companies.find(c => c.id === prospect.companyId)
+    : null;
+
+  // Two different empty states, because they are two different situations.
+  // No companyId is "this prospect is unlinked"; a companyId with no record is
+  // a dangling reference and says so rather than pretending the field is blank.
+  if (!company) {
+    wrap.appendChild(buildDetailPaneHead("No company"));
+    const note = document.createElement("div");
+    note.className = "pd-empty";
+    note.textContent = prospect.companyId
+      ? "This prospect points at a company record that no longer exists."
+      : "This prospect is not linked to a company. Set the Company field above to link one.";
+    wrap.appendChild(note);
+    return wrap;
+  }
+
+  const roster = state.prospects.filter(x => x.companyId === company.id && x.id !== prospect.id);
+
+  wrap.appendChild(buildDetailPaneHead(
+    roster.length === 1 ? "1 other contact here" : `${roster.length} other contacts here`
+  ));
+
+  /* --- The company card. Read-only. --- */
+  const card = document.createElement("div");
+  card.className = "pd-company-card";
+
+  const nameEl = document.createElement("div");
+  nameEl.className = "pd-company-name";
+  nameEl.textContent = company.name || "(unnamed company)";
+  card.appendChild(nameEl);
+
+  const industryEl = document.createElement("div");
+  industryEl.className = "pd-company-industry";
+  industryEl.textContent = company.industry || "General";
+  card.appendChild(industryEl);
+
+  // A definition grid rather than a paragraph, so an empty field reads as an
+  // empty field and not as a missing line. Built from a local table so adding
+  // a row is one entry — the PROSPECT_DETAIL_FIELDS habit, at this scale.
+  const addressParts = [company.address, company.city, company.state, company.postal].filter(Boolean);
+  const employeeVal = company.employees ||
+    (company.employeeRange && /^\d+$/.test(String(company.employeeRange).trim()) ? String(company.employeeRange).trim() : "");
+
+  const rows = [
+    ["Address",      addressParts.join(", "), null],
+    ["Phone",        company.phone || "",     company.phone ? `tel:${company.phone}` : null],
+    ["Website",      company.website || "",   company.website ? ensureUrlProtocol(company.website) : null],
+    ["LinkedIn",     company.linkedin ? "LinkedIn" : "", company.linkedin ? ensureUrlProtocol(company.linkedin) : null],
+    ["Headquarters", company.headquarters || company.location || "", null],
+    ["Employees",    employeeVal,             null],
+    ["Specialities", company.specialities || "", null]
+  ];
+
+  const grid = document.createElement("div");
+  grid.className = "pd-company-grid";
+  rows.forEach(([label, value, href]) => {
+    const dt = document.createElement("div");
+    dt.className = "pd-company-key";
+    dt.textContent = label;
+
+    const dd = document.createElement("div");
+    dd.className = "pd-company-val";
+    if (!value) {
+      dd.textContent = "—";
+      dd.classList.add("is-empty");
+    } else if (href) {
+      const a = document.createElement("a");
+      a.href = href;
+      // Only http(s) destinations open a tab; tel: must stay in place.
+      if (!href.startsWith("tel:")) {
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+      }
+      a.textContent = value;
+      dd.appendChild(a);
+    } else {
+      dd.textContent = value;
+    }
+
+    grid.appendChild(dt);
+    grid.appendChild(dd);
+  });
+  card.appendChild(grid);
+
+  if (company.description) {
+    const desc = document.createElement("div");
+    desc.className = "pd-company-desc";
+    desc.textContent = company.description;
+    card.appendChild(desc);
+  }
+
+  wrap.appendChild(card);
+
+  /* --- The roster. The reason this tab exists. --- */
+  if (roster.length === 0) {
+    const note = document.createElement("div");
+    note.className = "pd-empty";
+    note.textContent = `No other contacts at ${company.name || "this company"}.`;
+    wrap.appendChild(note);
+    return wrap;
+  }
+
+  const table = document.createElement("table");
+  table.className = "premium-table pd-roster-table";
+
+  const thead = document.createElement("thead");
+  const htr = document.createElement("tr");
+  [["Name", ""], ["Title", ""], ["Email", ""], ["Status", "120px"]].forEach(([label, w]) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    if (w) th.style.width = w;
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  [...roster]
+    .sort((a, b) => `${a.lastName || ""} ${a.firstName || ""}`.trim()
+      .localeCompare(`${b.lastName || ""} ${b.firstName || ""}`.trim()))
+    .forEach(other => {
+      const tr = document.createElement("tr");
+      tr.className = "pd-roster-row";
+      tr.title = "Open this contact";
+
+      const nameTd = document.createElement("td");
+      nameTd.style.fontWeight = "600";
+      nameTd.textContent = `${other.firstName || ""} ${other.lastName || ""}`.trim() || "(unnamed)";
+
+      const titleTd = document.createElement("td");
+      titleTd.textContent = other.title || "—";
+
+      const emailTd = document.createElement("td");
+      emailTd.className = "pd-roster-email";
+      emailTd.textContent = other.email || "—";
+
+      const statusTd = document.createElement("td");
+      const chip = document.createElement("span");
+      chip.className = "feed-type-tag";
+      chip.textContent = other.status || "—";
+      statusTd.appendChild(chip);
+
+      tr.appendChild(nameTd);
+      tr.appendChild(titleTd);
+      tr.appendChild(emailTd);
+      tr.appendChild(statusTd);
+
+      // detailOrigin passed THROUGH, not rebuilt. See the block comment.
+      tr.addEventListener("click", () => openProspectDetail(other.id, detailOrigin));
+
+      tbody.appendChild(tr);
+    });
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  return wrap;
 }
 
 /* ==========================================================================
