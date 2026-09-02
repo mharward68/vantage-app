@@ -1818,6 +1818,222 @@ function renderDataManagementView() {
   }
 }
 
+/* ==========================================================================
+   🔎 DUPLICATE-DOMAIN REPORT — SESSION 2B.20, review Finding 10b
+
+   ⛔⛔ READ-ONLY. THIS SURFACE MERGES NOTHING AND CHANGES NOTHING. It is a
+   manual cleanup tool Michael asked for on 2026-09-02 — "let's create a
+   manually triggered report that searches for domains with multiple company
+   names for cleanup" — NOT enforcement. The enforcement half (refusing or
+   merging duplicates) stays in Phase 2C and is its own DIRECTIVES §4
+   decision. Running this report is what will tell him whether enforcement is
+   even needed. A future session that adds a "Merge" button here has turned a
+   report into a destructive data operation without the decision that requires.
+
+   ⚠️ IT DELIBERATELY HAS TWO SECTIONS AND THAT IS THE WHOLE DESIGN.
+   `domain` holds three different kinds of thing (BUILD_NOTES): real hosts,
+   the legacy "domain.com" placeholder, and pre-2B.20 import slugs. Keyed on
+   `domain` alone, the placeholder and slug rows form ENORMOUS clusters that
+   are not duplicate companies at all. Listed together with the real findings
+   they bury them, and the first run reads like catastrophic data loss.
+   So: real identities in section 1, everything with NO real identity in
+   section 2, labelled as cleanup buckets.
+   ========================================================================== */
+
+/* Why a company has no usable identity — one short label per bucket, so the
+   second section says what the reader is looking at instead of showing a
+   column of strings that look like corruption. */
+function unresolvedDomainLabel(stored) {
+  const s = String(stored || "").trim().toLowerCase();
+  if (!s) return "no domain stored";
+  if (s.startsWith("no-website:")) return "import placeholder (2B.20+)";
+  if (isJunkImportDomain(s)) return "legacy placeholder";
+  if (!s.includes(".")) return "import slug (pre-2B.20)";
+  return "unrecognised";
+}
+
+/* PURE. Reads state, returns a plain object, writes nothing — which is also
+   what makes the read-only Done-when check provable: call it and compare
+   state.companies.length / state.prospects.length either side. */
+function buildDuplicateDomainReport() {
+  const companies = state.companies || [];
+
+  // One pass for prospect counts. A find() per company would be
+  // O(companies x prospects) and this runs against the production import.
+  const prospectCounts = new Map();
+  (state.prospects || []).forEach(p => {
+    const cid = (p.companyId || "").trim();
+    if (!cid) return;
+    prospectCounts.set(cid, (prospectCounts.get(cid) || 0) + 1);
+  });
+
+  const entry = c => ({
+    id: c.id,
+    name: (c.name || "").trim() || "(unnamed company)",
+    stored: (c.domain || "").trim(),
+    website: (c.website || "").trim(),
+    prospects: prospectCounts.get((c.id || "").trim()) || 0
+  });
+
+  const real = new Map();
+  const unresolved = new Map();
+
+  companies.forEach(c => {
+    // companyIdentityDomain() is the ONE resolver — it already carries the
+    // transitional website fallback and the "domain.com"/no-dot rejections.
+    // Re-deriving that here is how the report and the matcher start
+    // disagreeing about which companies share an identity.
+    const identity = companyIdentityDomain(c);
+    if (identity) {
+      if (!real.has(identity)) real.set(identity, []);
+      real.get(identity).push(entry(c));
+    } else {
+      const bucket = normaliseDomain(c.domain) || "";
+      if (!unresolved.has(bucket)) unresolved.set(bucket, []);
+      unresolved.get(bucket).push(entry(c));
+    }
+  });
+
+  const distinctNames = list =>
+    new Set(list.map(e => e.name.toLowerCase())).size;
+
+  // A domain held by two records of the SAME name is a duplicate record, not
+  // a naming deviation — both are worth seeing, so the threshold is 2+
+  // records and `nameVariants` says which kind it is.
+  const duplicates = [...real.entries()]
+    .filter(([, list]) => list.length > 1)
+    .map(([domain, list]) => ({
+      domain,
+      nameVariants: distinctNames(list),
+      companies: list.sort((a, b) => a.name.localeCompare(b.name))
+    }))
+    .sort((a, b) => b.companies.length - a.companies.length || a.domain.localeCompare(b.domain));
+
+  const allUnresolved = [...unresolved.entries()].map(([bucket, list]) => ({
+    bucket,
+    label: unresolvedDomainLabel(bucket),
+    nameVariants: distinctNames(list),
+    companies: list.sort((a, b) => a.name.localeCompare(b.name))
+  }));
+
+  return {
+    scanned: companies.length,
+    duplicates,
+    duplicateCompanyCount: duplicates.reduce((n, g) => n + g.companies.length, 0),
+    // Only clusters are actionable; singletons are counted, not listed, or
+    // the second section becomes a reprint of the companies directory.
+    unresolvedClusters: allUnresolved
+      .filter(g => g.companies.length > 1)
+      .sort((a, b) => b.companies.length - a.companies.length || a.bucket.localeCompare(b.bucket)),
+    unresolvedSingletons: allUnresolved.filter(g => g.companies.length === 1).length,
+    unresolvedTotal: allUnresolved.reduce((n, g) => n + g.companies.length, 0)
+  };
+}
+
+function renderDuplicateDomainReport() {
+  const host = document.getElementById("domain-report-body");
+  if (!host) return null;
+
+  const r = buildDuplicateDomainReport();
+  host.innerHTML = "";
+
+  const line = (text, muted) => {
+    const p = document.createElement("p");
+    p.style.cssText = "margin: 0; font-size: 12px; line-height: 1.5;"
+      + (muted ? " color: var(--color-text-muted);" : "");
+    p.textContent = text;
+    return p;
+  };
+
+  const heading = (text) => {
+    const h = document.createElement("h4");
+    h.style.cssText = "margin: 4px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .04em;";
+    h.textContent = text;
+    return h;
+  };
+
+  const group = (title, subtitle, list, accent) => {
+    const box = document.createElement("div");
+    box.className = "domain-report-group";
+    box.style.cssText = "border: 1px solid var(--color-border); border-left: 3px solid " + accent
+      + "; border-radius: var(--border-radius-md); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;";
+
+    const head = document.createElement("div");
+    head.style.cssText = "display: flex; justify-content: space-between; align-items: baseline; gap: 10px;";
+    const key = document.createElement("strong");
+    key.style.cssText = "font-size: 13px; word-break: break-all;";
+    key.textContent = title;
+    const meta = document.createElement("span");
+    meta.style.cssText = "font-size: 11px; color: var(--color-text-muted); white-space: nowrap;";
+    meta.textContent = subtitle;
+    head.appendChild(key);
+    head.appendChild(meta);
+    box.appendChild(head);
+
+    list.forEach(e => {
+      const row = document.createElement("div");
+      row.style.cssText = "display: flex; justify-content: space-between; gap: 10px; font-size: 12px; border-top: 1px dashed var(--color-border); padding-top: 6px;";
+      const left = document.createElement("span");
+      left.textContent = e.name;
+      const right = document.createElement("span");
+      right.style.cssText = "color: var(--color-text-muted); white-space: nowrap; font-size: 11px;";
+      right.textContent = e.prospects + (e.prospects === 1 ? " contact" : " contacts") + " · id " + e.id;
+      row.appendChild(left);
+      row.appendChild(right);
+      box.appendChild(row);
+    });
+
+    return box;
+  };
+
+  host.appendChild(line(
+    "Scanned " + r.scanned + " companies. Nothing on this screen changes any record.", true));
+
+  host.appendChild(heading("1 · Domains held by more than one company"));
+  if (r.duplicates.length === 0) {
+    host.appendChild(line("None. No real domain in this database is shared by two company records.", true));
+  } else {
+    host.appendChild(line(
+      r.duplicates.length + (r.duplicates.length === 1 ? " domain" : " domains")
+      + " across " + r.duplicateCompanyCount + " company records.", true));
+    r.duplicates.forEach(g => host.appendChild(group(
+      g.domain,
+      g.companies.length + " records · " + g.nameVariants + " name" + (g.nameVariants === 1 ? "" : "s"),
+      g.companies,
+      "var(--color-danger)"
+    )));
+  }
+
+  host.appendChild(heading("2 · No real identity — cleanup buckets, not duplicates"));
+  host.appendChild(line(
+    r.unresolvedTotal + " companies have no usable domain: legacy placeholders, pre-2B.20 import slugs, "
+    + "or the no-website: buckets the import writes on purpose so same-named companies group together. "
+    + "These are NOT duplicate companies.", true));
+  if (r.unresolvedClusters.length === 0) {
+    host.appendChild(line(
+      r.unresolvedSingletons > 0
+        ? r.unresolvedSingletons + (r.unresolvedSingletons === 1 ? " sits" : " sit")
+          + " alone in its own bucket and " + (r.unresolvedSingletons === 1 ? "is" : "are") + " not listed."
+        : "No clusters.",
+      true));
+  } else {
+    r.unresolvedClusters.forEach(g => host.appendChild(group(
+      g.bucket || "(no domain stored)",
+      g.label + " · " + g.companies.length + " records",
+      g.companies,
+      "var(--color-text-muted)"
+    )));
+    if (r.unresolvedSingletons > 0) {
+      host.appendChild(line(
+        "Plus " + r.unresolvedSingletons
+        + (r.unresolvedSingletons === 1 ? " company" : " companies")
+        + " alone in their own bucket — not listed.", true));
+    }
+  }
+
+  return r;
+}
+
 function convertToCSV(array, headers, mapper) {
   const csvRows = [];
   csvRows.push(headers.join(","));
@@ -13210,11 +13426,22 @@ function importCSVContacts(e) {
         if (rawTags) tags = rawTags.split(/[;,]/).map(t => t.trim()).filter(Boolean);
         if (tags.length === 0) tags = ["No Company Tag"];
 
+        // Session 2B.20. A COMPANIES sheet carries no prospect email, so the
+        // identity is the website column or the placeholder — never a host.
+        // ⛔ `id` STILL READS THE RAW `domain` VARIABLE ABOVE AND MUST. It is
+        // the record id every prospect points at; repairing it here orphans
+        // links on the next import. Only the `domain` FIELD is repaired.
+        // ⚠️ The previous default was the literal string "stripe.com", which
+        // handed every website-less imported company Stripe's identity — and
+        // since 2B.18 reads `domain` to match contacts by email host, that
+        // made them the employer of every @stripe.com address in the file.
+        const ident = importCompanyIdentity(domain, "", row.name || row.companyname || row.company || "");
+
         return {
           id: domain.toLowerCase() || row.id || `comp-${Date.now()}-${idx}`,
           name: row.name || row.companyname || row.company || "Unnamed Company",
-          domain: domain || "stripe.com",
-          website: row.website || row.websiteurl || "",
+          domain: ident.domain,
+          website: ident.website || row.website || row.websiteurl || "",
           employees: row.employees || "",
           employeeRange: row.employeerange || "",
           industry: row.companyindustry || row.industry || row.companynotes || "General",
@@ -13361,15 +13588,39 @@ function importCSVContacts(e) {
           const description = lookupVal(["company description", "description"]);
           const specialities = lookupVal(["company specialities", "company specialties", "specialties", "specialities"]);
           const headquarters = lookupVal(["company headquarters", "headquarters", "location"]);
-          const website = lookupVal(["company website", "website", "companywebsiteurl", "domain", "companyurl", "company website url", "companywebiste"]) || p.companyId;
+          const rawWebsite = lookupVal(["company website", "website", "companywebsiteurl", "domain", "companyurl", "company website url", "companywebiste"]);
           const companyLinkedin = lookupVal(["company linkedin url", "company linkedin", "companylinkedinurl"]);
+
+          // ============================================================
+          // SESSION 2B.20 — THE IDENTITY REPAIR, AND THE LINE IT DOES NOT
+          // TOUCH.
+          //
+          // This used to be `domain: p.companyId` and
+          // `website: rawWebsite || p.companyId`, so a sheet with no website
+          // column gave every company a SLUG in both fields.
+          //
+          // ⛔ `id: p.companyId` IS UNCHANGED AND MUST STAY UNCHANGED. That is
+          // the regression that matters: prospects carry `companyId` and point
+          // at this id, so re-deriving it silently orphans every existing link
+          // on the next import. Repair `domain`; leave `companyId` alone.
+          //
+          // ⚠️ THE RECONCILIATION KEY IS THE DOMAIN AND ONLY THE DOMAIN
+          // (Michael, 2026-09-02). christy.weaver@gmail.com listed against
+          // "SPL Productions" is NOT joined to the existing SPL record — she
+          // gets the placeholder and he moves her by hand, keeping her Gmail
+          // address. Name matching is what produced the four SPL records in
+          // the first place, and there is deliberately NO name reconciliation
+          // on this path. (Explicit human choice from the autocomplete still
+          // works by name — that is a different act.)
+          // ============================================================
+          const ident = importCompanyIdentity(rawWebsite, p.email, companyName);
 
           if (!existing) {
             state.companies.push({
               id: p.companyId,
               name: companyName,
-              domain: p.companyId,
-              website: website,
+              domain: ident.domain,
+              website: ident.website,
               location: headquarters || [p.city, p.state, p.location].filter(Boolean).join(", "),
               industry: industry,
               employees: employees,
@@ -13383,6 +13634,16 @@ function importCSVContacts(e) {
               tags: p._tempCompTags
             });
           } else {
+            // Session 2B.20. EMPTY ONLY — the same "if not set" idiom every
+            // other line in this branch uses, and deliberately not a repair of
+            // a non-empty bad value. Overwriting an existing company's stored
+            // `domain` or `website` during an import is a DIRECTIVES §4 change
+            // to existing data: it needs its own decision and rollback plan,
+            // not a side effect of loading a sheet. Existing placeholder rows,
+            // "domain.com" rows and pre-2B.20 slugs stay exactly as they are
+            // and are what the duplicate-domain report is FOR.
+            if (!existing.domain && ident.domain) existing.domain = ident.domain;
+            if (!existing.website && ident.website) existing.website = ident.website;
             // Update existing company fields if not set
             if (!existing.employees && employees) existing.employees = employees;
             if (!existing.employeeRange && employeeRange) existing.employeeRange = employeeRange;
@@ -13866,6 +14127,136 @@ function companyNameFromDomain(host) {
     .join(" ");
 }
 
+/* ==========================================================================
+   SESSION 2B.20 — REPAIRING THE COMPANY IDENTITY ON THE BULK PATH.
+
+   Filed here rather than inside importCSVContacts() because that function is
+   400 lines of two file routes and these are pure, testable and consumed by
+   BOTH of them. ⛔ THEY CONSUME normaliseDomain() / emailDomain() /
+   isFreeEmailHost() — a second copy of any of those is how the modal, the
+   prospect form and the import start disagreeing about what an identity is.
+
+   WHY THE IMPORT AT ALL: it is the largest source of bad `domain` values in
+   the file. It writes `domain: p.companyId`, and companyId comes from the
+   sheet's website column OR, when there is none, a SLUG of the company name
+   ("SPL Productions" -> spl-productions). It never reads the prospect's email.
+   Now that `domain` is the identity (2B.18/2B.19), that is a bulk generator of
+   fake identities.
+
+   ⛔⛔ NOTHING IN THIS BLOCK MAY TOUCH companyId. companyId is the RECORD id
+   and every prospect points at it; `domain` is the BUSINESS identity. Today
+   they often hold the same string, which makes them look like one concept.
+   They are not. Changing companyId orphans every existing prospect->company
+   link on the next import, silently, with no error.
+   ========================================================================== */
+
+/* IS THIS STRING PLAUSIBLY A REAL HOST? Two or more labels, an alphabetic TLD
+   of 2+ characters, no whitespace. Deliberately shape-only — it does not know
+   which TLDs exist, and it must not learn: a hard-coded suffix list is wrong
+   the day a new one ships, and "southland.church" is a real address.
+
+     "spl-productions"     -> false   (the import slug — the whole point)
+     "no-website:spl"      -> false   (the placeholder can never be a host)
+     "acme.com"            -> true
+     "southland.church"    -> true
+     "bbc.co.uk"           -> true
+     "n/a" / "none" / "-"  -> false                                        */
+function looksLikeDomain(v) {
+  const s = String(v == null ? "" : v).trim().toLowerCase();
+  if (!s || /\s/.test(s)) return false;
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/.test(s);
+}
+
+/* PLACEHOLDER STRINGS THAT PASS looksLikeDomain() AND ARE STILL NOT IDENTITIES.
+   Every one of these is a real registered domain, so shape alone cannot reject
+   them — and treating them as identities is precisely what produced the
+   current mess ("domain.com" was resolveCompanyByName()'s old no-email
+   placeholder and every email-less company shares it). Silent: no report, no
+   prompt. A stripped value falls through to the email domain, then to the
+   placeholder. */
+const IMPORT_JUNK_DOMAINS = new Set([
+  "domain.com", "yourdomain.com", "example.com", "example.org", "example.net"
+]);
+
+function isJunkImportDomain(host) {
+  return IMPORT_JUNK_DOMAINS.has(String(host || "").toLowerCase());
+}
+
+/* THE CLEANUP-BUCKET PLACEHOLDER — `no-website:<first word of the name>`.
+
+   ⚠️⚠️ COMPANIES SHARING A FIRST WORD DELIBERATELY SHARE ONE BUCKET AND A
+   FUTURE SESSION MUST NOT "FIX" THIS. Michael, 2026-09-02, verbatim: "Maybe I
+   have a list of 10 SPL people using 3 different versions: SPL Production, SPL
+   Productions, SPL AV Production. I want those grouped so I can manually clean
+   them up." It is a CLEANUP BUCKET, not an identity assertion. It is coarse on
+   purpose; the accepted cost is that two unrelated companies sharing a first
+   word land together. A "more precise" placeholder derived from the full name
+   destroys the entire feature.
+
+   The leading article is skipped (Michael, 2026-09-02) so "The Anderson Group"
+   and "The Wilson Company" do not both bucket to no-website:the — which is
+   over-grouping so coarse it groups nothing.
+
+   ⛔ IMPORT ONLY. A hand-entered prospect or company with no usable domain
+   gets an EMPTY domain — see 2B.18/2B.19. Placeholders make a BULK load
+   triageable; on a form he is looking straight at they are noise. */
+const PLACEHOLDER_ARTICLES = new Set(["the", "a", "an"]);
+
+function importPlaceholderDomain(companyName) {
+  const words = String(companyName || "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  const first = words.find(w => !PLACEHOLDER_ARTICLES.has(w)) || words[0] || "";
+  return first ? "no-website:" + first : "";
+}
+
+/* THE ONE DECISION, USED BY BOTH IMPORT ROUTES. Returns { domain, website }.
+
+   Order, and every step of it is load-bearing:
+     1. the sheet's own website/domain column, IF it survives junk-stripping —
+        this is the only branch that can also produce a `website`;
+     2. otherwise the row's EMAIL host, unless it is a free mailbox — an absent
+        identity is honest, "gmail.com" as an employer is not;
+     3. otherwise the cleanup-bucket placeholder.
+
+   ⚠️ A REAL DOMAIN IS ALSO WRITTEN TO `website` — MICHAEL, 2026-09-02,
+   REVERSING THIS SESSION'S FIRST SHIPPED CALL. The first pass left `website`
+   empty on the email branch, reasoning that a mailbox is evidence of a mailbox
+   and not of a web presence. He asked for the opposite: "I want domain to
+   write to website unless there is already a value there." An empty Website
+   column on a company he can see is worth less than a host that is right
+   almost every time and is one edit to correct.
+
+   ⛔ BUT THE PLACEHOLDER IS NEVER PROMOTED TO `website`, AND THAT CARVE-OUT IS
+   NOT AN OVERSIGHT. ensureUrlProtocol() prepends a scheme to anything without
+   one, so "no-website:spl" sitting in `website` renders as a live link to
+   "https://no-website:spl" on the company card and in the companies table — a
+   confident wrong answer where an empty field is an honest one. It is also
+   his own rule, stated the same day: "Domain is the data. Website is the
+   display." The placeholder is data. It stays out of the display field.
+
+   "UNLESS THERE IS ALREADY A VALUE THERE" LIVES IN TWO PLACES, not one. Here,
+   the sheet's own website column wins whenever it survives junk-stripping —
+   this function never overwrites it with a host. At the call site, the
+   existing-company branch writes only into an EMPTY `existing.website`. Junk
+   is not "a value": a discarded "yourdomain.com" falls through and the real
+   host lands in both fields. */
+function importCompanyIdentity(websiteVal, email, companyName) {
+  const fromSheet = normaliseDomain(websiteVal);
+  if (looksLikeDomain(fromSheet) && !isJunkImportDomain(fromSheet)) {
+    return { domain: fromSheet, website: String(websiteVal || "").trim() };
+  }
+
+  const host = emailDomain(email);
+  if (host && looksLikeDomain(host) && !isFreeEmailHost(host) && !isJunkImportDomain(host)) {
+    return { domain: host, website: host };   // the domain IS the display now
+  }
+
+  // Placeholder: domain only. Never the display field — see the note above.
+  return { domain: importPlaceholderDomain(companyName), website: "" };
+}
+
 function syncCompaniesDatalist() {
   const list = document.getElementById("companies-datalist");
   if (!list) return 0;
@@ -14213,6 +14604,21 @@ function setupEventListeners() {
   });
   document.getElementById("btn-backup-options-close").addEventListener("click", () => {
     document.getElementById("modal-backup-options").classList.add("hidden");
+  });
+
+  // Session 2B.20 — the duplicate-domain report. Rendered fresh on every open
+  // and on Re-run; it holds no cache, because the whole reason to open it is
+  // that companies have just changed.
+  document.getElementById("btn-open-domain-report")?.addEventListener("click", () => {
+    renderDuplicateDomainReport();
+    document.getElementById("modal-domain-report").classList.remove("hidden");
+  });
+  document.getElementById("btn-domain-report-rerun")?.addEventListener("click", renderDuplicateDomainReport);
+  document.getElementById("btn-domain-report-close-x")?.addEventListener("click", () => {
+    document.getElementById("modal-domain-report").classList.add("hidden");
+  });
+  document.getElementById("btn-domain-report-close")?.addEventListener("click", () => {
+    document.getElementById("modal-domain-report").classList.add("hidden");
   });
 
   document.getElementById("btn-export-all-zip").addEventListener("click", exportZIPBackup);

@@ -1,213 +1,196 @@
 # AI Context
 
-**Updated:** 2026-09-02 17:10 (America/New_York) — **session closed here**
+**Updated:** 2026-09-02 18:04 (America/New_York) — **session closed here** (amended after close: Michael reversed the `website` call, shipped as **v121**)
 
-**Last run:** Phase 2B / **Session 2B.18 — Connect a contact to its company by email domain.** Compartment: the company create path + the prospect email commit, under the standing cross-compartment exception. Plan: `ai/phases/phase-2b-review-response-plan.md` line 515 — **NOT** in `phase-2b-prospect-detail-view.md`, which holds only the frozen contracts P5/P6/P9 this session reads.
-**State:** `node --check app.js` clean · `check_ids.py` at its standing baseline of two (`{'export-backup-btn', 'restore-backup-input'}`) · `CACHE_NAME` **v115 → v118, CONFIRMED LIVE** (`caches.keys()` `['vantageprm-cache-v118']`) · `app.js` 15,728 → **16,346** / `index.html` 3,491 → **3,515** / `style.css` 4,739 → **4,765** · **console: `onlyErrors` returns NOTHING — zero red across the whole session** · final parked state: 6 companies / **5** prospects, no modal open, dashboard, light theme, filters cleared · user data 28,438 → **28,832 bytes** (+394: one new prospect, deliberate — see Assumption 1) · git **unknown; there is still no shell on this machine, so ASK, do not assume** · deployed n/a
-**Estimate vs actual:** sized **M–L / ~10 min / Medium**. **It ran M–L and the confidence was right** — the matcher was easy and both defects found in verification were in the interaction branches, exactly where the plan said the risk was. **Michael's time: ~2 minutes** — one question answered at the top, nothing else asked.
+**Last run:** Phase 2B / **Session 2B.20 — Repair the company identity on import, and the duplicate-domain report.** Compartment: the CSV contact import (`importCSVContacts()`, both file routes) + one new read-only report surface. Plan: `ai/phases/phase-2b-review-response-plan.md` line 163 — **NOT** in `phase-2b-prospect-detail-view.md`.
+**State:** `node --check app.js` clean · `check_ids.py` at its standing baseline of two (`{'export-backup-btn', 'restore-backup-input'}`) · `CACHE_NAME` **v118 → v121, CONFIRMED LIVE** (`caches.keys()` `['vantageprm-cache-v121']`) · `app.js` 16,346 → **16,752** / `index.html` 3,515 → **3,555** / `style.css` **4,765, UNCHANGED — this session added no CSS** · **console: `onlyErrors` returns NOTHING, twice, across the whole session** · parked: dashboard, light theme, no modal, 6 companies / 4 prospects · user data **28,298 bytes, byte-identical to the pre-fixture reading** · git **unknown; there is still no shell on this machine, so ASK, do not assume** · deployed n/a
+**Estimate vs actual:** sized **M / ~8 min / Medium**. **It ran M and the confidence was right** — the identity repair was not entangled with the id derivation (the plan's named fallback was never needed) and the only defect verification found was a plural. **Michael's time: ~2 minutes** — two questions answered at the top, one heads-up read mid-session.
 
-**One-glance version tell:** open Add Prospect, type an email at a company Vantage already knows, and **tab out of the Email box.** The Company name is simply there, before you have saved anything — and there is a **🔍 LOOK UP** button beside the Company label, and **the dropdown arrow on the Company box is gone.**
+**One-glance version tell:** DataHub, left card, under 📦 Run Backup / Export Options — a new **🔎 Duplicate Domain Report** button. On the sandbox it reports "Scanned 6 companies… None."
 
-## ⚠️ THE ANSWER MICHAEL GAVE THIS SESSION, AND WHAT IT MEANS
+## ⚠️ WHAT HAPPENED TO "MICHAEL HARWARD", SETTLED BY ARITHMETIC — READ BEFORE DOUBTING THE BYTE COUNTS
 
-**HIS WINDOW IS ON `http://localhost:5000` — THE SAME ORIGIN VERIFICATION RUNS AGAINST.** The two-handoff-old question is answered.
+**HIS WINDOW WAS STILL OPEN ~3 MINUTES INTO THIS SESSION AND IT WROTE ONCE**, at `lastMutationAt` 1788385367402 (21:42:47 UTC): **"Michael Harward" was deleted from ProspectHub.** That is exactly what 2B.18's Assumption 1 told him to do, so it is deliberate, not damage.
 
-**So the "different database" was never a different database. It was DECLARATIONS' one-window rule firing for real:** two windows on that origin share one `localStorage`, keep independent in-memory state, and whichever saves last overwrites the other wholesale with no error. That is what happened to his "DAV" and "Your AV Dept" records, and it is the only explanation that fits the evidence (his screenshots showed records that were genuinely not in the file when read straight off disk).
+**The arithmetic is what settles it, and it is worth keeping because it is the general technique.** 2B.18 closed at **28,832** user-data bytes and recorded that record as **+394**. This session's first reading was **28,438 = 28,832 − 394**, while `state.prospects.length` in my already-loaded tab still said **5**. Both numbers were true: `raw` was fresh from his save, `state` was my tab's stale memory. **A disagreement between `state.X.length` and the parsed `localStorage` is the signature of a second window having saved since your page loaded** — and it is cheaper to check than to diagnose.
 
-⛔ **EVERY FUTURE SESSION MUST ASK HIM TO CLOSE HIS VANTAGE WINDOW BEFORE IT VERIFIES ANYTHING.** He was asked at the top of this one. This is no longer a mystery to investigate; it is a standing pre-flight step.
+⛔ **THE STANDING PRE-FLIGHT STILL STANDS AND IT WAS ASKED THIS SESSION.** He answered "closed" and it was not yet closed. **Ask, and then also check the two numbers agree.**
 
-## ⚠️ THE TOOLING FAILURE THAT SHAPED THIS SESSION'S EVIDENCE — READ BEFORE TRUSTING A "CLICK"
+**Consequence, already handled:** the pre-session ZIP taken at **17:43 was exported from `state`, so it contains 5 prospects.** It is a superset — a valid rollback point, not an honest snapshot of "now". **`vantage_data_backup_9-2-26_1747.zip` is the true 4/6 rollback point** and is the one to use.
 
-**OS INPUT DID NOT REACH THIS CHROME WINDOW FOR MOST OF THE SESSION.** `computer type` reported success and the value never appeared. `el.focus()` left `document.activeElement.id` as `""`. Three real mouse clicks at coordinates verified correct with `elementFromPoint` did nothing to a `.dup-email-link` button.
+## What was done — the six plan tasks
 
-**AND THE DANGEROUS PART: A CLICK THAT DOES NOTHING LOOKS EXACTLY LIKE A REFUSAL THAT WORKED.** A real click on Save Contact with the conflict notice showing returned "companies 6, prospects 5, modal still open" — which reads as a clean pass and is equally consistent with the click never firing. **It never fired.** That reading was withdrawn and the check re-run.
+1. **`looksLikeDomain(v)`** — shape only: 2+ labels, alphabetic TLD of 2+, no whitespace. ⛔ **It deliberately does not know which TLDs exist and must not learn** — a hard-coded suffix list is wrong the day a new one ships, and `southland.church` is a real address.
+2. **The repair, in `importCompanyIdentity(websiteVal, email, companyName)`** — one function, both import routes. Order: the sheet's website column if it survives junk-stripping → the row's email host unless free/junk → the placeholder.
+3. ⛔⛔ **`companyId` DERIVATION IS UNTOUCHED AND WAS PROVED SO, NOT ASSERTED.** The old formula was transcribed verbatim and run beside the shipped import on the same ten rows: **10/10 MATCH, 0 mismatches.** Only the `domain` FIELD moved.
+4. **No name reconciliation on import.** His explicit call.
+5. **The duplicate-domain report** — `buildDuplicateDomainReport()` (pure) + `renderDuplicateDomainReport()` (DOM), in `app.js § 🔎 DUPLICATE-DOMAIN REPORT` immediately after `renderDataManagementView()`. Modal `#modal-domain-report`, button `#btn-open-domain-report`.
+6. **Two sections, and that IS the design** — real identities in section 1; everything with no real identity in section 2, labelled as cleanup buckets, so the placeholder and slug clusters cannot bury the real findings.
 
-**What DOES work and what it is worth:**
-- **`form_input`** fires a real `change` event and is the strongest evidence available here. It filled the Company box end to end. **Use it for the trigger.**
-- **A real browser `blur`** fires when the window happens to hold focus — it worked once, early, and that run is the one that proves the blur path.
-- **`el.click()` / `dispatchEvent(new Event("change"))`** run the shipped handler and are honest as long as they are LABELLED as dispatched. Everything in the tables below that is not marked otherwise is this.
-- **Screenshots and `computer zoom` work fine.** Rendering is unaffected; only input is.
+**Silent junk-stripping** shipped as `IMPORT_JUNK_DOMAINS` (`domain.com`, `yourdomain.com`, `example.com/.org/.net`) plus everything `looksLikeDomain()` rejects — which is what catches `n/a`, `none`, `-` and every slug without listing them.
 
-**Coordinate scale on this machine THIS session: CSS × 0.433** (screenshot 1479 wide, `innerWidth` 2560, content window ≈1110 of it). **BUILD_NOTES' recorded 0.912 is from a different window size — measure it, do not reuse it.** Two known points: `#pros-modal-confirm` CSS (1451,1166) renders at screenshot (628,505).
+## ⚠️ THE TWO LANDMINES FOUND IN CODE I WAS ALREADY EDITING
 
-## What was done — the nine plan tasks
+**1. THE COMPANIES-FILE ROUTE DEFAULTED `domain` TO THE LITERAL STRING `"stripe.com"`.** `domain: domain || "stripe.com"` in route 1 of `importCSVContacts()`. Harmless while nothing read `domain` — **and 2B.18 made something read it.** Every website-less company from a companies sheet would have been handed Stripe's identity, making them the employer of every `@stripe.com` address in the file, retroactively, with no event to notice. **Fixed to the same identity function.** ⛔ `id: domain.toLowerCase() || …` on the line above still reads the RAW variable and must.
 
-1. **`normaliseDomain()` was CONSUMED, not rewritten.** 2B.19's copy at `app.js` ~13269 is the only one. ⛔ 2B.20 uses it too.
-2. **`emailDomain()` · `FREE_EMAIL_DOMAINS` (16 hosts) · `isFreeEmailHost()` · `companyIdentityDomain()` · `companiesByEmailDomain()` · `companyNameFromDomain()`** — filed together immediately below `normaliseDomain()`. `companiesByEmailDomain()` returns an **ARRAY**; a first-hit version would hide the 2+ branch, which is the only surface that shows him his existing duplicates.
-   ⚠️ **`emailDomain()`'s `@` TEST IS NOT REDUNDANT.** `normaliseDomain()` strips userinfo with `/^[^@]*@/`, so it maps a bare word to itself — `normaliseDomain("marcus")` is `"marcus"`. Without the `@` guard a half-typed Email box would match a company whose stored `domain` is a **CSV-import slug**. Verified: `companiesByEmailDomain("marcus")` → `[]`.
-   ⚠️ **`companyIdentityDomain()` IS THE TRANSITIONAL FALLBACK AND IT IS COMMENTED AS SUCH.** A stored `domain` is an identity only if non-empty, not `"domain.com"`, and containing a dot; otherwise fall back to normalised `website`. **Phase 2C removes that one line.** Checking `domain` alone fails on the slug and placeholder records; checking `website` alone fails on every company created before 2B.13 restored that seed.
-2b. **The `"domain.com"` PLACEHOLDER IS NO LONGER WRITTEN.** `resolveCompanyByName()` now stores a normalised host, **empty when there is no usable email**, and **blocklists the host before storing it** — otherwise "Acme" typed against `bob@gmail.com` stores `domain: "gmail.com"` and that company becomes the employer of every personal address in the file. Existing placeholder rows are untouched; `domain` keeps its CSV column and name.
-3. **The matcher runs BEFORE `resolveCompanyByName()` everywhere** — contract P6's ordering rule, third instance. That function creates a company as a side effect, so asking afterwards strands one behind every question.
-4. **The blocklist gates the MATCHER, not just the seed.** `x@gmail.com` matches nothing, suggests nothing, and hides the Look Up button.
-5–6. **The notice is a REUSE of P6's `renderDuplicateEmailWarning()` pattern and `.dup-email-warning` — a FOURTH surface, and `style.css` gained no rule for it.** The multi-match picker is a row of buttons **inside that same block**, not a second modal.
-7. **It fires on `#pros-email` `blur` AND `change`**, with `saveProspect()` as the backstop. Both halves shipped; see the warning below.
-8. **No silent relink**, on either surface.
-9. **Carried extras:** website seed under the three conditions · offline name suggestion into a blank box **(modal only)** · **🔍 Look Up** opening a Google search in a new tab with `noopener` · **the dropdown arrow removed**, scoped `#pros-company, #pd-company` by id, in a new block **immediately above** the 🧱 HUB SHELL block.
-
-## ⚠️⚠️ THE TWO DEFECTS VERIFICATION FOUND — BOTH IN CODE THAT READ CORRECTLY
-
-**1. THE ORDERING BUG WAS STILL LIVE IN THE DETAIL VIEW AFTER I "FIXED" IT.** `saveProspect()` called `maybeSeedCompanyFromEmail()` and `commitProspectField()`'s `companyId` branch called it, so the fix looked complete. **The email branch did not.** Fill Company before Email in the detail view — which that view's own layout invites, Company sitting above Email in the grid — and the company is minted with an empty `domain`; **an empty identity matches nothing by design**, so the plan returned `"none"` and the company kept an empty identity forever. **The seed now runs FIRST inside `applyDetailCompanyLink()`, before the plan.** ⚠️ **Every check I had written until then filled Email first** — the same shape of blind spot as 2B.19's, one surface over.
-
-**2. A FLEX `gap` PUT A SPACE BEFORE A FULL STOP.** `.dup-email-warning` is `display:flex; gap:6px`, so a sentence built as `<span>/<strong>/<span>` rendered "Your AV Department ." **P6's own notices never hit this because neither puts an element mid-sentence.** The `<strong>` now lives inside one span. **Any future notice that reuses this rule set and interpolates a name mid-sentence needs the same wrapper.**
+**2. A FOURTH COPY OF THE SLUG DERIVATION EXISTS AND WAS DELIBERATELY NOT TOUCHED.** `restoreProspectsFromCSV()` (~`app.js` 2289) carries the same `companyName → slug` lines. **It is the RESTORE path and it must reproduce what was exported, not improve on it** (BUILD_NOTES, same reasoning as `restoreCompaniesFromCSV()`). Grepping the slug regex now returns **two** hits, and only one of them is in scope for identity work.
 
 ## Verified — real output, not a claim
 
-v118, `controlled: true`, transition kill-switch injected after every reload, `document.getAnimations().length` 0.
+v121, `controlled: true`, transition kill-switch injected after every reload. **The first fixture block below is the v120 run, kept because it is what proves the `companyId` regression; the v121 block after it is the shipped `website` behaviour.**
 
-**The matcher, and the guards that make it safe:**
-
-```
-emailDomain("michaelh@youravdept.com")   -> ["youravdept","com"]
-emailDomain("MichaelH@WWW.YourAVDept.com")-> ["youravdept","com"]
-emailDomain('"a@b"@youravdept.com')      -> ["youravdept","com"]   (lastIndexOf, not indexOf)
-emailDomain("marcus")                    -> EMPTY  (the @ guard held)
-
-companiesByEmailDomain("michaelh@youravdept.com") -> ["Your AV Department"]
-companiesByEmailDomain("jane.smith@stripe.com")   -> ["Stripe"]
-companiesByEmailDomain("x@gmail.com")             -> []
-companiesByEmailDomain("x@icloud.com")            -> []
-companiesByEmailDomain("marcus")                  -> []
-
-companyNameFromDomain("spl-productions.com") -> "Spl Productions"
-companyNameFromDomain("youravdept.com")      -> "Youravdept"
-```
-
-**HIS SCENARIO, THROUGH A REAL BROWSER `blur` — the value was set with NO events at all, then `el.blur()` let the browser fire its own. So anything below came from the blur handler and nowhere else:**
+**The pure branches, zero state mutation:**
 
 ```
-step 1  after typing, before leaving Email : companyBox ""            notice false
-step 2  the instant Email lost focus       : companyBox "Your AV Department"
-                                             LOOK UP visible, searching ["youravdept","com"]
-        NOTHING SAVED YET                  : prospects 4  companies 6  modal still open
+looksLikeDomain:  spl-productions false | no-website:spl false | acme.com true
+                  southland.church true | bbc.co.uk true | n/a false | none false
+                  - false | "" false | "my company.com" false | domain.com TRUE (shape only)
+
+placeholder:      SPL Productions -> no-website:spl      SPL Production   -> no-website:spl
+                  SPL AV Production -> no-website:spl    Acme, Inc.       -> no-website:acme
+                  The Anderson Group -> no-website:anderson
+                  The Wilson Company -> no-website:wilson
+                  A Better Sound     -> no-website:better      (the article skip, all three)
 ```
 
-Independently, **`form_input` — a real value entry firing a real `change`** — filled the box the same way before any blur happened at all.
-
-**Then a REAL MOUSE CLICK on Save Contact, and a reload:**
+**The v120 import, a 10-row fixture through `importCSVContacts()` — every Done-when row.** ⚠️ Its `website` column is PRE-REVERSAL; see the v121 block below for what ships.
 
 ```
-prospects 4 -> 5      companies 6 -> 6      NO NEW COMPANY WAS CREATED
-created "Michael Harward"  <michaelh@…>
-companyId resolves to "Your AV Department", and it is the SAME record id
-the company was NOT edited: domain ["youravdept","com"]  website unchanged
+Spectra Productions  id=spectra-productions   domain=spectra-productions.com  website=(EMPTY)   slug -> EMAIL
+Acme Widgets         id=acme-widgets.com      domain=acme-widgets.com   website=https://www.acme-widgets.com  REAL KEPT
+Southland Church     id=southland-church      domain=no-website:southland     website=(EMPTY)   gmail -> PLACEHOLDER
+SPL Production       id=spl-production        domain=no-website:spl           website=(EMPTY)
+SPL Productions      id=spl-productions       domain=no-website:spl           website=(EMPTY)
+SPL AV Production    id=spl-av-production     domain=no-website:spl           website=(EMPTY)   <- THE HEADLINE
+Placeholder Co       id=yourdomain.com        domain=realhost.io              website=(EMPTY)   yourdomain.com STRIPPED
+SPL Productions Ltd  id=spl-productions.com   domain=spl-productions.com      website=spl-productions.com
+SPL Productions Ltd  id=spl-productions-ltd   domain=no-website:spl           website=(EMPTY)   christy@gmail NOT JOINED
+Acme Widgets Inc     id=acme-widgets-inc      domain=acme-widgets.com         website=(EMPTY)
 ```
 
-**The behaviour table, every branch (dispatched `change`, then the shipped `saveProspect()`):**
+**`christy.weaver@gmail.com` listed against the existing "SPL Productions Ltd" (`spl-productions.com`) was NOT joined to it** — row 9 is its own record on `no-website:spl`. Domain is the only automatic key, exactly as he specified.
 
-| Branch | Result |
-| --- | --- |
-| 1 match, box blank | Linked silently, by **record id** — not by round-tripping the name |
-| 1 match, box names the same company | Nothing said, nothing done |
-| 1 match, box names a different one | `"youravdept.com belongs to **Your AV Department**. Link to Your AV Department · Keep Your AV Dept · Nothing was linked."` |
-| …and Save with that showing | **REFUSED.** companies 6, prospects 5, modal open, no "Your AV Dept" created |
-| …then "Link to Your AV Department" | Save resumed, Dana saved on Your AV Department, **companies still 6** |
-| …or "Keep Your AV Dept" | His choice created, **and he was not asked a second time** |
-| 2+ matches | `"2 companies use youravdept.com. Pick one: Your AV Department · Your AV Dept · Leave it blank"` — Save refused until he picks; picking created **no** new company |
-| Blocked domain `pat@gmail.com` | companyBox `""`, no notice, matcher 0, **Look Up hidden** |
-| 0 matches, blank box, real host | `sam@spl-productions.com` → box reads **"Spl Productions"**, companies unchanged |
-
-**Match on `domain` ALONE, against a company whose `website` is empty** — the shape of every company created before 2B.13:
+**THE v121 RE-RUN — the same 10-row fixture after the `website` reversal:**
 
 ```
-probe { domain: ["probeonly","example"], website: "" }
-owen@probeonly.example -> companyBox "Probe Domain Only"   matcher ["Probe Domain Only"]
+Spectra Productions   domain=spectra-productions.com   website=spectra-productions.com   seeded
+Acme Widgets          domain=acme-widgets.com   website=https://www.acme-widgets.com     SHEET WINS
+Southland Church      domain=no-website:southland      website=(EMPTY)                   carve-out
+SPL Production        domain=no-website:spl            website=(EMPTY)
+SPL Productions       domain=no-website:spl            website=(EMPTY)
+SPL AV Production     domain=no-website:spl            website=(EMPTY)
+Placeholder Co        domain=realhost.io               website=realhost.io               junk fell through
+SPL Productions Ltd   domain=spl-productions.com       website=spl-productions.com
+SPL Productions Ltd   domain=no-website:spl            website=(EMPTY)
+Acme Widgets Inc      domain=acme-widgets.com          website=acme-widgets.com          seeded
 ```
 
-**No silent relink, on both surfaces.** Michael Harward (on Your AV Department) edited to a `stripe.com` address:
+**"UNLESS THERE IS ALREADY A VALUE THERE", on rows that genuinely hit the existing-company branch (0 new companies created):**
 
 ```
-notice  "stripe.com belongs to Stripe. Link to Stripe  Keep Your AV Department"
-companyBox NOT moved   record still on "Your AV Department"   Save refused
-after the refusal the record's email is STILL ["youravdept","com"]
+(a) target already had a website : https://www.acme-widgets.com -> unchanged   PRESERVED true
+(b) target's website was EMPTY   : (EMPTY) -> spl-production.com               FILLED true
+    ...and its placeholder domain was NOT overwritten: no-website:spl -> no-website:spl
+    companyIdentityDomain() for that record now resolves to spl-production.com
 ```
 
-Detail view, same record type: a blank-company prospect linked silently on the email commit, then had its address moved to a two-company domain — **picker shown, record stayed on "Probe Domain Only", box unchanged.**
+⚠️ **THAT LAST LINE IS AN EMERGENT REPAIR AND IT IS WORTH KNOWING.** A placeholder company whose `website` later gets filled by any contact with a real address becomes **matchable again for free**, because `companyIdentityDomain()` falls back to a normalised `website` when `domain` is not a real host. The placeholder keeps its cleanup-bucket grouping in the report *and* the company starts matching by email. Nothing was written to make this happen — it falls out of the 2B.18 fallback meeting the v121 seed.
 
-**The ordering bug and the three seed conditions — Company FIRST, Email second, in the detail view:**
-
-```
-company created with no email yet : domain "" website ""   NOT "domain.com"
-then the email arrives            : domain ["halprobe","example"] website ["halprobe","example"]
-                                    same company id, companies count unchanged
-
-(1) domain already set        -> wrote false, Stripe still ["stripe","com"]
-(2) a second contact attached -> wrote false, domain still ""
-(3) free host hal@gmail.com   -> wrote false, domain still ""
-resolveCompanyByName("Gmail Trap Probe","bob@gmail.com") -> domain "" website ""
-resolveCompanyByName("No Email Probe","")                -> domain "", NOT "domain.com"
-```
-
-**The arrow, and that the rule is scoped:**
+**THE REGRESSION THAT MATTERS — old formula vs shipped, same ten rows:**
 
 ```
-#pros-company::-webkit-calendar-picker-indicator, #pd-company::-webkit-calendar-picker-indicator
-input[type="date"]::-webkit-calendar-picker-indicator          (untouched)
-input[type="date"]::-webkit-calendar-picker-indicator:hover    (untouched)
-
-datalist: 6 options, both inputs still list="companies-datalist"
+MATCH  spectra-productions      MATCH  acme-widgets.com     MATCH  southland-church
+MATCH  spl-production           MATCH  spl-productions      MATCH  spl-av-production
+MATCH  yourdomain.com           MATCH  spl-productions.com  MATCH  spl-productions-ltd
+MATCH  acme-widgets-inc
+allIdentical: true    mismatches: 0
 ```
 
-Zoomed screenshot in chat shows the Company box with **no arrow**. ⚠️ **The one Done-when item NOT fully proved: the datalist POPUP was never opened**, so "type-ahead still filters and scrolls" is argued (the rule targets only the indicator pseudo-element; the list is intact and both inputs are still bound) rather than seen. **Opening it needs OS input, which did not work.** Michael can confirm in one keystroke.
+**The report on the fixture:**
+
+```
+scanned 16
+DUPLICATES:  acme-widgets.com -> 2 names, 2 records: Acme Widgets (1) / Acme Widgets Inc (1)
+NO IDENTITY: no-website:spl [import placeholder (2B.20+)] 4 records:
+             SPL AV Production / SPL Production / SPL Productions / SPL Productions Ltd
+             + 1 singleton, counted not listed
+```
+
+⚠️ **NOTE WHAT PRODUCED THAT DUPLICATE: the repair itself.** "Acme Widgets Inc" arrived as a slug and only became visible as a duplicate of "Acme Widgets" once its `domain` was repaired from its email. **The report will find MORE on his real data after this ships than before, and that is the feature working, not new damage.**
+
+**READ-ONLY, measured with no navigation inside the window:**
+
+```
+before {companies 16, prospects 14, rawBytes 35081, companiesJSON 5828, prospectsJSON 6172}
+after  {companies 16, prospects 14, rawBytes 35081, companiesJSON 5828, prospectsJSON 6172}
+IDENTICAL: true
+```
+
+⚠️ **The first attempt at this check read `unchanged: false` on a +6-byte drift and it was MY instrumentation** — `switchView("data-management")` calls `saveState()` and moves `activeView` from "prospects" (9) to "data-management" (15). BUILD_NOTES already records this. **Do not navigate inside a byte-comparison window.**
+
+**Rollback, exact:**
+
+```
+rawBytes 28437  ==  pre-fixture 28437     matchesPreFixture: true
+companies Stripe / Vercel / Figma / Notion / Airbnb / Your AV Department
+prospects Jane Smith / Alex Rivera / Sarah Chen / Marcus Vance
+__2b20_guard REMOVED   localStorage keys: vantage_sidebar_pinned, vantage_prm_database
+```
 
 | Check | Result |
 | --- | --- |
 | All six hubs | Every panel `active-panel` after the sweep |
-| Console | **Zero errors**, whole session. Boot: Database · IndexedDB · SW registered · Snapshot boot · Mirror daily |
+| Console | **Zero errors, twice.** One WARNING is the shipped defence working: `[Snapshot] Ignoring 1 zero-byte snapshot file(s)`, then `Pruned 1 file(s) — 1 zero-byte, 14 kept` |
 | `node --check` / `check_ids.py` | Clean parse; `Missing IDs: {'export-backup-btn', 'restore-backup-input'}` — the baseline pair exactly |
-| Parked | Dashboard, light theme, both `forceShowAll*` false, filters cleared, no modal |
+| Parked | Dashboard, light theme, no modal, 6 companies / 4 prospects |
 
-**Screenshots in chat:** the Company box filled on blur with LOOK UP beside it and no arrow · a zoom on the arrow-free box · the conflict refusal in situ · the multi-match picker in the modal · the picker in the detail view.
+**Screenshots in chat:** the report on the fixture showing both sections · the report on the clean sandbox showing the empty branch.
 
 ## Assumptions logged this session
 
-1. ⚠️ **"MICHAEL HARWARD" `michaelh@youravdept.com` WAS KEPT, NOT ROLLED BACK.** It is the whole +394 bytes. It is his own contact, created through the shipped path by a real mouse click, and it is the live test case 2B.20 will want — the same reasoning 2B.19 used for keeping "Your AV Department". **Delete it from ProspectHub if you don't want it.** Every other probe (Dana, Ray, Nia, Gwen, Hal, and the "Your AV Dept" duplicate the Keep-mine branch created) was **swept — companies back to the original six, byte-checked.**
-2. **The name suggestion is MODAL-ONLY.** In the modal nothing is stored until Save, so a guess is a suggestion he can overtype. In the detail view **every control commits on change**, so a guess there would BE a write and "Youravdept" would become a real company because he tabbed out of a box. Ladder rung 2.
-3. **The guessed name is the FIRST LABEL, title-cased, split on hyphens and underscores.** `spl-productions.com` → "Spl Productions"; `youravdept.com` → "Youravdept". **This is the format question carried unanswered across three handoffs** — it is now shipped and is on Needs-your-eyes. One line to change.
-4. **"Look Up" searches the DOMAIN, on Google, in a new tab with `noopener`** — not the typed company name, because the button exists for when you do not know the name yet. Hidden unless the address yields a non-free host.
-5. **`companyLinkAnsweredFor` is a module-scope string, not persisted** — the same class as `detailProspectId`. It is what makes the refusal reachable past: once he has said "keep mine", asking again on the next Save is a loop, not a rail. Cleared on every `openProspectModal()` and `openProspectDetail()`, and after a successful save.
-6. **The `suggest` plan is deliberately NOT applied by `saveProspect()`.** A guessed name that writes itself at Save is a company created behind his back.
-7. **The uniqueness guard stays create-only** (carried from 2B.19) and 2B.18 adds no guard to the company edit path.
+1. **The plan's task 2 says "leave `domain` EMPTY" for a free host; the placeholder section says `no-website:<firstword>`. THE PLACEHOLDER WINS ON THE IMPORT.** Task 2's "empty" means "do not write gmail.com"; the placeholder section is the later, more specific rule and is explicitly import-only. ⛔ Hand-entered records still get an empty domain — 2B.18/2B.19 are unchanged.
+2. ⚠️ **REVERSED BY MICHAEL AFTER THE CLOSE, AND THE SHIPPED BEHAVIOUR IS THE REVERSAL (v121).** The first pass left `website` empty on the email branch. He asked for: *"I want domain to write to website unless there is already a value there."* **A REAL derived host now goes into BOTH fields.** ⛔ **The `no-website:` placeholder still NEVER reaches `website`** — proved, not argued: `ensureUrlProtocol("no-website:spl")` returns **`https://no-website:spl`**, a live broken link on the company card, where `ensureUrlProtocol("acme-widgets.com")` returns a working `https://acme-widgets.com`. His own rule, same day: "Domain is the data. Website is the display." **"Already a value" lives in two places** — this function never overwrites the sheet's own website column, and the existing-company branch writes only into an EMPTY `existing.website`. Junk is not a value: a discarded `yourdomain.com` falls through and the real host lands in both.
+3. **THE EXISTING-COMPANY BRANCH REPAIRS ONLY AN EMPTY `domain`/`website`**, following the `if (!existing.x && x)` idiom every other line in that branch uses. Overwriting a non-empty stored value during an import is a **DIRECTIVES §4 change to existing data** and needs its own decision and rollback plan. **Existing placeholders, `"domain.com"` rows and pre-2B.20 slugs are untouched and are what the report is FOR.**
+4. **The article skip is `the` / `a` / `an`** (Michael answered at the top of this session).
+5. **A BUTTON IN DATAHUB, THE REPORT IN A MODAL.** `#view-data-management` is a two-column `.dashboard-split-grid` with `grid-auto-rows: minmax(0, 1fr)`; **a third card creates a second row and halves both existing cards**, breaking the one-screen contract for a tool run occasionally. The backup-options button beside it is the same pattern. Rung 1.
+6. **Unresolved SINGLETONS are counted, not listed** — otherwise section 2 becomes a reprint of the companies directory.
+7. **Section 1's threshold is 2+ RECORDS, not 2+ names**, with `nameVariants` saying which kind it is. Two records of the same name on one domain is a duplicate record and he wants to see it too.
 
 ## Backup coverage — DIRECTIVES §4
 
-**`state.prospects[].companyId` and `state.companies[].domain` / `.website` ARE WRITTEN by this session. COVERED.** All three are existing fields already in the ZIP bundle — `Domain` is column 3 of `prm_companies.csv`, `website` is beside it, and `companyId` has always exported with prospects. **NO NEW STORE, NO NEW FIELD, NO NEW KEY. `wipeAllData()` needs no edit. `ensureStateDefaults()` needs no entry.**
+**`state.companies[].domain` and `.website` ARE WRITTEN by this session, on the import path only. COVERED.** Both are existing fields already in the ZIP bundle — `Domain` is column 3 of `prm_companies.csv` and `website` is beside it. **NO NEW STORE, NO NEW FIELD, NO NEW KEY. `wipeAllData()` needs no edit. `ensureStateDefaults()` needs no entry. The report writes nothing at all.**
 
-**The post-session ZIP landed in the real backup folder:** `vantage_data_backup_9-2-26_1708.zip`, listed by reading the `backupFolder` directory handle directly — `kind "directory"`, `queryPermission({mode:"readwrite"})` **`"granted"`**, newest five zips `[9-1_1008, 9-2_1214, 9-2_1534, 9-2_1625, **9-2_1708**]`. The pre-session ZIP (`9-2-26_1625`) was already taken at the 2B.19b close.
-
-⚠️ **AND THAT READING CONFIRMS 2B.19b's CORRECTION A THIRD TIME: the chip said "Not protected" at the same moment the handle reported `granted` and the write landed.** Earlier in this same session a screenshot caught it reading **"Protected"** with nothing changed in between. **THE CHIP IS A DISPLAY DEFECT. THE PERMISSION IS FINE.** 2B.10's "confirmed green snapshot" gate is unsatisfiable as written and should be restated against `wroteToFolder` / the handle's permission. Fixing it is unowned — `renderSnapshotHealthChip()` / `computeSnapshotState()`.
+**Two ZIPs landed in the real backup folder this session**, both listed by reading the `backupFolder` handle directly, `queryPermission({mode:"readwrite"})` **`"granted"`**: `vantage_data_backup_9-2-26_1743.zip` (pre-session, but exported from a 5-prospect in-memory state — a superset) and **`vantage_data_backup_9-2-26_1747.zip`, the true 4/6 rollback point.**
 
 ## Open items
 
-- **⚠️ NEEDS YOUR EYES — five things, all decided, all one-line reversible:**
-  1. **The guessed company name format** (Assumption 3) — `spl-productions.com` → "Spl Productions", `youravdept.com` → "Youravdept". The three-handoff-old question, now shipped.
-  2. **The refusal wording** — *"youravdept.com belongs to **Your AV Department**. Link to Your AV Department · Keep Your AV Dept · Nothing was linked."*
-  3. **The picker wording** — *"2 companies use youravdept.com. Pick one: …"* with **"Leave it blank"** as the escape on a blank box.
-  4. **"🔍 LOOK UP"** — its label, its placement beside ✏️ Edit Profile, and that it searches **Google for the domain**.
-  5. **The notice sits under COMPANY, not under Email.** The choice it offers is about the company; P6's duplicate-email notice keeps its place under Email.
-- **⚠️ THE ONE DONE-WHEN ITEM NOT FULLY PROVED:** the datalist popup was never opened, so type-ahead filtering and scrolling are argued rather than seen. See the note above.
-- **⚠️ CLOSE YOUR VANTAGE WINDOW BEFORE ANY FUTURE SESSION VERIFIES.** Now a standing step, not a mystery. See the top of this file.
-- **⚠️ THE PRODUCTION DATABASE IS STILL NOT LOADED.** 5 prospects / 6 companies. **No real duplicate-domain cluster has ever been seen**, so the placeholder and slug clusters Phase 2C expects remain unmeasured; 2B.11's geography parity numbers remain unreproduced.
+- ✅ **ANSWERED AFTER THE CLOSE: the `website` seed.** See Assumption 2 — shipped in v121, verified, docs corrected. The one thing carved out of his instruction is the placeholder, on the broken-link evidence above.
+- **⚠️ NEEDS YOUR EYES — three, all decided, all one-line reversible:**
+  1. **The report's two-section layout and its wording**, especially "NO REAL IDENTITY — CLEANUP BUCKETS, NOT DUPLICATES". The plan asked whether those groups should be listed at all or just counted; **shipped as: clusters listed, singletons counted.**
+  2. **The button label 🔎 Duplicate Domain Report and its placement** under Run Backup / Export Options.
+  3. **The existing-company branch repairs only EMPTY fields** (Assumption 3) — the back-fill of existing bad rows is still unowned and still a §4 decision.
+- **⚠️ THE PRODUCTION DATABASE IS STILL NOT LOADED.** 4 prospects / 6 companies. **The report has never been run against a real duplicate cluster** — its whole value is unmeasured, and running it on the production import is the single cheapest thing he can do next.
+- **⚠️ CLOSE YOUR VANTAGE WINDOW — AND THE SESSION SHOULD VERIFY THAT IT IS CLOSED, NOT JUST ASK.** See the top of this file.
 - **⚠️ THE IDENTITY BLOCK STILL BREAKS CONTRACT S1 BELOW 1150px CANVAS WIDTH.** 2B.17's.
-- **⚠️ DECLARATIONS AMENDMENTS PROPOSED, NOT APPLIED** — the batch 2B.10 owes: the P4 order, the seventh view panel, the line-count reconciliation, and the field-semantics line *"A company's `domain` is its identity — a normalised bare host, unique. `website` is free-form display. There is no `url` field."* **"Six hubs" stays true and must not be edited to say seven.** ⚠️ **2B.18 adds one more:** *"`resolveCompanyByName()` no longer writes the `"domain.com"` placeholder; a company created without a usable email gets `domain: ""`."*
+- **⚠️ DECLARATIONS AMENDMENTS PROPOSED, NOT APPLIED** — the batch 2B.10 owes: the P4 order, the seventh view panel, the line-count reconciliation, the field-semantics line, and 2B.18's `resolveCompanyByName()` line. **"Six hubs" stays true and must not be edited to say seven.** ⚠️ **2B.20 adds one:** *"The CSV import repairs a company's `domain` on the way in and writes `no-website:<firstword>` when no host can be derived. `companyId` is unchanged."*
 - **Still owed by you:** the **P8 revision** (gates 2B.15), the **ID layout design** (gates 2B.17), and **Finding 10d's meaning** in one word.
-- **⚠️ THE THIRD COMPANY-CREATION PATH IS STILL UNFIXED and 2B.20 is where it gets fixed.** The CSV import writes `domain: p.companyId` — a **slug** when the sheet has no website column — and never reads the email. **It is also the reason `companyIdentityDomain()`'s `website` fallback has to exist.**
-- **`domain` IS STILL DISPLAYED IN EXACTLY ONE PLACE: the company modal.** Not in the Company tab grid, not in `COMPANIES_COLUMNS`. Anything a user reports about "the company domain" outside that modal is still about **`website`**.
-- **Phase backlog:** the uniqueness guard on the company edit path; the snapshot chip; the headquarters duplication question needs the production database; ZIP restore reports 1 orphaned task on a round trip; `.col-resize-handle` keeps the stock cursor; existing companies' empty `website` and existing `"domain.com"` rows — a §4 back-fill, deliberately deferred to Phase 2C's collision report.
+- **`domain` IS STILL DISPLAYED IN EXACTLY ONE PLACE: the company modal** — plus, now, the report. Anything a user reports about "the company domain" outside those two is still about **`website`**.
+- **Phase backlog:** the uniqueness guard on the company edit path; the snapshot chip display defect (`renderSnapshotHealthChip()` / `computeSnapshotState()`, and 2B.10's "confirmed green snapshot" gate is unsatisfiable as written); the headquarters duplication question needs the production database; ZIP restore reports 1 orphaned task on a round trip; `.col-resize-handle` keeps the stock cursor; **the §4 back-fill of existing `"domain.com"` and slug rows, deliberately deferred to Phase 2C's collision report — which this report now feeds.**
 - **Carried, unchanged:** `#btn-see-all-contacts` does not exist. Both `forceShowAll*` true blanks the directory. `pros-sarah` carries no `conference*` keys. The four always-on conference boxes read as grey ghosts. CampaignHub identifies itself twice. Dashboard/DataHub emptiness is `renderDashboardView()`'s `slice(0, 5)`. MediaHub's tag rail off the right edge. `.checkbox-scroller` inline `max-height: 350px`. `.tags-filter-scroller` `max-height: 400px`. `state.columnLayouts.taskhub.widths` carries `firstName: 0` and `lastName: 0`.
 - **Unchanged from Phase 1:** `parseCSVRow()` `""` gap; repo is PUBLIC; DIRECTIVES §0 compliance undecided; stale `..\backups\`; `schema_update.sql` still deletable.
 
 ## Files changed
 
-**Code:** `app.js` (15,728 → **16,346**), `index.html` (3,491 → **3,515**), `style.css` (4,739 → **4,765** — its first growth in four sessions, one block, the arrow rule), `sw.js` (**v115 → v118**; three deploys, two of them repairs found in verification).
+**Code:** `app.js` (16,346 → **16,752**), `index.html` (3,515 → **3,555**), `sw.js` (**v118 → v121**; three deploys — a plural, then Michael's `website` reversal after the close). **`style.css` UNCHANGED at 4,765 — this session added no CSS at all**, the report reuses existing tokens and inline styles in the house idiom of that markup.
 
-**Documents:** `ai/AIContext.md`, `ai/archive/2026-09-02_1708_AIContext.md` (new), `ai/BUILD_NOTES.md`.
+**Documents:** `ai/AIContext.md`, `ai/archive/2026-09-02_1751_AIContext.md` (new), `ai/BUILD_NOTES.md`.
 
 **No `DECLARATIONS.md` or `DECISIONS.md` change.**
 
 ## Next step
 
-**2B.20 — Import identity: repair on import + the duplicate-domain report.** `ai/phases/phase-2b-review-response-plan.md`. ⚠️ **ZIP IS MANDATORY — it is the only session in this phase touching records in bulk.** ⛔ **`companyId` DERIVATION MUST NOT CHANGE.** `normaliseDomain()`, `emailDomain()`, `isFreeEmailHost()` and `companyIdentityDomain()` are all waiting for it — **do not write a second copy of any of them.**
+**2B.14 — Include semantics: OR within a picker, AND across pickers.** `ai/phases/phase-2b-review-response-plan.md`. ⚠️ **TWO FUNCTIONS, NOT ONE** — `matchesIncludeExclude` and `matchesIncludeExcludeSmart`; change one and Title silently keeps AND. ⚠️ **It needs the MediaHub/CampaignHub cross-compartment decision, or those two hubs stay behind and disagree.** ⚠️ It reverses behaviour 2B.9 verified and shipped — a decision, not a regression.
 
-**Then 2B.14** · **2B.15** (needs the P8 revision) · **2B.17** (needs the layout design) · **2B.10**, **ALWAYS LAST**.
+**Then 2B.15** (needs the P8 revision) · **2B.17** (needs the layout design) · **2B.10**, **ALWAYS LAST**.
 
-**Carry forward:** the `🧱 HUB SHELL` block stays LAST in `style.css`. `#canvas-body` is never edited. `state` is not `window.state`; `activeView` is not a global — read `.active-panel`. `state.selectedProspectId` and `detailProspectId` are two cursors. No routing, ever. `switchView()` calls `saveState()`. Inject the transition kill-switch after every reload. `resize_window` does not work on this machine and `computer.zoom` times out on some regions. **Both query surfaces stay DEFERRED — `renderAqInspectorDrawer()`, the `aq-insp-*` ids and the Audience Query Engine are untouched, and the Engine's geography matcher is deliberately out of step; do not port.** `PROSPECT_DETAIL_TABS` is deliberately out of order versus P4. A native `<datalist>` popup freezes the renderer to CDP; one `navigate` clears it — **it froze twice this session and both times a `navigate` cleared it.** **New: measure the screenshot↔CSS scale each session (0.433 here, 0.912 previously) — and see the tooling-failure block above before trusting any click.**
+**Carry forward:** the `🧱 HUB SHELL` block stays LAST in `style.css`. `#canvas-body` is never edited. `state` is not `window.state`; `activeView` is not a global — read `.active-panel`. `state.selectedProspectId` and `detailProspectId` are two cursors. No routing, ever. `switchView()` calls `saveState()` — **do not navigate inside a byte-comparison window.** Inject the transition kill-switch after every reload. `resize_window` does not work on this machine. **Both query surfaces stay DEFERRED — `renderAqInspectorDrawer()`, the `aq-insp-*` ids and the Audience Query Engine are untouched.** `PROSPECT_DETAIL_TABS` is deliberately out of order versus P4. A native `<datalist>` popup freezes the renderer to CDP; one `navigate` clears it. **Measure the screenshot↔CSS scale each session — 0.912 here, 0.433 last session, same machine.** **`window.alert = m => {…}` DID get through the extension's content filter this session** — that is what made the import testable at all.

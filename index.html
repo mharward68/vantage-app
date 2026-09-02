@@ -1251,6 +1251,19 @@
                 style="justify-content: center; padding: 12px; font-size: 14px; font-weight: 700; width: 100%;">
                 📦 Run Backup / Export Options
               </button>
+
+              <!-- Session 2B.20. A BUTTON HERE, THE REPORT IN A MODAL — and
+                   that is a layout decision, not laziness.
+                   #view-data-management is a two-column .dashboard-split-grid
+                   with grid-auto-rows: minmax(0, 1fr); a third card creates a
+                   SECOND ROW and halves both existing cards, which breaks the
+                   hub shell's one-screen contract for a tool that is run
+                   occasionally. The backup options button beside it already
+                   uses exactly this pattern. -->
+              <button id="btn-open-domain-report" class="header-action-btn secondary-btn"
+                style="justify-content: center; padding: 10px; font-size: 13px; font-weight: 700; width: 100%;">
+                🔎 Duplicate Domain Report
+              </button>
             </div>
 
             <!-- Right Side: Restore Database -->
@@ -3396,6 +3409,33 @@
         style="margin-top: 24px; border-top: 1px solid var(--color-border); padding-top: 16px;">
         <button id="btn-backup-options-close" class="header-action-btn secondary-btn" style="width: 100%;">Close
           Window</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Duplicate Domain Report — Session 2B.20, review Finding 10b.
+
+       ⛔ READ-ONLY BY DESIGN. There is no merge control here and adding one is
+       a Phase 2C decision under DIRECTIVES §4, not a UI improvement. The body
+       is built entirely by renderDuplicateDomainReport(); the only static
+       markup is the shell. -->
+  <div id="modal-domain-report" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 620px;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 16px;">
+        <h3 style="margin: 0;">🔎 Duplicate Domain Report</h3>
+        <button id="btn-domain-report-close-x"
+          style="background: none; border: none; color: var(--color-text-muted); font-size: 20px; cursor: pointer;">✕</button>
+      </div>
+
+      <div id="domain-report-body"
+        style="display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto;"></div>
+
+      <div class="modal-actions"
+        style="margin-top: 20px; border-top: 1px solid var(--color-border); padding-top: 16px; display: flex; gap: 8px;">
+        <button id="btn-domain-report-rerun" class="header-action-btn secondary-btn" style="flex: 1;">Re-run
+          Scan</button>
+        <button id="btn-domain-report-close" class="header-action-btn secondary-btn" style="flex: 1;">Close</button>
       </div>
     </div>
   </div>
