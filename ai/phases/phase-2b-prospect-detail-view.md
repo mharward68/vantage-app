@@ -540,7 +540,13 @@ Today's control is a native `<select multiple size="1">` with `onfocus` / `onblu
 2B.7  Email + wipe gap   (DATA,  M)  — after 2B.6            ⚠️ ZIP first
 2B.8  Directory tables   (UI,    M)  — after 2B.2 and 2B.6
 2B.9  Tag chooser        (UI,    M)  — after 2B.8
-2B.11+ review-response   (—)         — inserted here, before the close
+2B.11 Filter column      (UI,    M)  — geography + widths     ✅ unblocked
+2B.12 Resize cursor      (UI,    S)  — cursor + drag guard    ✅ unblocked
+2B.13 Company dup guard  (DATA,  M)  — needs the exception    ⚠️ ZIP first
+2B.14 Include semantics  (UI,    M)  — needs the exception
+2B.15 Tag filter pop-out (UI,    M)  — after 2B.14. NEEDS P8 REVISION
+2B.16 Company tab        (UI,    S)  — collapse + reorder     ✅ unblocked
+2B.17 ID block redesign  (UI,    L)  — after 2B.13. BLOCKED on the design
 2B.10 Close              (QA,    M)  — LAST. Always last.    ⚠️ ZIP + green snapshot first
 ```
 
@@ -551,6 +557,11 @@ Today's control is a native `<select multiple size="1">` with `onfocus` / `onblu
 **2B.1 → 2B.6 is strictly sequential and must not be reordered.** Each session builds on the previous one's surface, and DECLARATIONS requires the app be left usable — not merely building — between them, because real outreach happens in it. 2B.6 is the one session that removes something, and it removes it only once everything that replaces it exists.
 
 **2B.6 is the review point, and this plan says so in advance.** Phase 1's entire session-count overrun came from one review pass over one session — 1.5, the session that first showed a new hub working — on the day it shipped. `DECISIONS.md` 2026-08-30 names the cause as a structural omission: *"the plan had no line item for what looking at it will produce."* 2B.6 is this phase's 1.5. **Review it before starting 2B.7**, and expect that review to produce sessions.
+
+**The review pass ran and closed 2026-09-01** — findings in
+`ai/phases/phase-2b-REVIEW-FINDINGS.md`, sessions in
+`ai/phases/phase-2b-review-response-plan.md`. It produced **seven** sessions against the 3–4 the
+contingency assumed.
 
 **Review-driven sessions take 2B.11 and up.** 2B.10 keeps its number and moves to last, exactly as 1.8 did — `BUILD_NOTES.md` and `AIContext.md` will already point at "2B.10" as the close, and silently repointing them is how a backlog item gets lost.
 

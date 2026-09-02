@@ -230,7 +230,16 @@
               <div class="card-header-actions">
                 <!-- Row 1: Search + primary actions (mirrors Media Hub's top bar) -->
                 <div class="view-intro-actions">
-                  <div class="search-box-wrapper" style="flex: 1; max-width: 400px; margin: 0;">
+                  <!-- SESSION 2B.11 / review Finding 4. This carried an inline
+                       `style="flex: 1; max-width: 400px; margin: 0;"` and was
+                       the ONLY reason Row 1 was narrow — no `.search-box-wrapper`
+                       rule existed in style.css at all, so Rows 2 and 3 ran the
+                       full width of the card and the tag picker's "+ Add" sat
+                       ~1,700px from its label. All three widths now come from
+                       one rule (👥 PROSPECTHUB FILTER COLUMN in style.css).
+                       The other three hubs keep their inline copies; the rule
+                       is scoped to this card so they are unaffected. -->
+                  <div class="search-box-wrapper">
                     <input type="text" id="prospect-search" placeholder="Search name, company, title...">
                   </div>
                   <div class="action-btn-group" style="margin: 0;">
@@ -243,16 +252,50 @@
                   </div>
                 </div>
 
-                <!-- Row 2: Geography search -->
+                <!-- Row 2: Geography search.
+
+                     SESSION 2B.11 / review Finding 1. The placeholder used to
+                     read "Geography (e.g. VA, MD, DC)..." while the matcher
+                     had no abbreviation map at all — it was instructing the
+                     user to type the one thing that could never match, which
+                     is why the filter read as broken rather than limited.
+                     Both halves were fixed: the matcher understands codes now
+                     (see 🗺️ GEOGRAPHY MATCHING in app.js), and this text says
+                     what the field actually supports. If either changes, the
+                     other is not optional. -->
                 <div class="search-box-wrapper">
-                  <input type="text" id="prospect-geo-search" placeholder="Geography (e.g. VA, MD, DC)...">
+                  <input type="text" id="prospect-geo-search"
+                    placeholder="State, city or metro — VA, Virginia, Richmond…">
                 </div>
 
-                <!-- Row 3: Tags -->
-                <div class="search-box-wrapper">
-                  <select id="prospect-tag-chooser" class="premium-select" multiple size="1" onfocus="this.size=5;"
-                    onblur="this.size=1;" onchange="this.size=1; this.blur();"
-                    title="Hold Ctrl/Cmd to select multiple tags" style="width:100%; font-size:13px;"></select>
+                <!-- Row 3: Tags.
+
+                     SESSION 2B.9 / contract P8. This was a native
+                     `<select multiple size="1">` carrying the last three
+                     inline event handlers on any control in this app —
+                     onfocus/onblur/onchange, which grew and shrank the list
+                     box by hand — with Ctrl/Cmd-click as the multi-select
+                     gesture. It is now the same chip picker the Advanced
+                     Query modal uses, driven by the SHARED functions from a
+                     config (PROSPECT_TAG_PICKER in app.js). The `.aq-picker`
+                     class is not decoration: initAqPickers()'s outside-click
+                     close finds its wrapper with closest(".aq-picker").
+
+                     `#prospect-tag-chooser` IS STILL HERE, ON THE WRAPPER.
+                     P8 — the id is the contract, the widget is not. Anything
+                     that located this filter by id still finds it. What must
+                     never come back is a reader reaching INTO the control:
+                     the selection is read only through
+                     prospectTagFilterTerms(). -->
+                <div class="search-box-wrapper aq-picker prospect-tag-picker" id="prospect-tag-chooser"
+                  data-aq-picker="prospectHubTags">
+                  <label for="prospect-tag-search" class="pt-picker-label">Filter by tag</label>
+                  <div class="aq-picker-control">
+                    <input type="text" id="prospect-tag-search" class="aq-picker-search"
+                      placeholder="Filter by tag…" autocomplete="off">
+                    <div id="prospect-tag-dropdown" class="aq-picker-dropdown hidden"></div>
+                  </div>
+                  <div id="prospect-tag-chips" class="aq-picker-chips"></div>
                 </div>
 
                 <!-- Row 4: Secondary utility actions -->
@@ -269,6 +312,21 @@
                     📤 Import CSV/Excel
                   </label>
                   <input type="file" id="upload-csv-input" accept=".csv,.zip,.xlsx,.xls" multiple class="hidden">
+                  <!-- Session 2B.7 / contract P6. The import summary's
+                       skipped-rows control. HIDDEN UNTIL AN IMPORT ACTUALLY
+                       SKIPS SOMETHING, and hidden again the moment the next
+                       import runs clean — a permanently-visible button that
+                       downloads an empty file is the app lying about state.
+
+                       THE SKIPPED ROWS ARE HELD IN A MODULE VARIABLE, NOT IN
+                       state. P6 is explicit that they are a file, not a store:
+                       a stored quarantine would need an export column, a
+                       restore leg and a wipeAllData() line, which turns a UI
+                       phase into a data phase. They survive until the next
+                       import or the next reload, and that is the whole
+                       intended lifetime. -->
+                  <button id="btn-download-skipped-rows" class="header-action-btn secondary-btn hidden"
+                    title="Download the rows the last import skipped as duplicates">⚠️ Skipped Rows</button>
                 </div>
               </div>
 
@@ -295,17 +353,23 @@
                        split the space and each still scrolls on its own. -->
                   <div class="table-scroll-container hub-scroll">
                     <table class="premium-table" id="prospects-table">
-                      <thead>
-                        <tr>
-                          <th>Name</th>
-                          <th>Title</th>
-                          <th>Company</th>
-                          <th>City</th>
-                          <th>State</th>
-                          <th>Metro</th>
-                          <th>Tags</th>
-                        </tr>
-                      </thead>
+                      <!-- SESSION 2B.8 / contract P7. The seven <th>s that
+                           used to be written out here are GONE ON PURPOSE and
+                           must not be restored: the header row is rebuilt from
+                           layoutColumns("prospects") on every render, because
+                           the user's saved order decides both the labels and
+                           the cells under them, and two sources of truth for
+                           a column list is exactly how data ends up under the
+                           wrong heading.
+
+                           THE <thead> ELEMENT AND ITS ID ARE THE CONTRACT.
+                           The C16 drag delegates one mousedown to this static
+                           element, bound once in setupEventListeners(); the
+                           <tr> inside it is replaced freely. Removing the id,
+                           or replacing the <thead> node from script, leaves a
+                           table that renders correctly and cannot be dragged,
+                           with nothing in the console to say so. -->
+                      <thead id="prospects-thead" class="prospects-table-head"></thead>
                       <tbody id="prospects-table-body">
                         <!-- Dynamic rows -->
                       </tbody>
@@ -326,15 +390,12 @@
                        the contacts table above. Phase 2A / Session 2A.2. -->
                   <div class="table-scroll-container hub-scroll">
                     <table class="premium-table" id="companies-table">
-                      <thead>
-                        <tr>
-                          <th>Company Name</th>
-                          <th>Industry</th>
-                          <th>Location</th>
-                          <th>Website</th>
-                          <th>Tags</th>
-                        </tr>
-                      </thead>
+                      <!-- SESSION 2B.8 / contract P7. See the note on the
+                           contacts table above — same rule, same reason: the
+                           header row is built from layoutColumns("companies")
+                           and this <thead> element is the drag's binding
+                           target, so it keeps its id and is never replaced. -->
+                      <thead id="companies-thead" class="prospects-table-head"></thead>
                       <tbody id="companies-table-body">
                         <!-- Dynamic rows -->
                       </tbody>
@@ -352,77 +413,17 @@
                 <button id="btn-close-inspector-panel" class="inspector-panel-close-btn" title="Close">✕ Close</button>
               </div>
 
-            <div class="prospect-inspector-card hidden" id="prospect-inspector">
-              <div class="inspector-header">
-                <h3 id="inspector-name">Select a Prospect</h3>
-                <p id="inspector-title-company">Head of Platform at Company</p>
-                <div class="inspector-meta" style="flex-wrap: wrap;">
-                  <span id="inspector-email">email@domain.com</span>
-                  <span id="inspector-phone">+1 555-0000</span>
-                  <span id="inspector-location" title="Metro Area">Metro Area</span>
-                  <span id="inspector-linkedin" title="LinkedIn">LinkedIn</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
-                  <span
-                    style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700;">Prospect
-                    Tags</span>
-                  <button id="btn-edit-inspector-tags" class="text-btn"
-                    style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Edit Tags</button>
-                </div>
-                <div class="inspector-tags" id="inspector-tags-list" style="margin-top: 4px;">
-                  <!-- Tag chips -->
-                </div>
-                <div style="margin-top: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 6px;">
-                  <textarea id="inspector-notes" placeholder="No notes added..." rows="3"
-                    style="font-size: 13px; color: var(--color-text-main); background: rgba(0,0,0,0.2); padding: 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--color-border); white-space: pre-wrap; width: 100%; resize: vertical; outline: none; font-family: inherit; transition: border-color 0.2s;"></textarea>
-                  <button id="btn-save-pros-notes" class="header-action-btn primary-btn hidden"
-                    style="align-self: flex-end; padding: 4px 12px; font-size: 11px;">Save Notes</button>
-                </div>
-                <div class="inspector-quick-actions">
-                  <button id="btn-edit-prospect" class="header-action-btn secondary-btn">✏️ Edit Details</button>
-                  <button id="btn-delete-prospect" class="header-action-btn danger-btn">🗑️ Delete Contact</button>
-                </div>
-              </div>
+            <!-- SESSION 2B.6 (CUTOVER): #prospect-inspector was REMOVED here.
+                 71 lines - the prospect header, tags, notes textarea, Edit/Delete
+                 actions, the Interaction Reachout Table and #inspector-memberships.
+                 Every one of them now lives in #view-prospect-detail, and the
+                 listeners that bound to them were unbound in setupEventListeners()
+                 the same session.
 
-              <!-- Reachout Interactions Section -->
-              <div class="inspector-history-section">
-                <div class="section-title-bar">
-                  <h4>Interaction Reachout Table</h4>
-                  <button id="btn-add-interaction" class="header-action-btn primary-btn">+ Add Interaction</button>
-                </div>
-
-                <div class="table-scroll-container">
-                  <table class="premium-table history-table">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Type</th>
-                        <th>Outreach Content / Notes</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody id="inspector-history-body">
-                      <!-- History Rows -->
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <!-- Memberships & Tasks Section (Phase 1 / Session 1.4).
-                   #inspector-memberships holds three labeled subsections —
-                   Campaigns, Audiences, Tasks — all built in renderInspector()
-                   with createElement/appendChild. -->
-              <div class="inspector-history-section"
-                style="margin-top: 16px; border-top: 1px solid var(--color-border); padding-top: 16px;">
-                <div class="section-title-bar">
-                  <h4>Memberships &amp; Tasks</h4>
-                </div>
-                <div id="inspector-memberships"
-                  style="font-size: 13px; display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
-                  <!-- Dynamically populated campaigns, audiences and tasks -->
-                </div>
-              </div>
-            </div>
+                 .prospect-inspector-panel around this SURVIVES as the COMPANY
+                 host - do not delete it, and do not re-add a prospect card
+                 beside the company one. There is one place a prospect is
+                 edited, and it is the detail view. -->
             <!-- Right Panel: Company Inspector -->
             <div class="prospect-inspector-card hidden" id="company-inspector">
               <div class="inspector-header">
@@ -1340,6 +1341,11 @@
               <div class="form-group">
                 <label for="pd-email">Email Address</label>
                 <input type="email" id="pd-email" data-pd-key="email" placeholder="john.doe@company.com">
+                <!-- Session 2B.7 / contract P6. Same refusal as the modal's,
+                     different consequence: here the field has already been
+                     reverted to its stored value when this appears, so the
+                     link is a plain navigation and discards nothing. -->
+                <div id="pd-email-warning" class="dup-email-warning hidden"></div>
               </div>
 
               <div class="form-group">
@@ -1367,7 +1373,12 @@
               </div>
               <div class="form-group">
                 <label for="pd-company">Company</label>
-                <input type="text" id="pd-company" data-pd-key="companyId" placeholder="Stripe">
+                <!-- Session 2B.13 / Finding 10c. Points at the SAME datalist the
+                     create modal uses (see #companies-datalist further down this
+                     file). One list, two inputs — syncCompaniesDatalist() fills
+                     it. A <datalist> resolves by id from anywhere in the
+                     document, so this reaches it across the DOM. -->
+                <input type="text" id="pd-company" data-pd-key="companyId" placeholder="Stripe" list="companies-datalist">
               </div>
               <div class="form-group">
                 <label for="pd-city">City</label>
@@ -1463,6 +1474,14 @@
       <div class="form-group">
         <label for="pros-email">Email Address</label>
         <input type="email" id="pros-email" placeholder="john.doe@company.com">
+        <!-- Session 2B.7 / contract P6. The duplicate-email refusal, INLINE
+             rather than in an alert(), because the notice carries a real link
+             to the existing contact's detail view and an alert() cannot hold
+             one. Hidden on every openProspectModal() and on every successful
+             save; populated only by saveProspect(). Its text is written by
+             renderDuplicateEmailWarning() in app.js — do not hardcode a name
+             here. -->
+        <div id="pros-dup-warning" class="dup-email-warning hidden"></div>
       </div>
 
       <div class="form-row">

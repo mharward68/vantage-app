@@ -37,6 +37,34 @@
      CONTROL, not for body text or a row state. */
   --color-danger: #ef4444;
 
+  /* THE COLUMN-RESIZE CURSOR — Session 2B.12, Review Findings 2 and 3.
+
+     ONE definition, two readers: this property, and nothing else, is the
+     resize cursor. app.js sets `var(--cursor-col-resize)` on the hovered th
+     (LAYOUT_RESIZE_CURSOR), and the `body.layout-resizing *` rule in the
+     TASKHUB LAYOUT block holds the same value across the document for the
+     length of a drag. Editing the glyph means editing this line only.
+
+     WHY A BITMAP AT ALL. The stock `col-resize` cursor is drawn by Windows
+     with a mask and takes its colour from whatever is underneath it, so on
+     the light-purple directory header it resolved to nearly the header's own
+     luminance and all but vanished. Dark mode was always fine. This is a
+     black glyph with a white halo: it does not depend on the background, so
+     it reads identically on light purple, dark blue and the pale gap.
+
+     THE THREE CONSTRAINTS, each of which will look removable later:
+       1. `12 12` is the HOTSPOT and it is the centre of a 24x24 image. A
+          wrong hotspot makes the drag feel offset from where it was grabbed.
+       2. 24x24, under the 32x32 ceiling above which platforms silently
+          refuse a cursor image and fall back with no error.
+       3. `, col-resize` is a MANDATORY keyword fallback. Without it, a
+          browser that rejects the data URI gets no cursor rule at all.
+
+     Not applied to `.col-resize-handle` (CampaignHub's older per-table
+     resizer, app.js makeTableColumnsResizable) — different machinery, outside
+     this session's compartment, on the phase backlog. */
+  --cursor-col-resize: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%3E%3Cg%20fill='none'%20stroke='%23ffffff'%20stroke-width='3.6'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M12%203.5v17'/%3E%3Cpath%20d='M4.5%2012h15'/%3E%3Cpath%20d='M8%208.5%204.5%2012%208%2015.5'/%3E%3Cpath%20d='M16%208.5%2019.5%2012%2016%2015.5'/%3E%3C/g%3E%3Cg%20fill='none'%20stroke='%23000000'%20stroke-width='1.7'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M12%203.5v17'/%3E%3Cpath%20d='M4.5%2012h15'/%3E%3Cpath%20d='M8%208.5%204.5%2012%208%2015.5'/%3E%3Cpath%20d='M16%208.5%2019.5%2012%2016%2015.5'/%3E%3C/g%3E%3C/svg%3E") 12 12, col-resize;
+
   --font-display: 'Outfit', 'Inter', sans-serif;
   --font-body: 'Inter', sans-serif;
 
@@ -412,6 +440,32 @@ thead.task-table-head th {
   user-select: none;
 }
 
+/* THE MID-DRAG CURSOR LOCK — Session 2B.12, Review Finding 3.
+   Lives here rather than beside a table, because it serves ALL THREE
+   registered tables (and anything the pointer crosses on the way).
+
+   `body.layout-resizing` is added by the resize branch of initHeaderDrag()
+   and removed in its onUp. It replaced an inline `body.style.cursor`, which
+   could never work: an INHERITED cursor loses to any descendant that sets its
+   own, and `.taskhub-sortable` a couple of hundred lines above sets
+   `cursor: pointer` on every TaskHub header. So mid-drag the cursor fell back
+   to a hand on TaskHub and blinked as the pointer re-crossed dividers, while
+   ProspectHub — whose headers set no cursor and therefore inherited — looked
+   perfectly correct. A session that tests only ProspectHub sees nothing.
+
+   Hence the `*` and the `!important`: they are not enthusiasm, they are the
+   only way to beat a descendant's own cursor rule during a gesture that has
+   already left the element it started on. Scoped to the class, so nothing is
+   affected for the 99.9% of the time no drag is running.
+
+   The JS-side guard (`layoutResizeLive` in the thead mousemove) is the other
+   half and does a different job: it stops the handler wiping the inline
+   cursor on the grabbed th. BOTH OR NEITHER — see the comment there. */
+body.layout-resizing,
+body.layout-resizing * {
+  cursor: var(--cursor-col-resize) !important;
+}
+
 /* ==========================================================================
    Column dividers — added 2026-08-30 with the C16 amendment, not decoration.
 
@@ -493,6 +547,184 @@ thead.task-table-head th {
 }
 .light-theme #taskhub-drop-line {
   background: #0891b2;
+}
+
+/* ==========================================================================
+   ✅ PROSPECTHUB DIRECTORY TABLES — the second and third consumers of the
+   column-layout machinery (Phase 2B / Session 2B.8, contract P7)
+
+   This block is the TaskHub block above, said again in purple for
+   #prospects-table and #companies-table. It is deliberately a parallel copy
+   rather than a shared class list, for the reason the ✅ TASKHUB LAYOUT block
+   already gives: the values are literal hexes chosen against a specific
+   composited surface, and a "shared" version would have to be a variable —
+   which is precisely what the per-hub colour blocks near the top of this file
+   avoid so that list stays a flat, greppable six.
+
+   PLACED HERE, NOT AT THE END OF THE FILE, and every selector below leads
+   with an id on purpose. `.premium-table th`, `.premium-table td` and
+   `.table-scroll-container` are all declared ~1,150 lines BELOW this point,
+   so an equal-specificity rule here would lose on source order alone and the
+   symptom would never point at CSS. Session 1.10 lost two rules to exactly
+   that trap. The one rule below that cannot lead with an id is the scroll
+   container's padding, and it is prefixed with the view id instead — same
+   remedy, same reason.
+
+   THE 🧱 HUB SHELL BLOCK STAYS LAST IN THIS FILE. Nothing here belongs to it:
+   these tables' flex chain and their two-section split already live there and
+   are not touched by this session.
+   ========================================================================== */
+
+/* The header row takes ProspectHub's purple at the same 18% tint TaskHub's
+   §15.3 rule uses for cyan.
+
+   THESE BACKGROUNDS ARE THE TINT ALREADY COMPOSITED OVER THE PANEL, derived
+   the same way TaskHub's were and then checked on screen. The header
+   therefore LOOKS semi-opaque and IS fully opaque, which is what the sticky
+   rule below requires: a sticky header with alpha < 1 lets rows scroll
+   visibly through it, and that only shows up once the list is long enough to
+   scroll. DO NOT "simplify" these to rgba() or color-mix(..., transparent) —
+   that reintroduces the exact bug the opaque requirement exists to prevent.
+
+   The class is worn by BOTH <thead>s so the two directories cannot drift
+   apart, and the selector is thead.prospects-table-head th (0,1,2) so it
+   beats .premium-table th (0,1,1) regardless of source order. */
+thead.prospects-table-head th {
+  background-color: #241b38;
+  color: #8b5cf6;
+}
+.light-theme thead.prospects-table-head th {
+  background-color: #c2b7d7;
+  color: #6d28d9;
+}
+
+/* The header row stays put while rows scroll under it. Applied to the th
+   cells, not the thead, for reliable cross-browser table behaviour — same as
+   #taskhub-thead th and #aq-results-thead th. */
+#prospects-thead th,
+#companies-thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* Per-column pixel widths only stick under table-layout:fixed, and the
+   width-less trailing spacer <th> is what stops a narrowed column from
+   stretching its neighbours.
+
+   ON THE TWO IDS ONLY, NEVER ON .premium-table — that class is worn by 18
+   tables across index.html, and putting fixed layout on all of them would
+   silently re-lay-out every one. */
+#prospects-table,
+#companies-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+/* No `position: relative` on either table or its th. It would out-order the
+   sticky rule above at equal specificity and silently un-stick the header —
+   the symptom being a header that scrolls away while every class and computed
+   background still look right. C16 hit-tests the pointer's x instead of using
+   an absolutely positioned handle, so nothing here needs a positioned
+   ancestor. */
+#prospects-table th,
+#companies-table th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Directory cells CLIP rather than wrap. This is the one deliberate
+   difference from TaskHub, whose Task Title cell wraps because a task title
+   is content. Every column on these two tables is a short label — a name, a
+   city, a state — and a wrapped cell makes rows different heights, which is
+   what turns a scannable directory into a list you have to read. Under
+   table-layout:fixed the remedy for a truncated value is to drag the column
+   wider, which is what this session exists to make possible. */
+#prospects-table tbody td,
+#companies-table tbody td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The empty-state row is one colSpan cell of centred prose and must be
+   allowed to wrap; without this it inherits the nowrap above and runs off the
+   side of a narrow panel. */
+#prospects-table tbody td[colspan],
+#companies-table tbody td[colspan] {
+  white-space: normal;
+  text-overflow: clip;
+}
+
+/* C16 first hit zone — the 12px band straddling a column's right edge. The
+   cursor is set from the mousemove handler rather than by a :hover rule,
+   which cannot know the pointer's x.
+
+   The class names below still read `taskhub-`. They are written by the
+   GENERALISED drag handler, which serves all three tables, so renaming them
+   would be a three-file change with no behavioural payoff — the same call
+   Session 2B.2 made and recorded for #taskhub-drop-line. */
+#prospects-table th.taskhub-col-resizing,
+#companies-table th.taskhub-col-resizing {
+  user-select: none;
+}
+
+/* Column dividers. Same two weights and the same reasoning as the TaskHub
+   block above: the HEADER line is the grab target and is drawn to be found;
+   the BODY line is structure and stays on var(--color-border). Purple
+   siblings of TaskHub's #1e5a63 / #7ba7b0, chosen against the two header
+   tints declared at the top of this block.
+
+   The trailing spacer is excluded — its right edge is the table's edge, not a
+   junction between two columns — and so is the empty-state row's colspan
+   cell. Borders only: no position, no transform. */
+#prospects-thead th:not(.taskhub-col-spacer),
+#companies-thead th:not(.taskhub-col-spacer) {
+  border-right: 1px solid #4a3a6b;
+}
+.light-theme #prospects-thead th:not(.taskhub-col-spacer),
+.light-theme #companies-thead th:not(.taskhub-col-spacer) {
+  border-right-color: #9c8cc0;
+}
+
+#prospects-table tbody td:not([aria-hidden]):not([colspan]),
+#companies-table tbody td:not([aria-hidden]):not([colspan]) {
+  border-right: 1px solid var(--color-border);
+}
+
+/* C16 second hit zone — the column being dragged sideways. Opacity only: the
+   real cells are what move during the drag, and a transform on a sticky th
+   would create a containing block and un-stick it. The selector is (1,1,1) so
+   it cannot lose on source order to .premium-table th (0,1,1) or to
+   thead.prospects-table-head th (0,1,2) above. */
+#prospects-thead th.taskhub-col-dragging,
+#companies-thead th.taskhub-col-dragging {
+  opacity: 0.55;
+  user-select: none;
+  cursor: grabbing;
+}
+
+/* The two scroll containers. Prefixed with the view id and NOT written as a
+   bare class, because `.table-scroll-container { padding: 12px }` is declared
+   ~1,150 lines further down this file and would win on source order at equal
+   specificity — the same trap that cost Session 1.10 the TaskHub version of
+   this exact rule.
+
+   padding-top is removed because `position: sticky; top: 0` pins the header
+   to the SCROLLPORT'S PADDING EDGE, so any padding above it is a strip the
+   scrolling rows stay VISIBLE in: a 12px sliver of the row above, floating
+   over an otherwise perfect opaque header. Every computed-style probe reports
+   this as stuck and opaque and every one of them is correct — it is found by
+   screenshot or not at all. The th carries its own 12px padding, so nothing
+   looks cramped.
+
+   overflow-x is stated rather than left to the visible→auto computation: a
+   column can be dragged wider than the panel, and that overflow scrolls here
+   rather than pushing the hub sideways. */
+#view-prospects .table-scroll-container {
+  padding-top: 0;
+  overflow-x: auto;
 }
 
 /* --------------------------------------------------------------------------
@@ -2962,6 +3194,120 @@ body {
 }
 
 /* ==========================================================================
+   👥 PROSPECTHUB TAG FILTER — the picker in the hub, not in the modal
+   (Phase 2B / Session 2B.9, contract P8)
+
+   The markup and every function are the Advanced Query picker's. Only three
+   things differ, and each is here rather than in the block above so that the
+   modal is untouched:
+
+   1. IT IS PURPLE, VIA `var(--color-primary)`. Unlike the 2B.8 table-header
+      tints — which are literal hexes because they are composited against a
+      specific surface — these are plain foreground/border colours on a flat
+      background, so the token does the right thing on its own. The token is
+      set per hub on `body.module-*` near the top of this file, which means
+      this picker is ProspectHub purple in the hub and correctly themed in
+      BOTH themes with no `.light-theme` rule of its own. Do not replace it
+      with a hex: that is what would need a second rule.
+
+   2. THERE IS NO EXCLUDE. `includeOnly` on the config means the "− Exclude"
+      button and the ⇄ chip toggle are NOT RENDERED — nothing here hides
+      them, so a future restyle of `.aq-picker-add-btn` cannot resurrect a
+      control the filter has no semantics for. The include chips are
+      therefore the only chips this surface can produce, which is why the
+      green `.aq-picker-chip-include` colours are overridden unconditionally.
+
+   3. THE LABEL IS VISUALLY HIDDEN. Its two siblings in this filter column
+      (Search and Geography) are placeholder-only, so a visible caption on
+      this row alone would read as a mistake. The <label> still exists and is
+      still associated with the input — DIRECTIVES §0's authoring habit for
+      new markup, which is a habit and not Gate F.
+
+   EVERY SELECTOR LEADS WITH `#prospect-tag-chooser`, the wrapper id. That is
+   what keeps these rules off the five pickers in the Advanced Query modal,
+   which share every class name below.
+   ========================================================================== */
+
+#prospect-tag-chooser .pt-picker-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The two directory tables start a few pixels below this control and their
+   header cells are `position: sticky; z-index: 2`. 40 already wins, and it is
+   restated here so that a session tuning the tables' stacking sees the number
+   it has to stay under. Nothing between this wrapper and <body> creates a
+   stacking context, so these two values are compared directly. */
+#prospect-tag-chooser .aq-picker-dropdown {
+  z-index: 40;
+}
+
+#prospect-tag-chooser .aq-picker-include-btn {
+  color: var(--color-primary);
+}
+
+#prospect-tag-chooser .aq-picker-include-btn:hover {
+  background-color: var(--color-primary-glow);
+  border-color: var(--color-primary);
+}
+
+#prospect-tag-chooser .aq-picker-chip {
+  background-color: var(--color-primary-glow);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* The chips sit directly under the search box and above the "See All" button
+   row, both of which are spaced by `.card-header-actions`' own 12px gap. With
+   no chips the container is `:empty` and collapses, so this margin is the
+   only thing separating a full chip row from the buttons below it. */
+#prospect-tag-chooser .aq-picker-chips {
+  margin-top: 10px;
+}
+
+/* ==========================================================================
+   👥 PROSPECTHUB FILTER COLUMN — one width for all three rows
+   (Phase 2B / Session 2B.11, review Finding 4)
+
+   There is no base `.search-box-wrapper` rule in this file and there was
+   never meant to be one — only `.search-box-wrapper input { width: 100% }`
+   further up. Every hub that wanted a narrow search box wrote
+   `style="flex: 1; max-width: 400px; margin: 0;"` by hand on the wrapper,
+   and ProspectHub's Rows 2 (geography) and 3 (tags) simply never got one.
+   They ran the full width of the directory card, which is what put the tag
+   picker's "+ Add" button roughly 1,700px from the label it belongs to.
+
+   ROW 1'S INLINE STYLE IS NOW DELETED AND LIVES HERE INSTEAD, so the three
+   rows cannot drift apart again. `flex: 1` and `margin: 0` are only
+   meaningful on Row 1 — it is the one inside `.view-intro-actions`, sharing
+   a flex line with the button group — and are inert on Rows 2 and 3, which
+   are block children of `.card-header-actions`. Stating them once for all
+   three is cheaper than a second selector to say them for one.
+
+   SCOPED TO THIS CARD ON PURPOSE. `.search-box-wrapper` also appears in
+   MediaHub and twice in CampaignHub, each still carrying its own inline
+   copy. Widening this selector would silently take over three surfaces this
+   session did not look at.
+
+   400px is Michael's number, from the review: "you could narrow it to 250
+   and it would be fine." Chip wrapping at this width is a non-issue.
+
+   NOT IN THE 🧱 HUB SHELL BLOCK. That block is the scroll idiom and stays
+   LAST in this file; this is ordinary ProspectHub filter styling and belongs
+   beside the tag picker it sizes. */
+#view-prospects .prospects-directory-card .card-header-actions .search-box-wrapper {
+  flex: 1;
+  max-width: 400px;
+  margin: 0;
+}
+
+/* ==========================================================================
    ⚙️ SETTINGS CONFIGURATOR GRID
    ========================================================================== */
 .settings-configurator-grid {
@@ -4179,7 +4525,19 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 /* --- The Company tab ---------------------------------------------------- */
 
 /* Read-only by decision (scope §3 keeps a company detail view out of this
-   phase), so this is a card and not a form. It must not grow inputs. */
+   phase), so this is a card and not a form. It must not grow inputs.
+
+   SESSION 2B.16 MADE IT A DISCLOSURE, COLLAPSED BY DEFAULT. The collapsed
+   state is the DEFAULT rule and `.is-open` is the exception, deliberately
+   that way round: if the class is ever dropped the card fails CLOSED with
+   its header still readable, rather than failing open and burying the
+   roster. The expanded state is NOT persisted anywhere — the class lives on
+   an element that is discarded every time the tab body is reset. See the
+   block comment on renderDetailCompany() in app.js.
+
+   ⛔ Do NOT reuse this pattern for the identity block's four conference
+   fields. Michael was offered collapse there and rejected it; they stay
+   visible. The two surfaces look like they should match and must not. */
 .pd-company-card {
   display: flex;
   flex-direction: column;
@@ -4192,6 +4550,65 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 
 .light-theme .pd-company-card {
   background: rgba(0, 0, 0, 0.02);
+}
+
+/* The disclosure header. It is a <button>, so it has to be reset back to
+   looking like text: the UA sheet otherwise gives it a border, a background,
+   a centred layout and its own font family, none of which belong here. */
+.pd-company-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Rotation, not a glyph swap — one element and one transition, so the open
+   and closed states cannot drift apart. align-self: center keeps the
+   triangle on the name's centre instead of letting the shared baseline drop
+   it below the descenders. */
+.pd-company-arrow {
+  align-self: center;
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.pd-company-card.is-open .pd-company-arrow {
+  transform: rotate(90deg);
+}
+
+.pd-company-head:hover .pd-company-arrow {
+  color: var(--color-primary);
+}
+
+/* The name and the industry share the header line and wrap together on a
+   narrow canvas, which is why they are ONE flex child of the button and not
+   two — otherwise the industry wraps under the arrow instead of the name. */
+.pd-company-headtext {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+/* display: none, not height: 0. A collapsed grid must not be measurable and
+   its Website/LinkedIn links must not be reachable by Tab. */
+.pd-company-body {
+  display: none;
+}
+
+.pd-company-card.is-open .pd-company-body {
+  display: block;
 }
 
 .pd-company-name {
@@ -4268,4 +4685,55 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 
 .pd-roster-email {
   word-break: break-all;
+}
+
+/* ==========================================================================
+   DUPLICATE-EMAIL WARNING  (Session 2B.7, contract P6)
+
+   Still inside the 🧱 HUB SHELL block, which is still the LAST thing in this
+   file. One rule set serves BOTH surfaces — #pros-dup-warning inside
+   #modal-prospect and #pd-email-warning inside the detail view's identity
+   grid — because P6 is one rule with one implementation and two stylesheets
+   for it is how the two screens start disagreeing about how serious a refusal
+   looks.
+
+   var(--color-danger) is used as a token, not a literal hex. It was defined
+   by Session 2B.3 in :root and .light-theme; the three literal-hex comments
+   elsewhere in this file predate that and are not being converted here.
+   ========================================================================== */
+
+.dup-email-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 55%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-text-main);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* A <button>, not an <a>: there is no href to give it, and P9 forbids a
+   prospect id reaching a URL. Styled as the link it behaves like. */
+.dup-email-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--color-primary);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.dup-email-link:hover {
+  color: var(--color-text-main);
+}
+
+.dup-email-tail {
+  opacity: 0.75;
 }

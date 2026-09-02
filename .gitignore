@@ -26,9 +26,26 @@ vantage_backup*
 
 # Local snapshots (Tier 1 recovery). These belong outside the project folder
 # per DECLARATIONS; this catches the case where one is pointed here anyway.
-# Snapshot files are named YYYY-MM-DD_HHMMSS.json.
+#
+# GAP CLOSED 2026-09-02. The dated pattern below has no leading wildcard, so it
+# matches a WHOLE filename -- and the snapshotter does not write whole filenames
+# in that shape. Real files look like:
+#
+#     vantage_snapshot_2026-09-02_121548.json
+#
+# which the dated pattern does NOT match, because of the "vantage_snapshot_"
+# prefix. So every snapshot was unignored, in a PUBLIC repo, and a single
+# mis-clicked save dialog -- the exact scenario this file's header describes --
+# would have committed the full database: names, emails, phones, LinkedIn URLs
+# and private notes on people who never opted in. Git history is permanent.
+#
+# Both patterns are kept. The prefix rule is the one that fires today; the
+# dated rule stays for any file saved without the prefix, and now carries a
+# leading * so it matches anywhere in the name rather than only as the whole of
+# it. Belt and braces, because the cost of a miss here is unrecoverable.
 snapshots/
-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].json
+vantage_snapshot*
+*[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].json
 
 # --- Secrets (DIRECTIVES §4: never committed) ------------------------------
 # Nothing needs these today. Phase 2 adds Firebase config, which is when this

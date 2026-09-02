@@ -1749,6 +1749,21 @@ async function wipeAllData() {
   // that cannot fail. ensureStateDefaults() refills the taskhub default on the
   // next load or restore.
   state.columnLayouts = {};
+  /* SESSION 2B.7 — THE PHASE 1 GAP, CLOSED. state.taskSettings became a
+     top-level store in Session 1.3 alongside state.tasks, and only state.tasks
+     was added to this list. The consequence is precisely what the comment
+     above describes and it had already fired: Session 1.8's restore drill
+     reported dateMode as MATCH after export -> wipe -> restore, but dateMode
+     was never cleared, so that assertion could not have failed whatever the
+     CSV contained. The export and restore halves were always genuine (the
+     ["Task Date Mode", ...] row at generateSettingsCSV(), read back at
+     restoreSettingsFromCSV()); what was unproven was the restore, because the
+     wipe left the value standing. Re-run for real in 2B.7's Done-when.
+
+     The literal matches ensureStateDefaults()'s default so a wipe leaves the
+     store in the same shape a first run does, rather than deleting the key and
+     relying on the defaults path to put it back. */
+  state.taskSettings = { dateMode: "business" };
   state.selectedProspectId = null;
   state.activeView = "dashboard";
 
@@ -3240,13 +3255,68 @@ let selectedCompanyId = null;
 let lastFilteredProspects = [];
 let lastFilteredCompanies = [];
 
-function populateTagChooser() {
-  const select = document.getElementById("prospect-tag-chooser");
-  if (!select || select.tagName !== "SELECT") return;
-  
-  // Save current selection
-  const selected = Array.from(select.selectedOptions).map(opt => opt.value);
-  
+/* ==========================================================================
+   PROSPECTHUB TAG FILTER — the picker  (Session 2B.9, contract P8)
+
+   This replaced a native `<select multiple size="1">` that carried three
+   inline onfocus/onblur/onchange handlers in index.html and used Ctrl/Cmd-
+   click as its multi-select gesture. It is now the same chip picker the
+   Advanced Query modal uses: `PROSPECT_TAG_PICKER` is a config of the
+   AQ_PICKERS shape, and every one of the six functions that drives it is the
+   shared one. NOTHING WAS REIMPLEMENTED — see the config-shape comment above
+   `AQ_PICKERS`, and note that this config is deliberately NOT a member of
+   that array (Reset inside the modal must not clear this filter).
+
+   P8: THE ID IS THE CONTRACT, THE WIDGET IS NOT. `#prospect-tag-chooser`
+   survives as the id of the picker WRAPPER, so nothing that located this
+   filter by id has to be found and changed. What must never come back is a
+   reader reaching into the widget: the only read path is
+   `prospectTagFilterTerms()` below, and `.options` / `.selectedIndex` /
+   `.selectedOptions` appear nowhere against this control any more.
+
+   INCLUDE-ONLY, ON PURPOSE, AND IT IS ONE WORD TO REVERSE. The downstream
+   filter in renderProspectsView() classifies each term into company-tag and
+   prospect-tag queries and matches by substring; it has no NOT semantics
+   anywhere, and the both-lists OR branch below is already the most tangled
+   logic in this view. Offering "− Exclude" before that filter can honour it
+   would be the control lying about what the results mean. Delete the
+   `includeOnly` line and exclusion appears in the UI the moment the filter
+   grows a matching branch — not before.
+   ========================================================================== */
+
+const PROSPECT_TAG_PICKER = {
+  key: "prospectHubTags",
+  searchId: "prospect-tag-search",
+  dropdownId: "prospect-tag-dropdown",
+  chipsId: "prospect-tag-chips",
+  includeOnly: true,
+  onChange: () => {
+    renderProspectsView();
+    // Keyboard flow: selecting an option rebuilds the dropdown, which
+    // destroys the button that was just activated and drops focus to <body>.
+    // Putting focus back on the search input means a second tag is one Tab
+    // away instead of a walk from the top of the document. Deliberately done
+    // HERE rather than inside setAqPickerSelection(), so the five Advanced
+    // Query pickers keep exactly the focus behaviour they shipped with.
+    document.getElementById("prospect-tag-search")?.focus();
+  },
+  getOptions: () => buildProspectTagFilterOptions()
+};
+
+// THE ONE ACCESSOR. Every reader of this filter's selection goes through it.
+// Returns lowercased, trimmed terms — the exact shape renderProspectsView()
+// used to build by hand from the <select>'s selectedOptions, so everything
+// downstream of `tagTerms` is untouched by this session.
+function prospectTagFilterTerms() {
+  return Array.from(aqPickerState.prospectHubTags.include)
+    .map(t => (t || "").toLowerCase().trim())
+    .filter(Boolean);
+}
+
+// The selectable tag labels. This is populateTagChooser()'s list-building
+// logic verbatim, with the <select>-writing half removed — the picker asks
+// for options on every focus and keystroke, so nothing has to push them.
+function buildProspectTagFilterOptions() {
   const allCompanyTagsStr = Array.from(new Set(state.companies.flatMap(c => c.tags || []))).map(t => t.trim()).filter(Boolean);
   const allProspectTagsStr = Array.from(new Set(state.prospects.flatMap(p => p.tags || []))).map(t => t.trim()).filter(Boolean);
 
@@ -3285,36 +3355,153 @@ function populateTagChooser() {
   // Managed Prospect Tags first, in the exact order shown in Settings.
   const allTags = [...managedProspectTags, ...otherTags];
 
-  select.innerHTML = "";
-  allTags.forEach(tag => {
-    const opt = document.createElement("option");
-    opt.value = tag;
-    opt.textContent = tag;
-    if (selected.includes(tag)) opt.selected = true;
-    select.appendChild(opt);
-  });
+  return allTags;
+}
+
+/* ==========================================================================
+   🗺️ GEOGRAPHY MATCHING  (Session 2B.11, review Findings 1)
+
+   THE PROBLEM THIS REPLACES, so nobody re-derives it: the shipped matcher
+   had no abbreviation↔name mapping anywhere, and Michael's `state` field
+   holds FULL NAMES. `VA` returned 0 contacts and 0 companies while
+   `Virginia` returned 56 and 77 — the same records, unreachable from the
+   spelling `index.html`'s own placeholder told him to type. It also failed
+   in reverse (`Virginia` never matched a record holding `VA`) and bled
+   sideways: `stateStr.includes("virginia")` is TRUE for "west virginia",
+   silently present in the shipped 56.
+
+   THREE RULES, AND EACH ONE IS LOAD-BEARING:
+
+   1. THE STATE FIELD IS COMPARED AS A WHOLE VALUE, NEVER A SUBSTRING.
+      That single change is what stops the West Virginia bleed, and it is
+      safe precisely because `state` is a controlled one-of-51 field rather
+      than free text.
+
+   2. CITY AND METRO STAY SUBSTRING MATCHES. They are genuinely partial-text
+      fields — "Northern Virginia", "DC Metro", "SF Bay Area" — and a whole-
+      value rule there would lose more than it saved. The consequence is
+      accepted and stated plainly: a METRO reading "West Virginia" is still
+      returned by a search for `Virginia`. The state field is the one that
+      had to be exact, and it now is.
+
+   3. A TWO-LETTER FORM MATCHES CITY/METRO ONLY AS A WHOLE WORD. This is the
+      shipped `term.length === 2` caution, KEPT — "va" is inside Ne**va**da,
+      Syl**va**nia and **Va**ncouver. What changed is the LOOKUP, not the
+      caution: the term is expanded through US_STATES first, so `VA` reaches
+      a record via the full name "virginia" and additionally matches a
+      location written "Richmond, VA" as a discrete word. Loosening this to
+      a plain substring is how `VA` starts returning Nevada.
+
+   BECAUSE EVERY TERM EXPANDS TO BOTH FORMS BEFORE ANYTHING IS COMPARED,
+   `VA` AND `Virginia` ARE THE SAME QUERY BY CONSTRUCTION, not by two
+   branches that happen to agree. That is why the parity check passes
+   structurally and would survive a later edit to either field's rule.
+
+   ⚠️ THERE IS A THIRD COPY OF THIS MATCHER AND IT IS DELIBERATELY NOT
+   FIXED. The Audience Query Engine's `#query-geography` branch has its own
+   copy of the old logic; both query surfaces are DEFERRED and 2B.11 does
+   not enter them. ProspectHub and the Engine therefore understand
+   geography differently until the Engine is un-deferred. Known, accepted,
+   and written into BUILD_NOTES — do not "reconcile" them by porting this
+   code into a deferred surface.
+
+   `LA` MEANS LOUISIANA. Michael's call, 2026-09-02. Los Angeles is still
+   reachable by typing the city out; the abbreviation belongs to the state,
+   as every other two-letter code here does.
+   ========================================================================== */
+
+const US_STATES = {
+  al: "alabama",        ak: "alaska",         az: "arizona",
+  ar: "arkansas",       ca: "california",     co: "colorado",
+  ct: "connecticut",    de: "delaware",       dc: "district of columbia",
+  fl: "florida",        ga: "georgia",        hi: "hawaii",
+  id: "idaho",          il: "illinois",       in: "indiana",
+  ia: "iowa",           ks: "kansas",         ky: "kentucky",
+  la: "louisiana",      me: "maine",          md: "maryland",
+  ma: "massachusetts",  mi: "michigan",       mn: "minnesota",
+  ms: "mississippi",    mo: "missouri",       mt: "montana",
+  ne: "nebraska",       nv: "nevada",         nh: "new hampshire",
+  nj: "new jersey",     nm: "new mexico",     ny: "new york",
+  nc: "north carolina", nd: "north dakota",   oh: "ohio",
+  ok: "oklahoma",       or: "oregon",         pa: "pennsylvania",
+  ri: "rhode island",   sc: "south carolina", sd: "south dakota",
+  tn: "tennessee",      tx: "texas",          ut: "utah",
+  vt: "vermont",        va: "virginia",       wa: "washington",
+  wv: "west virginia",  wi: "wisconsin",      wy: "wyoming"
+};
+
+// Reverse lookup, derived rather than hand-written — a second literal is a
+// second thing to keep in sync, and this one is free.
+const US_STATE_ABBREVS = Object.fromEntries(
+  Object.entries(US_STATES).map(([abbr, name]) => [name, abbr])
+);
+
+/* One typed term → every form it can legitimately take, plus whether it
+   named a state at all. A term that is not a state (a city, a metro, free
+   text) carries exactly one form and keeps the shipped substring behaviour. */
+function geoTermForms(term) {
+  const raw = (term || "").toLowerCase().trim();
+  if (!raw) return null;
+
+  const forms = new Set([raw]);
+  if (US_STATES[raw]) forms.add(US_STATES[raw]);
+  if (US_STATE_ABBREVS[raw]) forms.add(US_STATE_ABBREVS[raw]);
+
+  return { raw, forms: Array.from(forms) };
+}
+
+// Word-level split, on commas AND whitespace, so "Richmond, VA" and
+// "Richmond VA" both yield a discrete "va" while "Nevada" yields none.
+function geoWords(value) {
+  return (value || "").toLowerCase().split(/[\s,]+/).filter(Boolean);
+}
+
+/* The ONE comparison. Both directory branches call it, and so does the
+   company branch's fan-out over that company's contacts — the shipped code
+   carried two separate copies of this and fixing one was the obvious
+   half-fix. `rec` is any record with location / city / state. */
+function geoFormMatchesRecord(form, rec) {
+  const stateStr = (rec.state || "").toLowerCase().trim();
+  const city = (rec.city || "").toLowerCase();
+  const loc = (rec.location || "").toLowerCase();
+
+  // Rule 1 — the state field, whole value.
+  if (stateStr && form.forms.includes(stateStr)) return true;
+
+  // Rules 2 and 3 — city and metro.
+  const words = [...geoWords(loc), ...geoWords(city)];
+  return form.forms.some(f =>
+    f.length > 2 ? (loc.includes(f) || city.includes(f)) : words.includes(f)
+  );
+}
+
+// OR across terms, which is the semantics the comma-separated box shipped
+// with and this session does not change.
+function geoFormsMatchRecord(forms, rec) {
+  return forms.some(form => geoFormMatchesRecord(form, rec));
 }
 
 function renderProspectsView() {
-  populateTagChooser();
   const query = document.getElementById("prospect-search").value.toLowerCase().trim();
   const geoQueryStr = document.getElementById("prospect-geo-search").value.toLowerCase().trim();
-  const tagSelect = document.getElementById("prospect-tag-chooser");
-  
+
   // Parse comma-separated geo terms
   let geoTerms = [];
   if (geoQueryStr) {
     geoTerms = geoQueryStr.split(",").map(s => s.trim()).filter(Boolean);
   }
-  
-  // Parse comma-separated tag terms or get from select
-  let tagTerms = [];
-  if (tagSelect && tagSelect.tagName === "SELECT") {
-    tagTerms = Array.from(tagSelect.selectedOptions).map(opt => opt.value.toLowerCase().trim());
-  } else if (tagSelect) {
-    const tagQueryStr = tagSelect.value.toLowerCase().trim();
-    if (tagQueryStr) tagTerms = tagQueryStr.split(",").map(s => s.trim()).filter(Boolean);
-  }
+
+  // Session 2B.11: expand each term to both of its forms ONCE, here, rather
+  // than inside two record loops. `geoTerms` survives untouched because the
+  // blank-state test below reads `geoQueryStr`, not this.
+  const geoForms = geoTerms.map(geoTermForms).filter(Boolean);
+
+  // Session 2B.9: the three branches that used to read the <select> here —
+  // selectedOptions, then a comma-split fallback for the text-input shape it
+  // might have been swapped to — collapse into the one accessor. It returns
+  // the same lowercased, trimmed array, so every line below this point is
+  // the code that shipped before this session.
+  const tagTerms = prospectTagFilterTerms();
 
   // Classify tag queries into company tags vs prospect tags
   const allCompanyTagsStr = Array.from(new Set(state.companies.flatMap(c => c.tags || []))).map(t => t.toLowerCase());
@@ -3373,28 +3560,14 @@ function renderProspectsView() {
     if (!state.forceShowAllCompanies) {
       filteredCompanies = state.companies.filter(c => {
       let matchGeo = true;
-      if (geoTerms.length > 0) {
-        const cLoc = (c.location || "").toLowerCase();
-        const cCity = (c.city || "").toLowerCase();
-        const cState = (c.state || "").toLowerCase();
-        
-        // Also check if any prospect from this company matches the geography
+      if (geoForms.length > 0) {
+        // A company matches on its own geography OR on any of its contacts' —
+        // unchanged semantics; `some(t => f(t) || g(t))` is `some(f) || some(g)`.
+        // What changed is that both halves now go through the one matcher.
         const prospectsForCompany = state.prospects.filter(p => p.companyId === c.id);
-        
-        matchGeo = geoTerms.some(term => {
-          if (term.length === 2) {
-            return cState === term || prospectsForCompany.some(p => (p.state || "").toLowerCase() === term);
-          }
-          const pGeosMatch = prospectsForCompany.some(p => 
-            (p.location || "").toLowerCase().includes(term) ||
-            (p.city || "").toLowerCase().includes(term) ||
-            (p.state || "").toLowerCase().includes(term)
-          );
-          return cLoc.includes(term) || 
-                 cCity.includes(term) || 
-                 cState.includes(term) || 
-                 pGeosMatch;
-        });
+
+        matchGeo = geoFormsMatchRecord(geoForms, c) ||
+                   prospectsForCompany.some(p => geoFormsMatchRecord(geoForms, p));
       }
       
       let matchCompTags = true;
@@ -3458,29 +3631,70 @@ function renderProspectsView() {
   lastFilteredCompanies = (isBlankState && !state.forceShowAllCompanies) ? state.companies : filteredCompanies;
 
   document.getElementById("companies-count").textContent = (!isBlankState || state.forceShowAllCompanies) ? filteredCompanies.length : 0;
+
+  /* SESSION 2B.8 — the header is rebuilt from the C15 resolver on every
+     render, and `compCols` is the same array the body cells below loop. The
+     empty-state colspan is DERIVED from it (+1 for the trailing spacer)
+     rather than written as a literal: the two literals that used to sit here
+     both said 5, which was right for this table and wrong for the contacts
+     table below, where 5 was hard-coded against 7 columns. A derived span
+     cannot go stale when a column is added. */
+  const compCols = renderLayoutHeaderRow("companies");
+  const compSpan = compCols.length + 1;
+
   if (isBlankState && !state.forceShowAllCompanies) {
-    compBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--color-text-muted);">Enter search criteria above or click 'See All Companies' to view.</td></tr>`;
+    compBody.innerHTML = `<tr><td colspan="${compSpan}" style="text-align:center;padding:16px;color:var(--color-text-muted);">Enter search criteria above or click 'See All Companies' to view.</td></tr>`;
   } else if (filteredCompanies.length === 0) {
-    compBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--color-text-muted);">No companies match your criteria.</td></tr>`;
+    compBody.innerHTML = `<tr><td colspan="${compSpan}" style="text-align:center;padding:16px;color:var(--color-text-muted);">No companies match your criteria.</td></tr>`;
   } else {
     filteredCompanies.forEach(c => {
       const tr = document.createElement("tr");
       if (selectedCompanyId === c.id) {
         tr.className = "active-row";
       }
-      
-      const tagBadges = (c.tags || []).map(t => `<span class="tag-badge">${escapeHTML(t)}</span>`).join("");
-      const validWebsite = ensureUrlProtocol(c.website);
-      const websiteLink = c.website ? `<a href="${escapeHTML(validWebsite)}" target="_blank" style="color:var(--color-primary); text-decoration:none;" onclick="event.stopPropagation()">Link</a>` : "—";
-      
-      tr.innerHTML = `
-        <td style="font-weight:600;">${escapeHTML(c.name)}</td>
-        <td>${escapeHTML(c.industry || "—")}</td>
-        <td>${escapeHTML(c.location || "—")}</td>
-        <td>${websiteLink}</td>
-        <td>${tagBadges}</td>
-      `;
-      
+      /* The registry's rowSelector. It is what lets the reorder's cell-mover
+         swap this row and skip the empty-state row above, and it is the only
+         reason this attribute exists. */
+      tr.dataset.companyId = c.id;
+
+      // Cells come from the SAME resolved list the header used, so a saved
+      // order can never put correct data under the wrong label.
+      compCols.forEach(col => {
+        const td = document.createElement("td");
+        switch (col.key) {
+          case "name":
+            td.style.fontWeight = "600";
+            td.textContent = c.name || "";
+            break;
+          case "industry":
+            td.textContent = c.industry || "—";
+            break;
+          case "location":
+            td.textContent = c.location || "—";
+            break;
+          case "website":
+            // The one cell that is still markup: it carries a real link with
+            // its own stopPropagation, so the row click does not fire too.
+            if (c.website) {
+              td.innerHTML = `<a href="${escapeHTML(ensureUrlProtocol(c.website))}" target="_blank" style="color:var(--color-primary); text-decoration:none;" onclick="event.stopPropagation()">Link</a>`;
+            } else {
+              td.textContent = "—";
+            }
+            break;
+          case "tags":
+            td.innerHTML = (c.tags || []).map(t => `<span class="tag-badge">${escapeHTML(t)}</span>`).join("");
+            break;
+          default:
+            td.textContent = "";
+        }
+        tr.appendChild(td);
+      });
+
+      // Matches the header's trailing spacer <th>.
+      const spacerTd = document.createElement("td");
+      spacerTd.setAttribute("aria-hidden", "true");
+      tr.appendChild(spacerTd);
+
       tr.addEventListener("click", () => {
         if (selectedCompanyId === c.id) {
           closeInspectorPanel();
@@ -3503,19 +3717,8 @@ function renderProspectsView() {
     if (!state.forceShowAllContacts) {
       filteredContacts = state.prospects.filter(p => {
         let matchGeo = true;
-        if (geoTerms.length > 0) {
-          const loc = (p.location || "").toLowerCase();
-          const city = (p.city || "").toLowerCase();
-          const stateStr = (p.state || "").toLowerCase();
-          
-          matchGeo = geoTerms.some(term => {
-            if (term.length === 2) {
-              return stateStr === term;
-            }
-            return loc.includes(term) || 
-                   city.includes(term) || 
-                   stateStr.includes(term);
-          });
+        if (geoForms.length > 0) {
+          matchGeo = geoFormsMatchRecord(geoForms, p);
         }
 
       let matchProsTags = true;
@@ -3577,36 +3780,76 @@ function renderProspectsView() {
   lastFilteredProspects = (isBlankState && !state.forceShowAllContacts) ? state.prospects : filteredContacts;
 
   document.getElementById("contacts-count").textContent = (!isBlankState || state.forceShowAllContacts) ? filteredContacts.length : 0;
+
+  /* SESSION 2B.8 — see the companies block above. THIS is where the stale
+     colspan was: both literals here read 5 against a SEVEN-column table, so
+     the empty state has been under-spanning by two columns since the table
+     gained City/State/Metro. Derived now, and it also has to grow by one for
+     the trailing spacer. */
+  const prosCols = renderLayoutHeaderRow("prospects");
+  const prosSpan = prosCols.length + 1;
+
   if (isBlankState && !state.forceShowAllContacts) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--color-text-muted);">Enter search criteria above or click 'See All Contacts' to view.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${prosSpan}" style="text-align:center;padding:16px;color:var(--color-text-muted);">Enter search criteria above or click 'See All Contacts' to view.</td></tr>`;
   } else if (filteredContacts.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--color-text-muted);">No prospects match your criteria.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${prosSpan}" style="text-align:center;padding:16px;color:var(--color-text-muted);">No prospects match your criteria.</td></tr>`;
   } else {
     filteredContacts.forEach(p => {
       const tr = document.createElement("tr");
-      if (state.selectedProspectId === p.id) {
-        tr.className = "active-row";
-      }
-      
-      const tagBadges = (p.tags || []).map(t => `<span class="tag-badge">${escapeHTML(t)}</span>`).join("");
-      const compName = getCompanyName(p.companyId);
+      /* Session 2B.6 (CUTOVER): the `active-row` highlight went with the
+         prospect card. A row click now NAVIGATES to #view-prospect-detail
+         instead of selecting into a side panel, so there is nothing left on
+         this screen for a "currently selected prospect" state to describe.
+         The companies table above KEEPS its highlight — a company row still
+         selects, and the company inspector is still the panel it fills. */
 
-      tr.innerHTML = `
-        <td style="font-weight:600;">${escapeHTML(p.firstName)} ${escapeHTML(p.lastName)}</td>
-        <td>${escapeHTML(p.title || "—")}</td>
-        <td>${escapeHTML(compName || "—")}</td>
-        <td>${escapeHTML(p.city || "—")}</td>
-        <td>${escapeHTML(p.state || "—")}</td>
-        <td>${escapeHTML(p.location || "—")}</td>
-        <td>${tagBadges}</td>
-      `;
+      // Session 2B.8 — the registry's rowSelector for this table. Not a
+      // cursor and not read by anything else: it marks a row as carrying real
+      // columns, so the reorder's cell-mover skips the empty-state row.
+      tr.dataset.prospectId = p.id;
 
-      tr.addEventListener("click", () => {
-        if (state.selectedProspectId === p.id) {
-          closeInspectorPanel();
-        } else {
-          selectProspect(p.id);
+      prosCols.forEach(col => {
+        const td = document.createElement("td");
+        switch (col.key) {
+          case "name":
+            td.style.fontWeight = "600";
+            td.textContent = `${p.firstName || ""} ${p.lastName || ""}`.trim();
+            break;
+          case "title":
+            td.textContent = p.title || "—";
+            break;
+          case "company":
+            td.textContent = getCompanyName(p.companyId) || "—";
+            break;
+          case "city":
+            td.textContent = p.city || "—";
+            break;
+          case "state":
+            td.textContent = p.state || "—";
+            break;
+          // The Metro column reads p.location — the field name and the label
+          // have never matched on this table.
+          case "metro":
+            td.textContent = p.location || "—";
+            break;
+          case "tags":
+            td.innerHTML = (p.tags || []).map(t => `<span class="tag-badge">${escapeHTML(t)}</span>`).join("");
+            break;
+          default:
+            td.textContent = "";
         }
+        tr.appendChild(td);
+      });
+
+      const spacerTd = document.createElement("td");
+      spacerTd.setAttribute("aria-hidden", "true");
+      tr.appendChild(spacerTd);
+
+      /* ENTRY POINT 1 of 5 (P3). Was selectProspect(p.id), with a second
+         click closing the panel. There is no panel to close now — the origin
+         is ProspectHub and the back arrow returns here. */
+      tr.addEventListener("click", () => {
+        openProspectDetail(p.id, { view: "prospects" });
       });
 
       tbody.appendChild(tr);
@@ -3616,12 +3859,12 @@ function renderProspectsView() {
   renderInspector(isBlankState && !state.forceShowAllContacts && !state.forceShowAllCompanies);
 }
 
-function selectProspect(id) {
-  state.selectedProspectId = id;
-  selectedCompanyId = null; // Clear company selection
-  saveState();
-  renderProspectsView();
-}
+/* selectProspect() was removed in Session 2B.6 along with #prospect-inspector:
+   with the prospect card gone it set a cursor that nothing rendered. Its three
+   call sites now call openProspectDetail(). state.selectedProspectId itself
+   STAYS — the deferred Advanced Query drawer writes it directly at
+   openAqInspectorDrawer(), and the create path reads it. The two cursors do
+   not converge in this phase (P1). */
 
 function selectCompany(id) {
   selectedCompanyId = id;
@@ -3638,22 +3881,30 @@ function closeInspectorPanel() {
   renderProspectsView();
 }
 
-// Note: isBlankState no longer forces the panel closed on its own — the
-// inspector is a closable slide-out now, so visibility is driven purely by
-// whether a prospect/company is selected (see hasSelection below). The
-// parameter is kept for backward compatibility with existing callers.
+/* SESSION 2B.6 (CUTOVER) NARROWED THIS TO COMPANIES ONLY.
+   It used to render "a prospect or a company"; the prospect half moved to
+   #view-prospect-detail and its ~20 inspector-* element reads went with the
+   markup. `.prospect-inspector-panel` survives as the COMPANY host.
+
+   THE ONE THING TO KNOW BEFORE EDITING THIS AGAIN: `hasSelection` is
+   `selectedCompanyId` alone. state.selectedProspectId is still WRITTEN by
+   the deferred Advanced Query drawer and by the create path, so testing it
+   here would re-open this panel from a surface that has nothing to put in it.
+
+   Note: isBlankState no longer forces the panel closed on its own — the
+   inspector is a closable slide-out, so visibility is driven purely by
+   whether a company is selected. The parameter is kept because existing
+   callers pass it. */
 function renderInspector(isBlankState = false) {
   const emptyCard = document.getElementById("prospect-inspector-empty");
-  const prospectCard = document.getElementById("prospect-inspector");
   const companyCard = document.getElementById("company-inspector");
   const layoutContainer = document.querySelector(".prospects-layout-container");
 
   // Hide all initially
   emptyCard.classList.add("hidden");
-  prospectCard.classList.add("hidden");
   companyCard.classList.add("hidden");
 
-  const hasSelection = !!(state.selectedProspectId || selectedCompanyId);
+  const hasSelection = !!selectedCompanyId;
   layoutContainer?.classList.toggle("inspector-open", hasSelection);
 
   if (!hasSelection) {
@@ -3661,88 +3912,7 @@ function renderInspector(isBlankState = false) {
     return;
   }
 
-  if (state.selectedProspectId) {
-    const current = state.prospects.find(p => p.id === state.selectedProspectId);
-    if (!current) {
-      // Stale/deleted selection — close the panel instead of showing a
-      // placeholder inside it.
-      state.selectedProspectId = null;
-      layoutContainer?.classList.remove("inspector-open");
-      return;
-    }
-
-    prospectCard.classList.remove("hidden");
-
-    // Load fields
-    document.getElementById("inspector-name").textContent = `${current.firstName} ${current.lastName}`;
-    const compName = getCompanyName(current.companyId);
-    document.getElementById("inspector-title-company").innerHTML = `${escapeHTML(current.title || "—")} at <a href="#" id="link-to-company" style="color:var(--color-primary);text-decoration:none;">${escapeHTML(compName)}</a>`;
-    
-    document.getElementById("link-to-company").addEventListener("click", (e) => {
-      e.preventDefault();
-      if (current.companyId) {
-        selectCompany(current.companyId);
-      }
-    });
-    document.getElementById("inspector-email").innerHTML = current.email ? `📧 <a href="mailto:${escapeHTML(current.email)}" style="color:inherit;text-decoration:none;">${escapeHTML(current.email)}</a>` : "📧 No email";
-    document.getElementById("inspector-phone").innerHTML = current.phone ? `📞 <a href="tel:${escapeHTML(current.phone)}" style="color:inherit;text-decoration:none;">${escapeHTML(current.phone)}</a>` : "📞 No phone";
-    
-    const cityState = [current.city, current.state].filter(Boolean).join(", ");
-    document.getElementById("inspector-location").innerHTML = `📍 ${escapeHTML(cityState || "City, State")} <span style="opacity:0.7;margin-left:6px;">| Metro: ${escapeHTML(current.location || "—")}</span>`;
-    
-    const validLinkedin = ensureUrlProtocol(current.linkedin);
-    document.getElementById("inspector-linkedin").innerHTML = current.linkedin ? `🔗 <a href="${escapeHTML(validLinkedin)}" target="_blank" style="color:#0a66c2;">LinkedIn</a>` : "🔗 No LinkedIn";
-
-    // Render Tags
-    const tagList = document.getElementById("inspector-tags-list");
-    tagList.innerHTML = "";
-    if (current.tags) {
-      current.tags.forEach(t => {
-        const chip = document.createElement("span");
-        chip.className = "tag-badge";
-        chip.textContent = t;
-        tagList.appendChild(chip);
-      });
-    }
-
-    const notesEl = document.getElementById("inspector-notes");
-    if (current.notes) {
-      notesEl.value = current.notes;
-    } else {
-      notesEl.value = "";
-    }
-    document.getElementById("btn-save-pros-notes")?.classList.add("hidden");
-
-    // Render interaction rows
-    const histBody = document.getElementById("inspector-history-body");
-    histBody.innerHTML = "";
-
-    if (!current.history || current.history.length === 0) {
-      histBody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--color-text-muted);padding:16px;">No reachout records stored.</td></tr>`;
-    } else {
-      const historySorted = [...current.history].sort((a, b) => new Date(b.date) - new Date(a.date));
-      historySorted.forEach(h => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td style="font-weight:600;white-space:nowrap;">${h.date}</td>
-          <td><span class="feed-type-tag">${h.type}</span></td>
-          <td style="line-height:1.4;">${escapeHTML(h.content)}</td>
-          <td style="text-align:center;">
-            <button class="delete-interaction-btn" data-id="${h.id}" title="Remove reachout log">✕</button>
-          </td>
-        `;
-        tr.querySelector(".delete-interaction-btn").addEventListener("click", (e) => {
-          e.stopPropagation();
-          deleteInteraction(current.id, h.id);
-        });
-        histBody.appendChild(tr);
-      });
-    }
-
-    // Render memberships & tasks — three labeled subsections, built in
-    // renderInspectorMemberships() (Phase 1 / Session 1.4).
-    renderInspectorMemberships(current);
-  } else if (selectedCompanyId) {
+  {
     const c = state.companies.find(x => x.id === selectedCompanyId);
     if (!c) {
       // Stale/deleted selection — close the panel instead of showing a
@@ -3807,8 +3977,21 @@ function renderInspector(isBlankState = false) {
           <td>${escapeHTML(p.title || "—")}</td>
           <td><button class="text-btn" style="font-size:11px;">View Profile</button></td>
         `;
+        /* ENTRY POINT 5 of 5. NOT in the plan's P3 table — found during 2B.6
+           and repointed with Michael's explicit go-ahead. This is the COMPANY
+           inspector's "Associated Contacts" roster, still live because the
+           company card survives the cutover. Left as selectProspect() it would
+           have set a cursor nothing renders and silently closed the panel:
+           "View Profile" would look broken on a surface in daily use.
+
+           Origin is plain ProspectHub and needs nothing more: `selectedCompanyId`
+           is MODULE SCOPE and nothing on the detail-view path clears it, so
+           switchView("prospects") on the way back re-renders the company card
+           still open on the same company. VERIFIED IN 2B.6, not assumed. Do not
+           add a company field to the frozen origin record (P1) to "fix" this —
+           there is nothing to fix, and it would be a contract change. */
         tr.addEventListener("click", () => {
-          selectProspect(p.id);
+          openProspectDetail(p.id, { view: "prospects" });
         });
         contactsBody.appendChild(tr);
       });
@@ -3887,16 +4070,20 @@ function buildMembershipChip(text, bg, color, border, onClick) {
 }
 
 /* --------------------------------------------------------------------------
-   SHARED MEMBERSHIP BUILDERS — Session 2B.5.
+   SHARED MEMBERSHIP BUILDERS — extracted in Session 2B.5.
 
-   THESE ARE EXTRACTIONS, NOT NEW CODE, and each has a zero-behaviour-change
-   survivor. The prospect inspector (renderInspectorMemberships, below) and the
-   detail view's Audiences/Campaigns tabs both call them, so there is exactly
-   ONE implementation of "which audiences is this prospect in", ONE of the
-   three-assignment CampaignHub navigation (BUILD_NOTES), and ONE of the add
-   path that mutates another entity. Two copies of the nav rule is precisely
-   the drift Phase 2B exists to end, and it is what a second surface usually
-   introduces.
+   THESE WERE EXTRACTIONS, NOT NEW CODE. 2B.5 pulled them out so the prospect
+   inspector and the detail view shared exactly ONE implementation of "which
+   audiences is this prospect in", ONE of the three-assignment CampaignHub
+   navigation (BUILD_NOTES), and ONE of the add path that mutates another
+   entity.
+
+   SESSION 2B.6 REMOVED THE OTHER CONSUMER — renderInspectorMemberships() and
+   #prospect-inspector are both gone, and the detail view's Audiences,
+   Campaigns and Tasks tabs are the only callers left. They stay as separate
+   builders anyway: three concerns, three tabs, three independent repaints.
+   Folding them back into one render function is how the NEXT surface starts a
+   second copy of the nav rule, which is the drift this phase exists to end.
 
    The two membership sets are derived TOGETHER because campaign membership is
    derived FROM audience membership (Michael, 2026-08-30) — a campaign matches
@@ -4010,38 +4197,14 @@ function buildAddToAudienceControl(prospect, afterAdd) {
   return addRow;
 }
 
-function renderInspectorMemberships(prospect) {
-  const memEl = document.getElementById("inspector-memberships");
-  if (!memEl || !prospect) return;   // Missing element kills the whole render otherwise.
-
-  memEl.innerHTML = "";
-
-  const matchedLists = prospectAudienceLists(prospect);
-  const matchedCampaigns = prospectCampaignsFromLists(matchedLists);
-
-  /* --- "Add to audience…" row — PRESERVED from the pre-1.4 block. It stays
-         at the top of the memberships area, outside the three subsections,
-         so the restructure cannot break the add path. Session 2B.5 moved the
-         BODY of this control into buildAddToAudienceControl() so the detail
-         view's Audiences tab uses the same one; the margin below is the
-         inspector's own spacing and stays here. --- */
-  const addRow = buildAddToAudienceControl(prospect, () => renderProspectsView());
-  addRow.style.marginBottom = "10px";
-  memEl.appendChild(addRow);
-
-  /* --- 1. Campaigns --- */
-  const campSec = buildInspectorSubsection("Campaigns", "var(--color-primary)");
-  campSec._body.appendChild(buildCampaignChipRow(matchedCampaigns));
-  memEl.appendChild(campSec);
-
-  /* --- 2. Audiences --- */
-  const audSec = buildInspectorSubsection("Audiences", "var(--color-secondary)");
-  audSec._body.appendChild(buildAudienceChipRow(matchedLists));
-  memEl.appendChild(audSec);
-
-  /* --- 3. Tasks --- */
-  memEl.appendChild(renderProspectInspectorTasks(prospect));
-}
+/* renderInspectorMemberships() WAS REMOVED IN SESSION 2B.6 (CUTOVER).
+   Its only caller was renderInspector()'s prospect branch and its only DOM
+   host was #inspector-memberships, inside #prospect-inspector — both gone the
+   same session. The five builders above did NOT go with it: the detail view's
+   Audiences, Campaigns and Tasks tabs are now their sole consumers, which is
+   the one-implementation end-state Phase 2B exists to reach. Do not restore
+   this function to "keep the inspector working"; there is no prospect
+   inspector. */
 
 // Contract C8. Returns the Tasks subsection element for this prospect:
 // a two-column table (Due Date · Title) of ALL tasks, completed included,
@@ -4989,6 +5152,76 @@ const LAYOUT_RESIZE_EDGE_PX = 6;        // C16 row 1 — resize. EACH SIDE of th
 const LAYOUT_REORDER_THRESHOLD_PX = 4;  // C16 row 2 — reorder (Session 1.11)
 const LAYOUT_MIN_COL_PX = 60;
 
+/* Session 2B.12 — Review Findings 2 and 3.
+   The resize cursor is a CUSTOM BITMAP, and its one definition is the CSS
+   custom property `--cursor-col-resize` in style.css `:root`. This constant
+   is the var() reference, not a second copy of the data URI: the OS draws the
+   stock col-resize glyph with a mask that takes colour from what is beneath
+   it, which on the light-purple header resolves to almost the header's own
+   luminance. A black glyph with a white halo does not depend on the
+   background. The `, col-resize` keyword fallback lives inside the property,
+   so a browser that rejects the bitmap still gets a resize cursor.
+
+   Why a var() reference rather than a literal string here: the data URI would
+   otherwise exist in app.js AND style.css, and the CSS copy is not optional —
+   `body.layout-resizing *` needs it (see below). One definition, two readers. */
+const LAYOUT_RESIZE_CURSOR = "var(--cursor-col-resize)";
+
+/* --------------------------------------------------------------------------
+   ProspectHub's two directory tables — Session 2B.8, contract P7.
+
+   These live HERE, beside TASKHUB_COLUMNS, and not in the ProspectHub render
+   section, for one mechanical reason: COLUMN_TABLES below is a `const` that
+   references all three lists at module-evaluation time, so a list declared
+   further down the file sits in its temporal dead zone and the registry
+   throws before the app boots. The block is machinery shared by three tables,
+   not TaskHub's; the MAP entry says so.
+
+   WIDTHS ARE THE POINT OF THIS BLOCK, because both tables go
+   table-layout:fixed in this session and a fixed column can no longer grow to
+   fit — it truncates. Two floors were respected for every number below:
+
+     1. THE HEADER LABEL. .premium-table th is 12px uppercase with 0.5px
+        letter-spacing inside 32px of horizontal padding, so "COMPANY NAME"
+        needs ~140px and "STATE" ~84px before it renders as "COMPAN…". These
+        tables do NOT sort, so unlike TaskHub there is no arrow to budget for.
+     2. THE PANEL, AND IT IS NARROWER THAN THE WRAPPER. Measured at Michael's
+        1269px window: the scroll container is 898.67px, but
+        `.table-scroll-container` keeps 12px of padding on each SIDE (only its
+        padding-top is removed, for the sticky header), so the table gets
+        874.67px — and a vertical scrollbar takes ~20px more the moment either
+        list is long enough to scroll. The budget is therefore ~855px, not
+        ~899. The first pass of this session summed to 898 and 880 and both
+        tables overflowed sideways with a scrollbar that then triggered the
+        vertical one; the lists below sum to 853 and 845, which clears the
+        budget in both states. SUM THEM AGAIN BEFORE ADDING A COLUMN.
+
+   Every width is a CODE DEFAULT. The moment Michael drags an edge, C15's
+   record wins for that column and these numbers are never read for it again.
+   -------------------------------------------------------------------------- */
+const PROSPECTS_COLUMNS = [
+  { key: "name",    label: "Name",    width: 145 },
+  { key: "title",   label: "Title",   width: 165 },
+  { key: "company", label: "Company", width: 145 },
+  { key: "city",    label: "City",    width: 100 },
+  // 88, not 70: "STATE" itself needs ~84px inside the th's padding, and a
+  // truncated header on the narrowest column reads as a rendering bug.
+  { key: "state",   label: "State",   width: 88  },
+  // The Metro column shows p.location. The key follows the LABEL, not the
+  // field, so renaming the field later cannot silently invalidate every saved
+  // layout record.
+  { key: "metro",   label: "Metro",   width: 100 },
+  { key: "tags",    label: "Tags",    width: 110 }
+];   // 853
+
+const COMPANIES_COLUMNS = [
+  { key: "name",     label: "Company Name", width: 220 },
+  { key: "industry", label: "Industry",     width: 165 },
+  { key: "location", label: "Location",     width: 190 },
+  { key: "website",  label: "Website",      width: 105 },
+  { key: "tags",     label: "Tags",         width: 165 }
+];   // 845
+
 /* --------------------------------------------------------------------------
    P7 — COLUMN_TABLES, the registry. Frozen contract, Phase 2B.
 
@@ -4997,10 +5230,17 @@ const LAYOUT_MIN_COL_PX = 60;
    writers and the drag handler all read their ids and their column list
    from this object, and `state.columnLayouts` is keyed by the same id.
 
-   `taskhub` is the ONLY entry as of Session 2B.2 — PROSPECTS_COLUMNS and
-   COMPANIES_COLUMNS are Session 2B.8's and are deliberately not written here
-   yet, because this session's entire point is proving the generalisation
-   against the one consumer that already works.
+   `taskhub` was the ONLY entry as of Session 2B.2; SESSION 2B.8 ADDED THE
+   OTHER TWO and they are what the generalisation was built for. Registering
+   them was this object, two <thead> ids and a cell loop — no change to any
+   resolver, writer or drag function, which is the outcome 2B.2 existed to
+   buy.
+
+   NOTE THE TWO NEW ROW SELECTORS. Neither table carried a row id attribute
+   before this session; `data-prospect-id` / `data-company-id` were added in
+   renderProspectsView() precisely so the reorder's cell-mover can tell a data
+   row from the empty-state row, which is one colSpan cell and has no columns
+   to swap.
 
    Fields: `columns` the definition list (key/label/default width),
    `theadId` the STATIC <thead> the drag delegates to (the <tr> and its <th>s
@@ -5016,6 +5256,18 @@ const COLUMN_TABLES = {
     theadId: "taskhub-thead",
     tableId: "taskhub-table",
     rowSelector: "tr[data-task-id]"
+  },
+  prospects: {
+    columns: PROSPECTS_COLUMNS,
+    theadId: "prospects-thead",
+    tableId: "prospects-table",
+    rowSelector: "tr[data-prospect-id]"
+  },
+  companies: {
+    columns: COMPANIES_COLUMNS,
+    theadId: "companies-thead",
+    tableId: "companies-table",
+    rowSelector: "tr[data-company-id]"
   }
 };
 
@@ -5117,6 +5369,59 @@ function setLayoutColumnOrder(tableId, keys) {
   def.columns.forEach(c => { if (!clean.includes(c.key)) clean.push(c.key); });
   rec.order = clean;
   saveState();
+}
+
+/* --------------------------------------------------------------------------
+   renderLayoutHeaderRow(tableId) — Session 2B.8
+
+   Rebuilds a registered table's header <tr> from the C15 resolver and returns
+   the resolved column list, so the caller builds its body cells from the SAME
+   array the header was built from. That is the whole guarantee: a reordered
+   layout cannot produce correct data under the wrong labels, because there is
+   one list and one loop order.
+
+   THE <thead> ELEMENT ITSELF IS NEVER REPLACED — only its <tr>. The C16 drag
+   is delegated to the static <thead> by id, so replacing the element would
+   silently drop the binding and `layoutDragInit[tableId]` would still read
+   true, leaving a table that renders perfectly and does not drag.
+
+   TaskHub does NOT use this. Its header carries a select-all checkbox th, a
+   sort arrow per label, a click handler per th and the C16-row-3 suppress
+   check, and folding four TaskHub-only concerns into a shared helper to save
+   a dozen lines is how the one working consumer gets broken by a session that
+   never meant to touch it. This serves the tables that have plain labels.
+   -------------------------------------------------------------------------- */
+function renderLayoutHeaderRow(tableId) {
+  const def = columnTable(tableId);
+  if (!def) return [];
+  const thead = document.getElementById(def.theadId);
+  const cols = layoutColumns(tableId);
+  if (!thead) return cols;
+
+  thead.innerHTML = "";
+  const htr = document.createElement("tr");
+
+  cols.forEach(col => {
+    const th = document.createElement("th");
+    th.dataset.colKey = col.key;                          // C16 reads this
+    th.style.width = layoutColumnWidth(tableId, col.key) + "px";
+    th.textContent = col.label;
+    htr.appendChild(th);
+  });
+
+  /* The width-less trailing spacer. Under table-layout:fixed it soaks up
+     whatever the real columns leave over, so narrowing one column does not
+     stretch its neighbours — the leftover collects harmlessly at the end. It
+     carries no data-col-key, which is what keeps it out of `order`, out of
+     `widths`, and out of both the sort and reorder hit tests with no special
+     case anywhere. Every body row needs a matching <td>. */
+  const spacerTh = document.createElement("th");
+  spacerTh.className = "taskhub-col-spacer";
+  spacerTh.setAttribute("aria-hidden", "true");
+  htr.appendChild(spacerTh);
+
+  thead.appendChild(htr);
+  return cols;
 }
 
 // The prospect a task points at, or null. One lookup helper so the table,
@@ -5442,6 +5747,13 @@ function renderTaskHubTable() {
 let layoutDragInit = {};
 let layoutSuppressNextHeaderClick = false;
 
+/* Session 2B.12 — Finding 3. TRUE for the whole life of a resize drag.
+   Single module-scope boolean for the same reason the suppress flag above is
+   one: only one gesture can be in flight at a time. Read by exactly one
+   place — the thead mousemove guard — and cleared in the resize gesture's
+   own onUp, beside the class it pairs with. */
+let layoutResizeLive = false;
+
 // The checkbox column and the trailing spacer carry no data-col-key: they are
 // structural, and C15 keeps them out of `order` and `widths` for the same
 // reason. Returning null for them is what makes them neither resizable nor
@@ -5616,9 +5928,25 @@ function initHeaderDrag(tableId) {
      on the th under the pointer even when the column that would resize is its
      left neighbour: the pointer is what the user sees. */
   thead.addEventListener("mousemove", (e) => {
+    /* Session 2B.12 — Finding 3, and this guard is HALF the fix.
+       This handler keeps firing while a resize drag is live, and without the
+       guard it wipes the inline cursor the moment the pointer leaves the 12px
+       zone it grabbed — which happens on the first frame of any drag, because
+       the divider moves with the pointer. On TaskHub `.taskhub-sortable`'s
+       `cursor: pointer` then wins and the cursor blinks mid-drag. ProspectHub
+       headers carry no cursor rule, so they inherit and look fine — which is
+       exactly why this defect survives being tested on the obvious surface.
+
+       The guard alone is NOT sufficient and must not be trusted to be: it
+       preserves the inline cursor on the th the drag STARTED on, and says
+       nothing about the neighbour the pointer crosses into two frames later,
+       whose inline cursor is whatever some earlier hover left. The
+       `body.layout-resizing *` rule in style.css is what actually holds the
+       cursor across the whole document for the duration. Both, or neither. */
+    if (layoutResizeLive) return;
     const hitTh = layoutResizeHitCell(tableId, e.target);
     if (!hitTh) return;
-    hitTh.style.cursor = layoutResizeTarget(hitTh, e.clientX) ? "col-resize" : "";
+    hitTh.style.cursor = layoutResizeTarget(hitTh, e.clientX) ? LAYOUT_RESIZE_CURSOR : "";
   });
 
   thead.addEventListener("mousedown", (e) => {
@@ -5654,7 +5982,14 @@ function initHeaderDrag(tableId) {
       let finalWidth = startWidth;
 
       resizeTh.classList.add("taskhub-col-resizing");
-      document.body.style.cursor = "col-resize";
+      /* Session 2B.12 — the inline `document.body.style.cursor = "col-resize"`
+         that used to be here was replaced, not supplemented. An inherited body
+         cursor loses to ANY descendant with its own cursor rule, which is the
+         whole of Finding 3; the class carries an `!important` rule that covers
+         `body.layout-resizing *`, so it holds over `.taskhub-sortable`, over
+         buttons, over links, over whatever the pointer crosses. */
+      layoutResizeLive = true;
+      document.body.classList.add("layout-resizing");
 
       const onMove = (ev) => {
         finalWidth = Math.max(LAYOUT_MIN_COL_PX, Math.round(startWidth + (ev.clientX - startX)));
@@ -5664,7 +5999,8 @@ function initHeaderDrag(tableId) {
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
         resizeTh.classList.remove("taskhub-col-resizing");
-        document.body.style.cursor = "";
+        layoutResizeLive = false;
+        document.body.classList.remove("layout-resizing");
         layoutSuppressNextHeaderClick = true;   // a drag is not a sort
         setLayoutColumnWidth(tableId, key, finalWidth);   // persisted ONCE, here
       };
@@ -6081,6 +6417,17 @@ const PROSPECT_DETAIL_FIELDS = [
 function renderProspectDetailIdentity(prospect) {
   if (!prospect) return;
 
+  // Session 2B.7 / P6. The markup persists across records, so a refusal about
+  // the PREVIOUS prospect would otherwise still be on screen under this one's
+  // email — and following its link would open a third person.
+  hideDetailEmailWarning();
+
+  // Session 2B.13 / Finding 10c. #pd-company's suggestions, refreshed on every
+  // record. This is the identity block's only render, and it is also the moment
+  // after commitProspectField() may have created a company — so the list the
+  // user sees next already contains the one they just made.
+  syncCompaniesDatalist();
+
   PROSPECT_DETAIL_FIELDS.forEach(f => {
     const el = document.getElementById(f.id);
     if (!el) return;
@@ -6166,13 +6513,30 @@ function commitProspectField(prospect, key, value) {
     return;
   }
 
-  /* ⚠️ P6 HOOK — SESSION 2B.7, NOT THIS ONE. Contract P5 says `email` routes
-     through prospectByEmail() before it commits and reverts on a duplicate.
-     That resolver does not exist yet: contract P6 and all three of its callers
-     are Session 2B.7's task list, item 3 of which is exactly this line. Until
-     then the detail view's email field commits like any other text field, the
-     same as #modal-prospect does today. Do not write a second duplicate check
-     here — one rule, one implementation. */
+  /* CONTRACT P6, CALLER 2 (Session 2B.7). The SAME resolver #modal-prospect
+     uses — one rule, one implementation. On a duplicate the field REVERTS to
+     its stored value and says why; it does not save and it does not leave the
+     screen disagreeing with the database.
+
+     The exclude is `prospect.id`, so re-committing a record's own address
+     (which a `change` event fires on any focus-out after an edit-and-undo) is
+     not a duplicate.
+
+     THE REVERT REPAINTS THE CONTROL, which is the one place this writer's
+     "repaint only what depends on the field" rule cuts the other way: the
+     user typed something the record does not hold, so leaving the input alone
+     would show a value that was never saved. Same shape as the companyId
+     branch above, for the same reason. */
+  if (key === "email") {
+    const dup = prospectByEmail(clean, prospect.id);
+    if (dup) {
+      const el = document.getElementById("pd-email");
+      if (el && prospect.id === detailProspectId) el.value = prospect.email || "";
+      renderDetailEmailWarning(dup);
+      return;
+    }
+    hideDetailEmailWarning();
+  }
 
   prospect[key] = clean;
   saveState();
@@ -6195,6 +6559,157 @@ function handleProspectDetailFieldChange(e) {
   commitProspectField(prospect, key, el.value);
 }
 
+/* ==========================================================================
+   CONTRACT P6 — EMAIL UNIQUENESS. ONE RESOLVER, THREE CALLERS. (Session 2B.7)
+
+   The three callers are saveProspect() (both branches), commitProspectField()
+   (the detail view's email field) and importCSVContacts()'s prospect route.
+   There is no fourth, and a future surface that needs the rule calls this
+   rather than re-deriving it — the single-writer shape Session 1.6 set for
+   history entries, applied to a read.
+
+   CASE-INSENSITIVE AND TRIMMED, because that is what the import path has
+   always done: the prospect dedupe key at ~11730 is `"email:" + email.trim()
+   .toLowerCase()`. A resolver that compared raw strings would refuse a
+   hand-typed duplicate the import would happily have merged, and the app
+   would hold two different definitions of "the same contact".
+
+   AN EMPTY EMAIL IS NEVER A DUPLICATE. Records imported without one exist
+   (the import's own key function falls back to name+company precisely
+   because of them), and "" === "" would otherwise make every one of them
+   collide with every other.
+
+   excludeId IS THE EDIT BRANCH. Without it, saving a record you did not
+   change the email of would report the record as its own duplicate. */
+function normalizedEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function prospectByEmail(email, excludeId = null) {
+  const needle = normalizedEmail(email);
+  if (!needle) return null;
+  return (state.prospects || []).find(p =>
+    p.id !== excludeId && normalizedEmail(p.email) === needle
+  ) || null;
+}
+
+/* CALLER 3 IS THE IMPORT, AND IT SHARES THE RULE WITHOUT SHARING THE SCAN.
+   Deliberate, and worth writing down so a later session does not "finish the
+   job" by routing the import through prospectByEmail() per row:
+
+     · prospectByEmail() answers "does this collide with a STORED record".
+       The import must also catch two rows inside the SAME file colliding with
+       each other, which no scan of state.prospects can see.
+     · It is a linear scan. Called per row it is O(rows x prospects), against a
+       database that is already in the hundreds of prospects.
+
+   mergeImportedRecords()'s running Set does both correctly. What the import
+   shares is the NORMALISATION — its prospect key calls normalizedEmail(), the
+   same function above — so the two surfaces cannot drift into two different
+   definitions of "the same email", which is the part that would actually hurt:
+   a duplicate the import merges but the modal refuses, or the reverse. */
+
+/* The one place the duplicate is put into words — used by #modal-prospect and
+   by the detail view's email field, so the two surfaces cannot drift into
+   telling the user different things about the same refusal.
+
+   Returns plain text plus the id; the caller owns the markup, because the
+   modal's link discards typed data and the detail view's does not. */
+/* The detail view's half of the P6 refusal. Same words as the modal's up to
+   the tail, which differs because the consequence differs: the field has
+   already been put back, so nothing of the user's is discarded and the link
+   is an ordinary navigation carrying the CURRENT origin, not a synthesised
+   one — a user who arrived from a task goes back to that task. */
+function renderDetailEmailWarning(existing) {
+  const box = document.getElementById("pd-email-warning");
+  if (!box) return;
+  const info = duplicateEmailNotice(existing);
+  box.innerHTML = "";
+
+  const line = document.createElement("span");
+  line.textContent = `That email is already on file for ${info.label}.`;
+  box.appendChild(line);
+
+  const link = document.createElement("button");
+  link.type = "button";
+  link.className = "dup-email-link";
+  link.textContent = `Open ${info.name}`;
+  link.addEventListener("click", () => {
+    const origin = detailOrigin || { view: "prospects" };
+    hideDetailEmailWarning();
+    openProspectDetail(info.id, origin);
+  });
+  box.appendChild(link);
+
+  const tail = document.createElement("span");
+  tail.className = "dup-email-tail";
+  tail.textContent = "The field was put back.";
+  box.appendChild(tail);
+
+  box.classList.remove("hidden");
+}
+
+function hideDetailEmailWarning() {
+  const box = document.getElementById("pd-email-warning");
+  if (!box) return;
+  box.classList.add("hidden");
+  box.innerHTML = "";
+}
+
+function renderDuplicateEmailWarning(existing) {
+  const box = document.getElementById("pros-dup-warning");
+  if (!box) return;
+  const info = duplicateEmailNotice(existing);
+  box.innerHTML = "";
+
+  const line = document.createElement("span");
+  line.textContent = `That email is already on file for ${info.label}.`;
+  box.appendChild(line);
+
+  /* A REAL BUTTON, BUILT IN JS AND NOT INTERPOLATED INTO innerHTML. Prospect
+     ids are email addresses in production data (BUILD_NOTES), so a template
+     string putting one into an onclick attribute is both an injection surface
+     and the CSS.escape trap P9 names. The id never leaves the closure. */
+  const link = document.createElement("button");
+  link.type = "button";
+  link.className = "dup-email-link";
+  link.textContent = `Open ${info.name}`;
+  link.addEventListener("click", () => {
+    /* P6: following the link closes the modal and DISCARDS the typed data.
+       Correct, and not a loss — the record the user was typing already
+       exists, which is the whole finding. */
+    hideDuplicateEmailWarning();
+    document.getElementById("modal-prospect").classList.add("hidden");
+    editingProspectId = null;
+    openProspectDetail(info.id, { view: "prospects" });
+  });
+  box.appendChild(link);
+
+  const tail = document.createElement("span");
+  tail.className = "dup-email-tail";
+  tail.textContent = "Nothing was saved.";
+  box.appendChild(tail);
+
+  box.classList.remove("hidden");
+}
+
+function hideDuplicateEmailWarning() {
+  const box = document.getElementById("pros-dup-warning");
+  if (!box) return;
+  box.classList.add("hidden");
+  box.innerHTML = "";
+}
+
+function duplicateEmailNotice(existing) {
+  const name = `${existing.firstName || ""} ${existing.lastName || ""}`.trim() || "an existing contact";
+  const company = getCompanyName(existing.companyId) || "";
+  return {
+    id: existing.id,
+    name,
+    label: company ? `${name} — ${company}` : name
+  };
+}
+
 /* Contract P5, extracted from saveProspect() so there is ONE company-creation
    path. The seed object is that function's, verbatim.
 
@@ -6213,15 +6728,46 @@ function resolveCompanyByName(name, email, location = "") {
   if (existing) return existing.id;
 
   const compId = `comp-${Date.now()}`;
+
+  /* SESSION 2B.13, review Finding 10a. ONE derivation of the email's host, read
+     by TWO fields that are NOT the same field and must never be reconciled into
+     one. `domain` keeps its "domain.com" placeholder fallback VERBATIM: it is a
+     CSV column, written by the backup export and read by the company filter, so
+     changing what it holds is a restore-compatibility change rather than a
+     tidy-up. Only `website` is new here.
+
+     WHY THIS LINE HAD TO EXIST AT ALL, because `website: ""` reads like a
+     perfectly ordinary empty seed. The repair that would otherwise fix it is
+     written `if (c.website === undefined) c.website = c.domain || ""` in
+     ensureStateDefaults(). An empty string is not `undefined`. So every company
+     this function has ever created is permanently invisible to that back-fill —
+     not stale, not waiting, INVISIBLE — and no amount of reloading populates it.
+     Restoring the seed here fixes NEW companies only.
+
+     ⚠️ EXISTING COMPANIES WERE LEFT ALONE ON PURPOSE (Michael, 2026-09-02).
+     Back-filling their `website` from `domain` is a DIRECTIVES §4 change to
+     existing data and needs its own decision and rollback plan. It was put to
+     him in this session and DECLINED for now. Do not slip it in as a side
+     effect of some later migration.
+
+     ⚠️ AND THE PLACEHOLDER IS DELIBERATELY NOT SEEDED INTO `website`. A company
+     created with no email gets `domain: "domain.com"`, and copying that into
+     `website` would be worse than leaving it empty: domain.com is a real
+     registered domain, so 2B.17's read-only company-URL display would render a
+     live link to a stranger's site on every company created without an email.
+     DIRECTIVES Ladder rung 2 — the surface never lies about state. Empty is an
+     honest empty; "domain.com" is a confident wrong answer. */
+  const emailHost = (email || "").split("@")[1] || "";
+
   state.companies.push({
     id: compId,
     name: trimmed,
-    domain: (email || "").split("@")[1] || "domain.com",
+    domain: emailHost || "domain.com",
     location: location || "Unknown",
     industry: "General",
     address: "",
     phone: "",
-    website: "",
+    website: emailHost,
     linkedin: "",
     tags: [],
     employees: "",
@@ -6281,15 +6827,38 @@ function handleProspectDetailDelete() {
    deliberate, not an omission: contract P4 freezes the array with all six
    rows present, and a session that shipped four tabs and three missing keys
    would leave the strip disagreeing with the contract. See each stub below.
+
+   ⚠️ THE ROW ORDER CHANGED IN SESSION 2B.16 (review Finding 8) AND IS NOT
+   THE ORDER CONTRACT P4 WAS WRITTEN WITH. P4 lists interactions, tasks,
+   audiences, campaigns, company, sequences. The live order below is
+   interactions, tasks, COMPANY, SEQUENCES, audiences, campaigns — Company
+   promoted to 3rd and Sequences to 4th, because Interactions and Tasks are
+   "what is happening with this person", Company is the next reach, and
+   Audiences/Campaigns are list management, a different mode. The set of
+   rows, their keys, their labels, their enabled flags and their renderers
+   are all UNCHANGED; only the sequence differs. A one-clause P4 amendment
+   was PROPOSED at the 2B.16 close and is NOT applied — if you are reading
+   P4 and this array side by side and they disagree on order, that is this,
+   and it is deliberate.
+
+   A CONSEQUENCE WORTH KNOWING: this puts the DISABLED Sequences tab in the
+   middle of the strip rather than parked at the end. Michael's call, made
+   knowingly — right the moment Phase 3 enables it, mildly odd until then.
+   Do not "tidy" it back to the end.
+
+   NOTHING INDEXES THIS ARRAY BY POSITION except the `|| PROSPECT_DETAIL_TABS[0]`
+   fallback in renderProspectDetailTabBody(), which wants "the first tab" and
+   still gets interactions. There is no nth-child rule on .detail-tab either.
+   That is why a reorder is a reorder and not a refactor.
    -------------------------------------------------------------------------- */
 
 const PROSPECT_DETAIL_TABS = [
   { key: "interactions", label: "Interactions", enabled: true,  render: renderDetailInteractions },
   { key: "tasks",        label: "Tasks",        enabled: true,  render: renderDetailTasks },
-  { key: "audiences",    label: "Audiences",    enabled: true,  render: renderDetailAudiences },
-  { key: "campaigns",    label: "Campaigns",    enabled: true,  render: renderDetailCampaigns },
   { key: "company",      label: "Company",      enabled: true,  render: renderDetailCompany },
-  { key: "sequences",    label: "Sequences",    enabled: false, render: null }
+  { key: "sequences",    label: "Sequences",    enabled: false, render: null },
+  { key: "audiences",    label: "Audiences",    enabled: true,  render: renderDetailAudiences },
+  { key: "campaigns",    label: "Campaigns",    enabled: true,  render: renderDetailCampaigns }
 ];
 
 /* Draws the strip. Whole-container reset then appendChild — never
@@ -6621,6 +7190,37 @@ function renderDetailCampaigns(prospect) {
    ORIGIN IS PASSED THROUGH UNCHANGED, so the back arrow still returns to
    wherever the FIRST prospect was opened from. Handing it a fresh
    { view: "prospects" } would strand a user who arrived from a task editor.
+
+   SESSION 2B.16 — THE CARD IS A DISCLOSURE AND OPENS COLLAPSED.
+
+   WHAT COLLAPSES IS THE CARD, NOT THE TAB. The roster is the reason this tab
+   exists; it is never hidden. What folds away is the read-only definition
+   grid and the description — the part that pushed the roster below the fold
+   on a company with a long address and a paragraph of description. The
+   company's NAME and INDUSTRY stay visible in the disclosure header, so a
+   collapsed card still answers "which company" without being opened.
+
+   ⛔ THE EXPANDED/COLLAPSED STATE IS NOT STORED ANYWHERE. Not in `state`, not
+   in localStorage, not in a module-scope variable — it lives only as a class
+   on the card element, which is discarded when the tab body is reset. So the
+   card re-collapses every time the tab is opened, which is the specified
+   behaviour ("opens collapsed"), and contract P9's "no new persisted field,
+   no new store" is satisfied by construction rather than by discipline. If a
+   future session is asked to remember it, it joins state.columnLayouts under
+   its own key — NEVER a new top-level store (DECLARATIONS: every new store
+   must also be hand-added to wipeAllData()).
+
+   ⛔ DO NOT APPLY THIS PATTERN TO THE FOUR CONFERENCE FIELDS in the identity
+   block. Collapse and disclosure were offered to Michael for those and he
+   REJECTED them — 2026-09-01, in as many words: he wants them visible and
+   will group them inside a shape instead. The two surfaces look like they
+   should match and must not.
+
+   THE LISTENER IS DIRECT, NOT DELEGATED, and that is correct here: this
+   button is created fresh by this function and dies with the container when
+   renderProspectDetailTabBody() resets it, exactly like the roster rows
+   below. The delegation rule applies to the STATIC containers (the tab strip,
+   the identity block), which outlive their children.
    -------------------------------------------------------------------------- */
 function renderDetailCompany(prospect) {
   const wrap = document.createElement("div");
@@ -6650,19 +7250,50 @@ function renderDetailCompany(prospect) {
     roster.length === 1 ? "1 other contact here" : `${roster.length} other contacts here`
   ));
 
-  /* --- The company card. Read-only. --- */
+  /* --- The company card. Read-only, and collapsed until asked. --- */
   const card = document.createElement("div");
   card.className = "pd-company-card";
 
-  const nameEl = document.createElement("div");
+  // The disclosure header. A real <button> so it is keyboard-operable and
+  // announces its state (DIRECTIVES §0 authoring habits). The arrow is a
+  // <span> rotated by CSS, not two different glyphs swapped in JS — one
+  // element, one transition, nothing to get out of sync.
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "pd-company-head";
+  head.setAttribute("aria-expanded", "false");
+
+  const arrow = document.createElement("span");
+  arrow.className = "pd-company-arrow";
+  arrow.setAttribute("aria-hidden", "true");
+  arrow.textContent = "▸"; // ▸ — rotated 90° by CSS when open
+  head.appendChild(arrow);
+
+  const headText = document.createElement("span");
+  headText.className = "pd-company-headtext";
+
+  const nameEl = document.createElement("span");
   nameEl.className = "pd-company-name";
   nameEl.textContent = company.name || "(unnamed company)";
-  card.appendChild(nameEl);
+  headText.appendChild(nameEl);
 
-  const industryEl = document.createElement("div");
+  const industryEl = document.createElement("span");
   industryEl.className = "pd-company-industry";
   industryEl.textContent = company.industry || "General";
-  card.appendChild(industryEl);
+  headText.appendChild(industryEl);
+
+  head.appendChild(headText);
+  card.appendChild(head);
+
+  // Everything below the header folds away. display:none, not height:0 —
+  // a hidden grid must not be measurable or tabbable while collapsed.
+  const body = document.createElement("div");
+  body.className = "pd-company-body";
+
+  head.addEventListener("click", () => {
+    const open = card.classList.toggle("is-open");
+    head.setAttribute("aria-expanded", open ? "true" : "false");
+  });
 
   // A definition grid rather than a paragraph, so an empty field reads as an
   // empty field and not as a missing line. Built from a local table so adding
@@ -6710,15 +7341,16 @@ function renderDetailCompany(prospect) {
     grid.appendChild(dt);
     grid.appendChild(dd);
   });
-  card.appendChild(grid);
+  body.appendChild(grid);
 
   if (company.description) {
     const desc = document.createElement("div");
     desc.className = "pd-company-desc";
     desc.textContent = company.description;
-    card.appendChild(desc);
+    body.appendChild(desc);
   }
 
+  card.appendChild(body);
   wrap.appendChild(card);
 
   /* --- The roster. The reason this tab exists. --- */
@@ -7280,8 +7912,11 @@ function clearProspectsFilters() {
   if (searchInput) searchInput.value = "";
   const geoSearchInput = document.getElementById("prospect-geo-search");
   if (geoSearchInput) geoSearchInput.value = "";
-  const tagSelect = document.getElementById("prospect-tag-chooser");
-  if (tagSelect) tagSelect.selectedIndex = -1;
+  // Session 2B.9: was `tagSelect.selectedIndex = -1`. resetAqPicker() is the
+  // shared clear — it empties both Sets, blanks the search box, hides the
+  // dropdown and repaints the chips. It deliberately does NOT fire onChange,
+  // because all three callers re-render the view themselves on the next line.
+  resetAqPicker(PROSPECT_TAG_PICKER);
   saveState();
   renderProspectsView();
 }
@@ -7303,13 +7938,52 @@ let aqHasRun = false;
 // --- Tags / Campaigns / Audiences searchable multi-select pickers ---
 // Each picker tracks two sets of selected option labels: "include" (record
 // must have ALL of these) and "exclude" (record must have NONE of these).
+//
+// SESSION 2B.9 — THIS OBJECT NOW HOLDS ONE KEY THAT IS NOT AN ADVANCED QUERY
+// PICKER: `prospectHubTags`, the ProspectHub tag filter. It lives here because
+// the six render/mutate functions below all read `aqPickerState[picker.key]`,
+// so a consumer outside the modal still needs its two Sets in this object.
+//
+// ITS CONFIG IS DELIBERATELY *NOT* IN THE `AQ_PICKERS` ARRAY BELOW, AND THAT
+// IS THE WHOLE SEPARATION. `resetAllAqPickers()` iterates that array — it is
+// what the Advanced Query modal's Reset button calls. A sixth entry there
+// would mean pressing Reset inside the modal silently wipes the hub's tag
+// filter behind it, on a surface the user cannot see at the time. Register
+// outside the array; share the functions.
+//
 let aqPickerState = {
   tags: { include: new Set(), exclude: new Set() },
   campaigns: { include: new Set(), exclude: new Set() },
   audiences: { include: new Set(), exclude: new Set() },
   industry: { include: new Set(), exclude: new Set() },
-  title: { include: new Set(), exclude: new Set() }
+  title: { include: new Set(), exclude: new Set() },
+  // ProspectHub's tag filter. Config: PROSPECT_TAG_PICKER, declared in
+  // § 👥 RENDER VIEW: PROSPECT DATABASE where the control it replaced lived.
+  prospectHubTags: { include: new Set(), exclude: new Set() }
 };
+
+/* --------------------------------------------------------------------------
+   THE PICKER CONFIG SHAPE  (read by the six functions below)
+
+     key         required   the aqPickerState key holding its two Sets
+     searchId    required   id of the text input
+     dropdownId  required   id of the options dropdown
+     chipsId     required   id of the chips container
+     getOptions  required   () => string[]  — the selectable labels
+
+   Three OPTIONAL keys. Every one is absent on all five Advanced Query
+   pickers, so each is a no-op there and none of them changes AQ behaviour:
+
+     allowFreeText  Enter adds the typed term even if it matches no option,
+                    and parses a boolean expression. (Pre-existing; `title`.)
+     includeOnly    Offer include only — no "− Exclude" button, no ⇄ chip
+                    toggle. For a surface whose downstream filter has no
+                    exclusion semantics, so the control cannot offer a mode
+                    the results would not honour. (Added 2B.9.)
+     onChange       Called after any selection mutation. The picker functions
+                    repaint themselves; this is how an owning view learns it
+                    must re-filter. (Added 2B.9.)
+   -------------------------------------------------------------------------- */
 
 const AQ_PICKERS = [
   {
@@ -7518,16 +8192,20 @@ function renderAqPickerDropdown(picker) {
     matches.slice(0, 50).forEach(opt => {
       const row = document.createElement("div");
       row.className = "aq-picker-option";
+      // includeOnly: the exclude button is NOT RENDERED rather than hidden in
+      // CSS. A control that is merely invisible is still reachable — and the
+      // next session to restyle .aq-picker-add-btn has no way to know the
+      // display:none was load-bearing.
       row.innerHTML = `<span>${escapeHTML(opt)}</span>
         <span class="aq-picker-option-actions">
-          <button type="button" class="aq-picker-add-btn aq-picker-include-btn" title="Include">+ Include</button>
-          <button type="button" class="aq-picker-add-btn aq-picker-exclude-btn" title="Exclude">− Exclude</button>
+          <button type="button" class="aq-picker-add-btn aq-picker-include-btn" title="Include">${picker.includeOnly ? "+ Add" : "+ Include"}</button>
+          ${picker.includeOnly ? "" : `<button type="button" class="aq-picker-add-btn aq-picker-exclude-btn" title="Exclude">− Exclude</button>`}
         </span>`;
       row.querySelector(".aq-picker-include-btn").addEventListener("click", (e) => {
         e.stopPropagation();
         setAqPickerSelection(picker, opt, "include");
       });
-      row.querySelector(".aq-picker-exclude-btn").addEventListener("click", (e) => {
+      row.querySelector(".aq-picker-exclude-btn")?.addEventListener("click", (e) => {
         e.stopPropagation();
         setAqPickerSelection(picker, opt, "exclude");
       });
@@ -7547,6 +8225,7 @@ function setAqPickerSelection(picker, value, mode) {
   if (input) input.value = "";
   renderAqPickerChips(picker);
   renderAqPickerDropdown(picker);
+  picker.onChange?.();
 }
 
 function toggleAqPickerMode(picker, value) {
@@ -7559,6 +8238,7 @@ function toggleAqPickerMode(picker, value) {
     selected.include.add(value);
   }
   renderAqPickerChips(picker);
+  picker.onChange?.();
 }
 
 function removeAqPickerSelection(picker, value) {
@@ -7567,6 +8247,7 @@ function removeAqPickerSelection(picker, value) {
   selected.exclude.delete(value);
   renderAqPickerChips(picker);
   renderAqPickerDropdown(picker);
+  picker.onChange?.();
 }
 
 function renderAqPickerChips(picker) {
@@ -7578,11 +8259,11 @@ function renderAqPickerChips(picker) {
   const addChip = (value, mode) => {
     const chip = document.createElement("span");
     chip.className = `aq-picker-chip aq-picker-chip-${mode}`;
-    chip.innerHTML = `<span class="aq-picker-chip-mode">${mode === "include" ? "+" : "−"}</span>
+    chip.innerHTML = `${picker.includeOnly ? "" : `<span class="aq-picker-chip-mode">${mode === "include" ? "+" : "−"}</span>`}
       <span class="aq-picker-chip-label">${escapeHTML(value)}</span>
-      <button type="button" class="aq-picker-chip-toggle" title="Switch to ${mode === "include" ? "exclude" : "include"}">⇄</button>
-      <button type="button" class="aq-picker-chip-remove" title="Remove">✕</button>`;
-    chip.querySelector(".aq-picker-chip-toggle").addEventListener("click", () => toggleAqPickerMode(picker, value));
+      ${picker.includeOnly ? "" : `<button type="button" class="aq-picker-chip-toggle" title="Switch to ${mode === "include" ? "exclude" : "include"}">⇄</button>`}
+      <button type="button" class="aq-picker-chip-remove" title="Remove ${escapeHTML(value)}">✕</button>`;
+    chip.querySelector(".aq-picker-chip-toggle")?.addEventListener("click", () => toggleAqPickerMode(picker, value));
     chip.querySelector(".aq-picker-chip-remove").addEventListener("click", () => removeAqPickerSelection(picker, value));
     container.appendChild(chip);
   };
@@ -7631,8 +8312,18 @@ function parseBooleanChipInput(raw) {
   return results.filter(r => r.term);
 }
 
-function initAqPickers() {
-  AQ_PICKERS.forEach(picker => {
+// Session 2B.9 took the picker list as a parameter so a consumer outside the
+// Advanced Query modal can be wired with the SAME function rather than a
+// second copy of it. The default keeps the existing `initAqPickers()` call at
+// boot behaving exactly as before.
+//
+// The default parameter is safe here because this is called plainly, never
+// handed to addEventListener as a reference — a listener reference is invoked
+// with the Event as its first argument, which silently defeats a default (see
+// BUILD_NOTES, "Working inside app.js"). Grep confirms two call sites, both
+// plain calls in setupEventListeners().
+function initAqPickers(pickers = AQ_PICKERS) {
+  pickers.forEach(picker => {
     const input = document.getElementById(picker.searchId);
     if (!input) return;
     input.addEventListener("focus", () => renderAqPickerDropdown(picker));
@@ -7657,9 +8348,10 @@ function initAqPickers() {
     renderAqPickerChips(picker);
   });
 
-  // Close any open dropdown when clicking outside its picker
+  // Close any open dropdown when clicking outside its picker. Scoped to the
+  // list this call was given, so each call closes only its own pickers.
   document.addEventListener("click", (e) => {
-    AQ_PICKERS.forEach(picker => {
+    pickers.forEach(picker => {
       const wrapper = document.getElementById(picker.searchId)?.closest(".aq-picker");
       if (wrapper && !wrapper.contains(e.target)) {
         document.getElementById(picker.dropdownId)?.classList.add("hidden");
@@ -9800,7 +10492,18 @@ function renderAudienceInspector() {
         </td>
       `;
 
-      tr.querySelector(".btn-aud-open-prospect").addEventListener("click", () => openProspectModal(p.id));
+      /* ENTRY POINT 3 of 5 (P3). Was openProspectModal(p.id) — a create/edit
+         form over the list. All three campaign keys are supplied because
+         reaching a CampaignHub audience takes THREE assignments plus a render
+         (BUILD_NOTES); an origin missing campaignSubState lands the user on
+         whichever sub-tab happened to be open last. */
+      tr.querySelector(".btn-aud-open-prospect").addEventListener("click", () => {
+        openProspectDetail(p.id, {
+          view: "campaigns",
+          campaignSubState: "audiences",
+          audienceListId: aud.id
+        });
+      });
       const compBtn = tr.querySelector(".btn-aud-open-company");
       if (p.companyId) {
         compBtn.addEventListener("click", () => openCompanyModal(p.companyId));
@@ -10118,7 +10821,24 @@ function openAudiencePopout(audId) {
         <td style="text-align:center;"><button class="delete-interaction-btn" title="Remove from list">✕</button></td>
       `;
       const [nameBtn, compBtn, removeBtn] = tr.querySelectorAll("button");
-      nameBtn.addEventListener("click", () => openProspectModal(p.id));
+      /* ENTRY POINT 4 of 5 (P3). Same origin as entry point 3.
+
+         THE POP-OUT HIDES ITSELF FIRST, and that is not tidiness: #aud-popout-panel
+         is `position: fixed; z-index: 99999`, so it floats above every view.
+         Today's destination is a modal that covers it; the detail view is a
+         .view-panel underneath it, and left open the panel would sit on top of
+         the record the user just asked to see. It is not reopened on the way
+         back — the frozen origin record (P1) has no field for it, and adding
+         one is a contract change. */
+      nameBtn.addEventListener("click", () => {
+        document.getElementById("aud-popout-panel")?.classList.add("hidden");
+        _popoutMaximized = false;
+        openProspectDetail(p.id, {
+          view: "campaigns",
+          campaignSubState: "audiences",
+          audienceListId: audId
+        });
+      });
       if (p.companyId) {
         compBtn.addEventListener("click", () => openCompanyModal(p.companyId));
       } else {
@@ -10659,7 +11379,16 @@ function openProspectModal(id = null) {
   const title = document.getElementById("prospect-modal-title");
   
   editingProspectId = id;
-  
+
+  // Session 2B.7 / P6. A refusal from a previous open must never greet the
+  // next one — the modal's markup persists between opens.
+  hideDuplicateEmailWarning();
+
+  // Session 2B.13 / Finding 10c. Above the branch, so EDIT gets the list too:
+  // an edit is exactly where somebody retypes a company name by hand and
+  // forks the record. Cross-compartment work, authorised by Michael 2026-09-02.
+  syncCompaniesDatalist();
+
   if (id) {
     title.textContent = "Edit Prospect Details";
     const p = state.prospects.find(x => x.id === id);
@@ -10738,6 +11467,22 @@ function saveProspect() {
     alert("First Name, Last Name, and Email are required!");
     return;
   }
+
+  /* CONTRACT P6 — the check on BOTH branches, and it runs BEFORE
+     resolveCompanyByName(). That ordering is load-bearing: resolveCompanyByName()
+     CREATES a company record as a side effect when the typed name is new, so
+     checking after it would leave a stray company behind on every refused
+     save — a write the user never asked for, from an operation the app told
+     them it refused.
+
+     editingProspectId is the exclude: on the edit branch a record must not
+     report itself. On the create branch it is null, which excludes nothing. */
+  const dup = prospectByEmail(email, editingProspectId);
+  if (dup) {
+    renderDuplicateEmailWarning(dup);
+    return;
+  }
+  hideDuplicateEmailWarning();
 
   // Handle company allocation dynamically. Session 2B.3 extracted this to
   // resolveCompanyByName() (contract P5) and calls it from here and from
@@ -10833,9 +11578,13 @@ function deleteProspectById(id) {
   return true;
 }
 
-function deleteProspect() {
-  deleteProspectById(state.selectedProspectId);
-}
+/* deleteProspect() WAS REMOVED IN SESSION 2B.6. Its only caller was
+   #btn-delete-prospect on the retired prospect card, and its whole body was a
+   read of state.selectedProspectId — the cursor the detail view must never
+   steer by (P1). deleteProspectById(id) above is the writer and takes an
+   explicit id; the detail view passes detailProspectId and the Advanced Query
+   drawer keeps its own deleteAqInspectorRecord(). Do not add a
+   zero-argument wrapper back: it would read the wrong cursor by construction. */
 
 function deleteCompany() {
   if (!selectedCompanyId) return;
@@ -11403,17 +12152,83 @@ function mergeImportedRecords(existingArray, newRecords, keyFn) {
   let added = 0;
   let duplicates = 0;
   const toAdd = [];
+  // Session 2B.7 / P6. The records that were SKIPPED, not just how many.
+  // Additive: `duplicates` still counts exactly what it counted, so the four
+  // other routes through this function are untouched and none of them reads
+  // the new key.
+  const skippedRecords = [];
   (newRecords || []).forEach(r => {
     const k = keyFn(r);
     if (k && seen.has(k)) {
       duplicates++;
+      skippedRecords.push(r);
     } else {
       toAdd.push(r);
       added++;
       if (k) seen.add(k);
     }
   });
-  return { merged: (existingArray || []).concat(toAdd), added, duplicates };
+  return { merged: (existingArray || []).concat(toAdd), added, duplicates, skippedRecords };
+}
+
+/* ==========================================================================
+   SKIPPED IMPORT ROWS — A FILE, NOT A STORE (Session 2B.7, contract P6)
+
+   Michael, 2026-08-30: "I don't want one duplicate email block to nullify an
+   entire import." The import already skipped duplicates and reported the
+   COUNT — mergeImportedRecords() and mergeSummaryLabel() have done that since
+   before this phase. What was missing is getting the skipped rows back out so
+   they can be fixed and re-imported, and this is that.
+
+   IT IS A MODULE VARIABLE ON PURPOSE. P9 forbids a new persisted field, and
+   scope Assumption 12 is explicit that a stored quarantine drags in an export
+   column, a restore leg and a wipeAllData() line. Lifetime is the next import
+   or the next reload, which is exactly as long as the rows are useful.
+
+   WHAT IS WRITTEN OUT IS THE ORIGINAL SOURCE ROW, not the parsed record.
+   A row you can open, fix and feed straight back to the same importer is the
+   point; a re-serialised internal object would round-trip through a different
+   set of headers and stop being the file the user recognises. */
+let lastImportSkippedRows = [];
+
+function setSkippedImportRows(blocks) {
+  lastImportSkippedRows = blocks || [];
+  const btn = document.getElementById("btn-download-skipped-rows");
+  if (!btn) return;
+  const total = lastImportSkippedRows.reduce((n, b) => n + b.rows.length, 0);
+  if (total > 0) {
+    btn.textContent = `⚠️ Skipped Rows (${total})`;
+    btn.classList.remove("hidden");
+  } else {
+    btn.classList.add("hidden");
+  }
+}
+
+/* One CSV for however many files the import spanned. A header row is emitted
+   whenever the header signature CHANGES, so importing one file writes one
+   header and importing three different shapes writes three blocks rather than
+   silently forcing rows under someone else's columns. */
+function skippedRowToCSVLine(cols) {
+  return (cols || []).map(v => {
+    if (v === undefined || v === null) return '""';
+    return `"${String(v).replace(/"/g, '""')}"`;
+  }).join(",");
+}
+
+function downloadSkippedImportRows() {
+  if (!lastImportSkippedRows.length) return;
+  const lines = [];
+  let lastSig = null;
+  lastImportSkippedRows.forEach(block => {
+    const sig = JSON.stringify(block.headers);
+    if (sig !== lastSig) {
+      if (lines.length) lines.push("");
+      lines.push(skippedRowToCSVLine(block.headers));
+      lastSig = sig;
+    }
+    block.rows.forEach(cols => lines.push(skippedRowToCSVLine(cols)));
+  });
+  downloadCSVFile(`vantage_import_skipped_${getBackupTimestamp()}.csv`, lines.join("\n"));
 }
 
 function mergeSummaryLabel(count) {
@@ -11427,6 +12242,10 @@ function importCSVContacts(e) {
   let loadedTables = [];
   let filesProcessed = 0;
   let totalFilesExpected = files.length;
+  // Session 2B.7 / P6. Accumulated across every file in this one import, and
+  // handed to setSkippedImportRows() once at completion — not per file, or a
+  // three-file import would leave the button describing only the last one.
+  let importSkippedBlocks = [];
 
   Array.from(files).forEach(file => {
     const fileName = file.name.toLowerCase();
@@ -11550,6 +12369,11 @@ function importCSVContacts(e) {
 
     // Parse into generic array of objects mapping columns to headers
     const genericRows = [];
+    // Session 2B.7 / P6. The ORIGINAL column arrays, index-aligned with
+    // genericRows. Kept because blank rows are skipped above, so rows[i+1] is
+    // NOT genericRows[i] and reconstructing the alignment later is exactly the
+    // kind of off-by-one that hands the user the wrong rows back.
+    const genericSourceCols = [];
     for (let i = 1; i < rows.length; i++) {
       const cols = rows[i];
       if (cols.length === 0 || cols.every(c => !c?.toString().trim())) continue;
@@ -11567,6 +12391,7 @@ function importCSVContacts(e) {
         }
       });
       genericRows.push(obj);
+      genericSourceCols.push(cols);
     }
 
     // 1. Companies File Route
@@ -11703,7 +12528,11 @@ function importCSVContacts(e) {
           linkedin,
           tags,
           history,
-          _tempCompTags: compTags
+          _tempCompTags: compTags,
+          // Session 2B.7 / P6. Transient, exactly like _tempCompTags above and
+          // deleted on the same principle: it is stripped from every record
+          // after the merge, so nothing carrying it ever reaches saveState().
+          _srcCols: genericSourceCols[idx]
         };
       });
       
@@ -11775,7 +12604,10 @@ function importCSVContacts(e) {
       if (importedProspects.length > 0) {
         if (!state.prospects) state.prospects = [];
         const prospectKey = (p) => {
-          const email = (p.email || "").trim().toLowerCase();
+          // Session 2B.7 / P6: the SAME normalisation prospectByEmail() uses.
+          // See the comment on that function for why the import keeps its own
+          // scan but must not keep its own definition of "the same email".
+          const email = normalizedEmail(p.email);
           if (email) return "email:" + email;
           const first = (p.firstName || "").trim().toLowerCase();
           const last = (p.lastName || "").trim().toLowerCase();
@@ -11785,6 +12617,20 @@ function importCSVContacts(e) {
         };
         const result = mergeImportedRecords(state.prospects, importedProspects, prospectKey);
         state.prospects = result.merged;
+
+        /* Session 2B.7 / P6. Capture the skipped SOURCE rows before the
+           transient key is stripped. Read first, delete second — the records
+           in result.skippedRecords are the same objects as importedProspects,
+           and the ones in result.merged are too, which is why the strip below
+           runs over importedProspects and covers every path at once. */
+        if (result.skippedRecords.length) {
+          importSkippedBlocks.push({
+            headers: headers.map(h => String(h || "").replace(/^﻿/, "")),
+            rows: result.skippedRecords.map(r => r._srcCols || [])
+          });
+        }
+        importedProspects.forEach(p => { delete p._srcCols; });
+
         loadedTables.push(`Prospects 👥 (${result.added} added${mergeSummaryLabel(result.duplicates)})`);
       }
     }
@@ -11940,8 +12786,18 @@ function importCSVContacts(e) {
     if (filesProcessed === totalFilesExpected) {
       ensureStateDefaults();
       saveState();
-      alert(`Import Complete!\n\nExisting records were kept — duplicates were skipped and only new records were added:\n- ${[...new Set(loadedTables)].join("\n- ")}`);
-      
+
+      /* Session 2B.7 / P6. Set UNCONDITIONALLY, including with an empty list:
+         a clean import must clear a previous import's button, or the user
+         downloads yesterday's rows believing they are today's. */
+      setSkippedImportRows(importSkippedBlocks);
+      const skippedTotal = importSkippedBlocks.reduce((n, b) => n + b.rows.length, 0);
+      const skippedLine = skippedTotal
+        ? `\n\n${skippedTotal} row${skippedTotal === 1 ? " was" : "s were"} skipped as duplicates. The import did NOT fail.\nUse the "⚠️ Skipped Rows" button beside Import to download them, fix them and re-import.`
+        : "";
+
+      alert(`Import Complete!\n\nExisting records were kept — duplicates were skipped and only new records were added:\n- ${[...new Set(loadedTables)].join("\n- ")}${skippedLine}`);
+
       e.target.value = "";
       renderApp();
     }
@@ -12015,6 +12871,50 @@ function parseCSVRow(rowText) {
 function getCompanyName(compId) {
   const c = state.companies.find(x => x.id === compId);
   return c ? c.name : "";
+}
+
+/* SESSION 2B.13, review Finding 10c. The autocomplete behind BOTH company-name
+   inputs, and the reason a fourth "SPL" record stops being one keystroke away.
+
+   `#companies-datalist` has existed in index.html since the modal was written
+   and NOTHING HAS EVER FILLED IT. It was unfinished, not dead markup — the
+   `list="companies-datalist"` attribute on #pros-company was wired to an empty
+   element, so the input silently offered nothing and looked exactly like a
+   plain text field. That is why the duplicates were invisible to make.
+
+   TWO CONSUMERS, ONE ELEMENT, AND THE ELEMENT IS SHARED ON PURPOSE:
+     · #pros-company — ProspectHub's create/edit modal (index.html, in the modal)
+     · #pd-company   — the prospect detail view's identity block (2B.13)
+   A <datalist> is resolved by id from anywhere in the document and is never
+   itself rendered, so the detail view's input reaches this one across the DOM
+   even though it is physically parked inside a hidden modal. Do NOT "fix" that
+   by cloning a second datalist next to the detail view — two lists is how they
+   drift apart, and the id is the whole contract.
+
+   REBUILT ON EVERY OPEN RATHER THAN INVALIDATED. Called from
+   openProspectModal() and renderProspectDetailIdentity(), which are the only
+   two moments either input becomes visible. Companies are created by import, by
+   the modal itself and by resolveCompanyByName() from the detail view, so a
+   cache here would need three invalidation hooks to stay honest and would be
+   wrong the first time somebody added a fourth. DIRECTIVES Ladder rung 3: at
+   five companies this is free and at a few thousand it is still one pass and a
+   sort, against a user who is about to spend seconds typing. */
+function syncCompaniesDatalist() {
+  const list = document.getElementById("companies-datalist");
+  if (!list) return 0;
+
+  const names = state.companies
+    .map(c => (c.name || "").trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+
+  list.innerHTML = "";
+  names.forEach(n => {
+    const opt = document.createElement("option");
+    opt.value = n;
+    list.appendChild(opt);
+  });
+  return names.length;
 }
 
 // Today as a LOCAL "YYYY-MM-DD" string (Phase 1 / Session 1.4).
@@ -12105,7 +13005,13 @@ function setupEventListeners() {
   // 1. Prospect Database Views listeners
   document.getElementById("prospect-search").addEventListener("input", renderProspectsView);
   document.getElementById("prospect-geo-search").addEventListener("input", renderProspectsView);
-  document.getElementById("prospect-tag-chooser")?.addEventListener("input", renderProspectsView);
+  // Session 2B.9 / contract P8. The tag filter is a chip picker now, so there
+  // is no `input` event on a <select> to listen for — the picker reports a
+  // selection change through PROSPECT_TAG_PICKER.onChange, which calls
+  // renderProspectsView() itself. Wired with the SHARED initAqPickers(),
+  // given this one config: focus/input open the dropdown, Escape closes it,
+  // an outside click closes it, and the chips paint once at boot.
+  initAqPickers([PROSPECT_TAG_PICKER]);
   document.getElementById("btn-clear-prospects-filters")?.addEventListener("click", clearProspectsFilters);
   document.getElementById("btn-prospects-settings")?.addEventListener("click", openSettingsModal);
   document.getElementById("btn-close-inspector-panel")?.addEventListener("click", closeInspectorPanel);
@@ -12186,8 +13092,7 @@ function setupEventListeners() {
     state.forceShowAllCompanies = false;
     document.getElementById("prospect-search").value = "";
     document.getElementById("prospect-geo-search").value = "";
-    const tagSelect = document.getElementById("prospect-tag-chooser");
-    if (tagSelect) tagSelect.selectedIndex = -1;
+    resetAqPicker(PROSPECT_TAG_PICKER);
     renderProspectsView();
   });
   document.getElementById("btn-show-all-companies")?.addEventListener("click", () => {
@@ -12195,8 +13100,7 @@ function setupEventListeners() {
     state.forceShowAllContacts = false;
     document.getElementById("prospect-search").value = "";
     document.getElementById("prospect-geo-search").value = "";
-    const tagSelect = document.getElementById("prospect-tag-chooser");
-    if (tagSelect) tagSelect.selectedIndex = -1;
+    resetAqPicker(PROSPECT_TAG_PICKER);
     renderProspectsView();
   });
   document.getElementById("add-prospect-btn").addEventListener("click", () => openProspectModal());
@@ -12204,12 +13108,17 @@ function setupEventListeners() {
     document.getElementById("modal-prospect").classList.add("hidden");
   });
   document.getElementById("pros-modal-confirm").addEventListener("click", saveProspect);
-  document.getElementById("btn-edit-prospect").addEventListener("click", () => {
-    openProspectModal(state.selectedProspectId);
-  });
-  document.getElementById("btn-delete-prospect").addEventListener("click", deleteProspect);
+  /* Session 2B.6: #btn-edit-prospect, #btn-delete-prospect and
+     #btn-edit-inspector-tags were unbound here when #prospect-inspector was
+     removed from index.html. The first two used getElementById(...).add… with
+     NO optional chaining, so leaving them would have thrown inside
+     setupEventListeners() and killed every listener bound after them —
+     which is exactly the failure class check_ids.py catches, and why it runs
+     before and after this session. Their replacements live on the detail
+     view: the identity block edits in place, Delete Prospect calls
+     deleteProspectById(detailProspectId), and the tag chooser is bound at
+     #btn-pd-edit-tags. */
   document.getElementById("btn-delete-company")?.addEventListener("click", deleteCompany);
-  document.getElementById("btn-edit-inspector-tags")?.addEventListener("click", openChooseTagsModalForProspectInspector);
   document.getElementById("btn-edit-inspector-comp-tags")?.addEventListener("click", openChooseTagsModalForCompanyInspector);
   
   document.getElementById("btn-pros-edit-company").addEventListener("click", (e) => {
@@ -12237,6 +13146,10 @@ function setupEventListeners() {
   document.getElementById("download-csv-template").addEventListener("click", () => {
     document.getElementById("modal-template-options").classList.remove("hidden");
   });
+  // Session 2B.7 / P6. Optional chaining, per the lesson 2B.6 paid for: an
+  // unguarded getElementById(...).addEventListener here throws inside
+  // setupEventListeners() and kills every listener bound after it.
+  document.getElementById("btn-download-skipped-rows")?.addEventListener("click", downloadSkippedImportRows);
   document.getElementById("btn-template-options-close-x").addEventListener("click", () => {
     document.getElementById("modal-template-options").classList.add("hidden");
   });
@@ -12304,8 +13217,13 @@ function setupEventListeners() {
     });
   }
 
-  // Interaction logs Modal triggers
-  document.getElementById("btn-add-interaction").addEventListener("click", openInteractionModal);
+  /* Interaction logs Modal triggers.
+     Session 2B.6 unbound #btn-add-interaction with the prospect card. The
+     modal itself is untouched and has THREE openers left: the detail view's
+     Interactions tab ("+ Log Interaction", which passes an explicit prospect
+     id), the deferred Advanced Query drawer's #btn-aq-insp-add-interaction,
+     and the modal's own cancel/confirm below. openInteractionModal()'s
+     type-checked argument (see its comment) is what lets those two coexist. */
   document.getElementById("int-modal-cancel").addEventListener("click", () => {
     document.getElementById("modal-interaction").classList.add("hidden");
     // Clear the 2B.4 target so a cancelled dialog cannot leave a stale
@@ -12361,9 +13279,19 @@ function setupEventListeners() {
     const id = document.getElementById("task-prospect").value;
     const p = (state.prospects || []).find(x => x.id === id);
     if (!p) return;                        // "(missing prospect)" has nowhere to go
+    /* ENTRY POINT 2 of 5 (P3). SAVE-FIRST IS UNCHANGED — only the destination
+       moved.
+
+       READ THE ID BEFORE SAVING. saveTaskFromEditor() ends in
+       closeTaskEditor(), which sets editingTaskId = null, so reading it
+       afterwards always yields null and the back arrow would land on a bare
+       TaskHub every time. A brand-new task also has no id here — its record is
+       minted inside the save and never assigned back to editingTaskId — so a
+       task created and then departed from replays as taskId: null, which
+       closeProspectDetail() already handles by leaving the editor closed. */
+    const originTaskId = editingTaskId || null;
     if (saveTaskFromEditor() !== true) return;
-    switchView("prospects");
-    selectProspect(p.id);
+    openProspectDetail(p.id, { view: "tasks", taskId: originTaskId });
   });
 
   // TaskHub view listeners (Phase 1 / Session 1.5). Filter chips, sortable
@@ -12379,9 +13307,23 @@ function setupEventListeners() {
   // C16 (Session 1.10): one delegated mousedown on the STATIC <thead> named
   // by the COLUMN_TABLES entry, bound once. The header <tr> is rebuilt on
   // every render, so a per-row binding would have to be re-made each time.
-  // Session 2B.2 parameterised it by table id; "taskhub" is still the only
-  // registered consumer, and Session 2B.8 adds the other two calls here.
+  // Session 2B.2 parameterised it by table id; SESSION 2B.8 ADDED THE OTHER
+  // TWO CALLS, immediately below.
   initHeaderDrag("taskhub");
+
+  /* ProspectHub's two directory tables (Session 2B.8). Bound here rather than
+     in renderProspectsView() for the same reason as TaskHub's: the <thead>
+     elements are static markup in index.html and never replaced, while their
+     <tr> is rebuilt on every render — so one binding at startup is correct
+     and a per-render binding would leak a listener each time.
+
+     initHeaderDrag() guards on layoutDragInit[tableId], so calling it twice
+     is harmless; what is NOT harmless is replacing a <thead> element after
+     this runs, because the flag would still read true. renderLayoutHeaderRow()
+     clears the <tr> and never touches the <thead> itself, for exactly that
+     reason. */
+  initHeaderDrag("prospects");
+  initHeaderDrag("companies");
   document.getElementById("taskhub-per-page").addEventListener("change", () => {
     taskPage = 1;
     renderTaskHubTable();
@@ -12703,20 +13645,14 @@ function setupEventListeners() {
   document.getElementById("btn-add-domain-registrar-opt")?.addEventListener("click", () => addSettingOption('domainRegistrars', 'input-add-domain-registrar'));
   document.getElementById("btn-add-domain-host-opt")?.addEventListener("click", () => addSettingOption('domainHosts', 'input-add-domain-host'));
 
-  // Inspector Notes Saves
-  document.getElementById("inspector-notes")?.addEventListener("input", () => {
-    document.getElementById("btn-save-pros-notes").classList.remove("hidden");
-  });
-  document.getElementById("btn-save-pros-notes")?.addEventListener("click", () => {
-    if (state.selectedProspectId) {
-      const p = state.prospects.find(x => x.id === state.selectedProspectId);
-      if (p) {
-        p.notes = document.getElementById("inspector-notes").value.trim();
-        saveState();
-        document.getElementById("btn-save-pros-notes").classList.add("hidden");
-      }
-    }
-  });
+  /* Inspector Notes Saves.
+     Session 2B.6 removed the PROSPECT pair (#inspector-notes /
+     #btn-save-pros-notes) with the card. That was a type-and-press-Save
+     control keyed on state.selectedProspectId; prospect notes are now field
+     17 of the detail view's identity block and commit through
+     commitProspectField() on change, with no Save button and no dirty state
+     (plan Assumption 4). The COMPANY pair below is untouched — the company
+     inspector still works exactly as it did. */
 
   document.getElementById("inspector-comp-notes")?.addEventListener("input", () => {
     document.getElementById("btn-save-comp-notes").classList.remove("hidden");
