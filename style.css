@@ -3823,6 +3823,32 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 }
 
 /* ==========================================================================
+   COMPANY AUTOCOMPLETE — THE DROPDOWN ARROW  (Session 2B.18, task 9)
+
+   Chrome draws ::-webkit-calendar-picker-indicator on ANY input carrying a
+   `list` attribute, not only date inputs — so 2B.13's #companies-datalist gave
+   both company boxes a permanent arrow that looks like a <select> and is not
+   one. Michael asked for it gone. The glyph goes; type-ahead filtering and
+   scrolling of the datalist are untouched.
+
+   ⛔ SCOPED BY ID, NEVER `input[list]`. A bare attribute selector would reach
+   every future list-backed input in the app, including ones that WANT the
+   affordance, and it would do it silently from three thousand lines away.
+
+   ⚠️ NOT IN THE 🧱 HUB SHELL BLOCK (contract S5) — that block is the scroll
+   idiom and stays last in this file. This sits immediately above it, beside
+   the date-indicator rule it is a sibling of.
+
+   ⚠️ getComputedStyle CANNOT READ AUTHOR STYLES ON THIS PSEUDO-ELEMENT — the
+   same trap the date-glyph note above records. A probe reports the rule as
+   absent even when it is applied. VERIFY IT VISUALLY.
+   ========================================================================== */
+#pros-company::-webkit-calendar-picker-indicator,
+#pd-company::-webkit-calendar-picker-indicator {
+  display: none !important;
+}
+
+/* ==========================================================================
    🧱 HUB SHELL — the scroll idiom, named once
    (Phase 2A / Session 2A.1 · frozen contract S5 of ai/phases/phase-2a-app-shell.md)
 

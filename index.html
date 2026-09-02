@@ -382,9 +382,29 @@
                   <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px;">
                     <h4 style="margin:0; color: var(--color-primary);">Companies (<span
                         id="companies-count">0</span>)</h4>
-                    <button id="btn-export-companies-filtered" class="text-btn"
-                      title="Export currently shown companies to CSV (or the full database if no filters are applied)">⬇️
-                      Export CSV</button>
+                    <!-- SESSION 2B.19. THE FRONT DOOR. Until this button
+                         existed Vantage could not create a company at all:
+                         openCompanyModal() alerted on any id that did not
+                         resolve, and every company in the database arrived as
+                         a side effect of a prospect form, the CSV import or a
+                         restore. The only human route was typing a name into a
+                         prospect — the fork-prone path, and the mechanism
+                         behind the four SPL records. Placement and label are
+                         on Michael's needs-your-eyes list.
+
+                         THE TWO BUTTONS ARE WRAPPED. This row is
+                         justify-content: space-between with exactly two
+                         children; dropping a third in makes the new button
+                         float to the middle of the row. The wrapper keeps the
+                         heading left and both actions right. -->
+                    <div style="display:flex; align-items:center; gap:10px;">
+                      <button id="btn-add-company" class="header-action-btn primary-btn"
+                        title="Create a company record directly, without going through a prospect">+ Add
+                        Company</button>
+                      <button id="btn-export-companies-filtered" class="text-btn"
+                        title="Export currently shown companies to CSV (or the full database if no filters are applied)">⬇️
+                        Export CSV</button>
+                    </div>
                   </div>
                   <!-- Was a viewport-relative inline max-height; see the note on
                        the contacts table above. Phase 2A / Session 2A.2. -->
@@ -1379,6 +1399,12 @@
                      it. A <datalist> resolves by id from anywhere in the
                      document, so this reaches it across the DOM. -->
                 <input type="text" id="pd-company" data-pd-key="companyId" placeholder="Stripe" list="companies-datalist">
+                <!-- Session 2B.18. The detail view's half of the domain match.
+                     Same rule set as the modal's #pros-company-match; the
+                     CONSEQUENCE differs, because every control on this surface
+                     commits immediately — so there is no name suggestion here
+                     and nothing is written until he picks. -->
+                <div id="pd-company-match" class="dup-email-warning hidden"></div>
               </div>
               <div class="form-group">
                 <label for="pd-city">City</label>
@@ -1516,11 +1542,29 @@
       <div class="form-group">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
           <label style="margin:0;">Company</label>
-          <button id="btn-pros-edit-company" type="button" class="text-btn hidden"
-            style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Edit Profile</button>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <!-- Session 2B.18 / task 9. A plain web search in a new tab, NOT an
+                 enrichment API: a browser cannot read another site's page
+                 (CORS), so the API route is a DIRECTIVES §4 new dependency with
+                 a key in client-side JS in a PUBLIC repo. Phase 4, on a Cloud
+                 Function. Hidden until the Email box yields a non-free host —
+                 syncProspectLookupButton() owns that and writes data-host. -->
+            <button id="btn-pros-lookup-company" type="button" class="text-btn hidden"
+              style="font-size: 11px; text-transform: uppercase; font-weight: 700;">🔍 Look Up</button>
+            <button id="btn-pros-edit-company" type="button" class="text-btn hidden"
+              style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Edit Profile</button>
+          </div>
         </div>
         <input type="text" id="pros-company" placeholder="Stripe" list="companies-datalist">
         <datalist id="companies-datalist"></datalist>
+        <!-- Session 2B.18. The domain-match notice: the conflict warning and the
+             multi-match picker, both INSIDE this one block rather than as a
+             second modal (tasks 5 and 6, and the 2B.15 rule). It reuses contract
+             P6's .dup-email-warning rule set — a fourth surface, still no new
+             CSS. It sits under COMPANY, not under Email, because the choice it
+             offers is about the company. Text is written by
+             renderCompanyMatchNotice() in app.js; do not hardcode a name. -->
+        <div id="pros-company-match" class="dup-email-warning hidden"></div>
       </div>
 
       <div class="form-row">
@@ -1616,6 +1660,18 @@
         </div>
       </div>
 
+      <!-- SESSION 2B.19. THE DOMAIN FIELD JOINS THIS EXISTING ROW RATHER THAN
+           TAKING A NEW ONE, AND THAT IS A LAYOUT DECISION, NOT LAZINESS.
+           .modal-overlay is a centred flexbox with NO scrolling of its own, so
+           a card taller than the viewport pushes its own Save button off
+           screen with nothing to scroll it back. This card already carries
+           fifteen fields at Michael's 75% Chrome zoom. A third column adds the
+           identity at zero height cost.
+
+           It sits BESIDE Website on purpose: `domain` is the identity and
+           `website` is the free-form display, they are the pair a reader
+           confuses, and adjacency is what makes the difference legible.
+           Semantics settled by Michael 2026-09-02 — there is no `url` field. -->
       <div class="form-row">
         <div class="form-group">
           <label for="comp-phone">Main Phone</label>
@@ -1625,7 +1681,19 @@
           <label for="comp-website">Website</label>
           <input type="url" id="comp-website" placeholder="https://acme.com">
         </div>
+        <div class="form-group">
+          <label for="comp-domain">Domain (identity)</label>
+          <!-- type="text", NOT type="url": this holds a bare host, and a url
+               input would fight the user over the missing scheme. -->
+          <input type="text" id="comp-domain" placeholder="acme.com" autocomplete="off">
+        </div>
       </div>
+
+      <!-- SESSION 2B.19. The create-time refusal. Reuses .dup-email-warning —
+           the rule set Session 2B.7 wrote for contract P6 — so one stylesheet
+           now serves three surfaces, because a refusal should look equally
+           serious wherever it happens. No new CSS was added for this. -->
+      <div id="comp-dup-warning" class="dup-email-warning hidden"></div>
 
       <div class="form-row">
         <div class="form-group">

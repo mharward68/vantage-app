@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vantageprm-cache-v111';
+const CACHE_NAME = 'vantageprm-cache-v118';
 const ASSETS = [
   './index.html',
   './style.css',

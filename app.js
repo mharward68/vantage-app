@@ -3485,6 +3485,31 @@ function renderProspectsView() {
   const query = document.getElementById("prospect-search").value.toLowerCase().trim();
   const geoQueryStr = document.getElementById("prospect-geo-search").value.toLowerCase().trim();
 
+  /* SESSION 2B.19b, at Michael's request: the search box now matches a
+     company's `domain` as well as its name and tags.
+
+     ⚠️ A NOTE THIS SESSION HAD TO CORRECT: 2B.13's comment on
+     resolveCompanyByName() says `domain` is "read by the company filter". That
+     is the **Advanced Query engine** (`matchesTextFilter(c.domain, domain)`),
+     NOT this box, which matched name and tags only. Both statements now read
+     true; do not delete either as duplicate.
+
+     TWO FORMS OF THE QUERY ARE COMPARED, because the stored value is a bare
+     normalised host and the thing a user pastes is usually a URL. The raw
+     query catches a typed fragment ("youravdept"); the normalised query
+     catches a pasted "https://www.youravdept.com/contact". `queryDomain` can
+     come back EMPTY from a non-empty query (search "https://"), and an empty
+     needle makes `includes()` true for every record — so every use of it below
+     is guarded by `queryDomain &&`. That guard is the whole reason this is not
+     a one-liner. */
+  const queryDomain = query ? normaliseDomain(query) : "";
+
+  /* One pass now, so the per-prospect lookup in the contacts predicate is
+     O(1) rather than a `find()` per record per keystroke. */
+  const companyDomainById = new Map(
+    state.companies.map(c => [c.id, (c.domain || "").toLowerCase()])
+  );
+
   // Parse comma-separated geo terms
   let geoTerms = [];
   if (geoQueryStr) {
@@ -3619,9 +3644,14 @@ function renderProspectsView() {
       if (query) {
         const name = (c.name || "").toLowerCase();
         const tags = (c.tags || []).join(" ").toLowerCase();
-        matchQuery = name.includes(query) || tags.includes(query);
+        // Session 2B.19b — the company's identity is searchable here now.
+        const domain = (c.domain || "").toLowerCase();
+        matchQuery = name.includes(query) ||
+                     tags.includes(query) ||
+                     (!!domain && (domain.includes(query) ||
+                                   (!!queryDomain && domain.includes(queryDomain))));
       }
-      
+
       return matchGeo && matchCompTags && matchProsTagsForComp && matchQuery;
     });
     }
@@ -3765,11 +3795,19 @@ function renderProspectsView() {
         const normTitle = normalizeTitle(title);
         const normQuery = normalizeTitle(query);
 
+        /* Session 2B.19b. A contact matches on ITS COMPANY'S domain too, so
+           searching youravdept.com finds the people there and not just the
+           company row. Same two-form comparison and the same empty-needle
+           guard as the companies predicate above. */
+        const compDomain = companyDomainById.get(p.companyId) || "";
+
         matchQuery = fullName.includes(query) ||
                companyName.includes(query) ||
                title.includes(query) ||
                normTitle.includes(normQuery) ||
-               tags.includes(query);
+               tags.includes(query) ||
+               (!!compDomain && (compDomain.includes(query) ||
+                                 (!!queryDomain && compDomain.includes(queryDomain))));
       }
       return matchGeo && matchProsTags && matchCompTagsForPros && matchQuery;
     });
@@ -6291,6 +6329,13 @@ function openProspectDetail(prospectId, origin) {
   };
 
   detailTab = "interactions";
+
+  // Session 2B.18. A notice and an explicit answer belong to ONE record. The
+  // identity block's markup is static and persists between opens, so neither
+  // may greet the next prospect.
+  hideCompanyMatchNotice("pd-company-match");
+  clearCompanyLinkAnswer();
+
   switchView("prospect-detail");
 }
 
@@ -6504,6 +6549,10 @@ function commitProspectField(prospect, key, value) {
   // saveProspect() — two copies is how two kinds of company record appear.
   if (key === "companyId") {
     prospect.companyId = resolveCompanyByName(clean, prospect.email, prospect.location);
+    /* SESSION 2B.18. The detail view's half of the reported ordering bug —
+       Company typed AFTER Email, on the surface whose own layout invites that
+       order. All three conditions are inside; do not relax them here. */
+    maybeSeedCompanyFromEmail(prospect.companyId, prospect.email, prospect.id);
     saveState();
     const el = document.getElementById("pd-company");
     // Repaint the control from the RESOLVED record, so typing "stripe" against
@@ -6541,9 +6590,70 @@ function commitProspectField(prospect, key, value) {
   prospect[key] = clean;
   saveState();
 
+  /* SESSION 2B.18. The same rule as the modal's, on the surface where the
+     equivalent trigger already existed. It runs AFTER the address is stored,
+     because the plan is computed from the record's email and P6 may have
+     refused this commit outright a few lines above. */
+  if (key === "email") applyDetailCompanyLink(prospect);
+
   if (prospect.id === detailProspectId && (key === "firstName" || key === "lastName")) {
     syncProspectDetailSubtitle(prospect);
   }
+}
+
+/* SESSION 2B.18. THE DETAIL VIEW'S HALF, AND IT DIFFERS FROM THE MODAL'S IN
+   ONE DELIBERATE WAY: THERE IS NO NAME SUGGESTION HERE.
+
+   In the modal nothing is stored until Save, so a guessed name sitting in the
+   box is a suggestion he can overtype. In this view every control commits on
+   change — a guess here would BE a write, and "Youravdept" would become a real
+   company record because he tabbed out of an email box. DIRECTIVES Ladder rung
+   2: the surface never lies about state. The `suggest` plan therefore falls
+   through to the no-op below, which is why this function does not name it. */
+function applyDetailCompanyLink(prospect) {
+  const compEl = document.getElementById("pd-company");
+
+  /* ⚠️ THE SEED RUNS FIRST, AND WITHOUT THIS LINE THE REPORTED ORDERING BUG
+     IS STILL LIVE ON THIS SURFACE. Fill Company before Email — which this
+     view's own layout invites, Company sitting above Email in the grid — and
+     the company is minted with an empty `domain` because there was no address
+     to derive one from yet. The email arriving a moment later would then match
+     NOTHING (an empty identity matches nothing, by design), so the plan below
+     would return "none" and the company would keep an empty identity forever.
+     Seeding first gives it the host, after which the plan finds it, agrees
+     with the box, and correctly does nothing. Found in verification, not by
+     reading: every earlier check happened to fill Email first. */
+  maybeSeedCompanyFromEmail(prospect.companyId, prospect.email, prospect.id);
+
+  const typed = compEl ? compEl.value : getCompanyName(prospect.companyId);
+  const plan = planCompanyLinkFromEmail(prospect.email, typed, prospect.companyId);
+
+  if (plan.action === "link") {
+    prospect.companyId = plan.company.id;
+    saveState();
+    if (compEl && prospect.id === detailProspectId) compEl.value = plan.company.name || "";
+    hideCompanyMatchNotice("pd-company-match");
+    return;
+  }
+
+  if (plan.action === "ask") {
+    /* ⛔ TASK 8 IS ENFORCED BY planCompanyLinkFromEmail() RETURNING "ask" HERE,
+       AND THIS BRANCH WRITING NOTHING UNTIL HE PICKS. Editing an existing
+       record's email must never move it to a different employer on its own. */
+    if (companyLinkAlreadyAnswered(prospect.email)) return;
+    renderCompanyMatchNotice("pd-company-match", plan, company => {
+      companyLinkAnsweredFor = normalizedEmail(prospect.email);
+      if (company) {
+        prospect.companyId = company.id;
+        saveState();
+        if (compEl && prospect.id === detailProspectId) compEl.value = company.name || "";
+      }
+      hideCompanyMatchNotice("pd-company-match");
+    });
+    return;
+  }
+
+  hideCompanyMatchNotice("pd-company-match");
 }
 
 /* Delegated ONCE at boot onto #prospect-detail-identity. data-pd-key is the
@@ -6756,13 +6866,39 @@ function resolveCompanyByName(name, email, location = "") {
      registered domain, so 2B.17's read-only company-URL display would render a
      live link to a stranger's site on every company created without an email.
      DIRECTIVES Ladder rung 2 — the surface never lies about state. Empty is an
-     honest empty; "domain.com" is a confident wrong answer. */
-  const emailHost = (email || "").split("@")[1] || "";
+     honest empty; "domain.com" is a confident wrong answer.
+
+     ⚠️⚠️ SESSION 2B.18, TASK 2b — THE PLACEHOLDER STOPS BEING WRITTEN, AND THE
+     PARAGRAPH ABOVE IS NOW HISTORY RATHER THAN INSTRUCTION. It is kept because
+     it is the only record of WHY the placeholder survived 2B.13, and a later
+     session that finds only the deletion will assume it was an oversight.
+
+     What changed and why: `domain` is now THE IDENTITY (Michael, 2026-09-02),
+     and "domain.com" is a FAKE one that every email-less company shares — so
+     under an identity key it does not merely look untidy, it collides every
+     such record with every other. An ABSENT identity is honest; a shared fake
+     one is not. A company created with no usable email now gets `domain: ""`,
+     exactly as saveNewCompany() has written since 2B.19, and the two creation
+     paths finally agree.
+
+     ⚠️ THIS CHANGES ONLY WHAT NEW RECORDS RECEIVE. Existing "domain.com" rows
+     are LEFT ALONE — repairing them is a DIRECTIVES §4 change to existing data
+     and belongs to Phase 2C's collision report, which is the thing that gets
+     to see them all at once. `domain` also stays an exported CSV column under
+     that name, so this is not a restore-compatibility change.
+
+     ⚠️ AND THE HOST IS BLOCKLISTED BEFORE IT IS SEEDED. Without this, "Acme"
+     typed against bob@gmail.com would be stored with `domain: "gmail.com"` and
+     would then, through companiesByEmailDomain(), become the employer of every
+     personal address in the database. The blocklist has to gate the WRITE as
+     well as the read; gating only the read leaves the poison in the file. */
+  const rawHost = emailDomain(email);
+  const emailHost = isFreeEmailHost(rawHost) ? "" : rawHost;
 
   state.companies.push({
     id: compId,
     name: trimmed,
-    domain: emailHost || "domain.com",
+    domain: emailHost,
     location: location || "Unknown",
     industry: "General",
     address: "",
@@ -6777,6 +6913,225 @@ function resolveCompanyByName(name, email, location = "") {
     headquarters: ""
   });
   return compId;
+}
+
+/* ⛔⛔ SESSION 2B.18. THE ONE PLACE A PROSPECT'S EMAIL IS ALLOWED TO WRITE
+   ANYTHING ONTO A COMPANY — AND IT ALMOST NEVER IS.
+
+   Michael, 2026-09-02: "I don't want any blocked or unresolved domains
+   affiliated with any existing companies." The workflow behind that is real
+   and is not an edge case: a Conference Direct person he is working with on
+   behalf of a national association gets attached to THE ASSOCIATION, and the
+   association's record must not acquire conferencedirect.com because of it.
+   ⛔ A PERSON'S EMAIL DOMAIN IS NOT NECESSARILY THEIR EMPLOYER.
+
+   Against that stands a real reported bug: fill Company BEFORE Email — which
+   is a perfectly normal way to use the form, and the order the detail view's
+   own layout invites — and the brand-new company is created with an empty
+   website that NOTHING EVER BACK-FILLS (BUILD_NOTES: the ensureStateDefaults
+   repair is written `=== undefined` and an empty string is not undefined, so
+   those records are invisible to it forever).
+
+   THE TWO RULES GENUINELY PULL APART, and these three conditions are where
+   they were resolved. ALL THREE MUST HOLD:
+
+     1. the company's `domain` is EMPTY — never a placeholder, never an
+        existing value, so nothing is ever overwritten;
+     2. this prospect is that company's ONLY contact — a company with other
+        people attached is established, and nothing a single new contact types
+        may edit it;
+     3. the host is not on FREE_EMAIL_DOMAINS.
+
+   That reaches the company the user created SECONDS EARLIER on this very
+   form, which is the whole of the reported bug, and it reaches nothing else.
+   ⛔ RELAXING ANY ONE OF THEM REINTRODUCES THE FAILURE MICHAEL NAMED. Logged
+   as a reversible decision (DIRECTIVES §5.3) and on the Needs-his-eyes list.
+
+   ⚠️ CALL IT AFTER THE PROSPECT IS IN state.prospects, not before: condition
+   2 counts contacts, and a prospect that has not been pushed yet counts as
+   zero — which passes for the wrong reason and would also pass for a company
+   that already has somebody else on it. Returns true only if it wrote. */
+function maybeSeedCompanyFromEmail(companyId, email, prospectId) {
+  if (!companyId) return false;
+  const company = state.companies.find(c => c.id === companyId);
+  if (!company) return false;
+
+  // 1 — empty only. A placeholder is an existing value for this purpose.
+  if (String(company.domain || "").trim()) return false;
+
+  // 3 — cheap, and it is the reason gmail.com never lands on a company.
+  const host = emailDomain(email);
+  if (!host || isFreeEmailHost(host)) return false;
+
+  // 2 — sole contact. Anyone else attached makes this company established.
+  const contacts = (state.prospects || []).filter(p => p.companyId === companyId);
+  if (contacts.length > 1) return false;
+  if (contacts.length === 1 && contacts[0].id !== prospectId) return false;
+
+  company.domain = host;
+  if (!String(company.website || "").trim()) company.website = host;
+  return true;
+}
+
+/* ==========================================================================
+   SESSION 2B.18 — THE BEHAVIOUR TABLE, AS ONE FUNCTION.
+
+   Decided by Michael 2026-09-02 and CLOSED. ⛔ Do not re-open it, and do not
+   add a branch to it without him:
+
+     matches | Company box                  | what happens
+     --------+------------------------------+-------------------------------
+        0    | anything                     | today's name path, unchanged
+        1    | blank                        | LINK IT, silently
+        1    | names the same company       | nothing to do
+        1    | names a DIFFERENT or new one | WARN AND ASK. He chooses
+       2+    | anything                     | SHOW THEM AND LET HIM PICK
+
+   DOMAIN WINS, BUT IT ALWAYS ASKS BEFORE OVERRIDING SOMETHING HE TYPED. He
+   rejected the silent version explicitly — an app that overwrites your typing
+   feels like it is fighting you. And per the same conversation, ⛔ A HUMAN
+   EXPLICITLY PICKING A COMPANY RESOLVES BY NAME AND ALWAYS WINS: automatic
+   linking keys on the DOMAIN ONLY, and typing "Stripe" when Stripe exists must
+   never mint a second Stripe.
+
+   PURE. It reads state and returns a plan; it writes nothing and creates
+   nothing. That is what lets every caller run it BEFORE
+   resolveCompanyByName(), which creates a company as a side effect.
+
+   Plans: {action:"none"} · {action:"link", company} ·
+          {action:"suggest", name, host} · {action:"ask", matches, host, typed} */
+function planCompanyLinkFromEmail(email, typedName, currentCompanyId) {
+  const host = emailDomain(email);
+  const typed = String(typedName || "").trim();
+  const matches = companiesByEmailDomain(email);
+  const current = currentCompanyId
+    ? (state.companies || []).find(c => c.id === currentCompanyId) || null
+    : null;
+
+  if (!matches.length) {
+    /* Task 9's offline name suggestion. Only into a BLANK box, only for a
+       prospect that has no company yet, and never for a free host — "Gmail"
+       is not an employer. Nothing is stored by a suggestion. */
+    if (!typed && !current && host && !isFreeEmailHost(host)) {
+      const guess = companyNameFromDomain(host);
+      if (guess) return { action: "suggest", name: guess, host };
+    }
+    return { action: "none" };
+  }
+
+  const namesOne = c => (c.name || "").trim().toLowerCase() === typed.toLowerCase();
+
+  if (typed) {
+    // Agreement — he typed one of the domain's own companies. Name resolution
+    // will land on it, so there is nothing to say and nothing to do.
+    if (matches.some(namesOne)) return { action: "none" };
+    return { action: "ask", matches, host, typed };
+  }
+
+  /* ⛔ TASK 8. NEVER SILENTLY RELINK A PROSPECT THAT ALREADY HAS A COMPANY.
+     Editing an existing record's email must not move it to a different
+     employer without asking — that is a change to stored data made by a
+     keystroke in a different field, which is exactly the class of surprise
+     this whole session is meant to remove. */
+  if (current) {
+    if (matches.some(c => c.id === current.id)) return { action: "none" };
+    return { action: "ask", matches, host, typed };
+  }
+
+  if (matches.length === 1) return { action: "link", company: matches[0] };
+  return { action: "ask", matches, host, typed };
+}
+
+/* ONE EXPLICIT ANSWER, REMEMBERED FOR ONE EMAIL. Module scope, navigation
+   shaped, deliberately NOT persisted — the same class as detailProspectId and
+   tagProspectTargetId.
+
+   It exists because the refusal has to be reachable past: once he has said
+   "keep what I typed", asking again on the next Save is not a safety rail, it
+   is a loop he cannot leave. Cleared whenever a form opens, so an answer never
+   outlives the record it was about. */
+let companyLinkAnsweredFor = null;
+
+function clearCompanyLinkAnswer() {
+  companyLinkAnsweredFor = null;
+}
+
+function companyLinkAlreadyAnswered(email) {
+  return !!companyLinkAnsweredFor && companyLinkAnsweredFor === normalizedEmail(email);
+}
+
+/* THE NOTICE. A REUSE, NOT AN INVENTION (task 5) — contract P6's
+   renderDuplicateEmailWarning() pattern and its .dup-email-warning rule set,
+   which now serves FOUR surfaces and has still never needed a second
+   stylesheet. ⛔ NOT A SECOND MODAL; the 2B.15 rule applies here too.
+
+   The multi-match picker (task 6) is a LIST INSIDE THIS SAME BLOCK rather than
+   a new surface — one more row of buttons, not one more window.
+
+   Every element is built as a node. ⛔ NEVER INTERPOLATE A COMPANY NAME OR AN
+   EMAIL INTO innerHTML: both are user text, and the P6 comment on this same
+   pattern spells out why a template string putting one into an onclick is an
+   injection surface. The ids never leave the closure. */
+function renderCompanyMatchNotice(boxId, plan, onPick) {
+  const box = document.getElementById(boxId);
+  if (!box) return;
+  box.innerHTML = "";
+
+  const add = (tag, text, cls) => {
+    const el = document.createElement(tag);
+    el.textContent = text;
+    if (cls) el.className = cls;
+    box.appendChild(el);
+    return el;
+  };
+
+  const pickBtn = (label, company) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "dup-email-link";
+    b.textContent = label;
+    b.addEventListener("click", () => onPick(company));
+    box.appendChild(b);
+    return b;
+  };
+
+  if (plan.matches.length === 1) {
+    const only = plan.matches[0];
+    const name = only.name || "an existing company";
+    /* ⚠️ ONE FLEX CHILD, NOT THREE. .dup-email-warning is `display:flex` with
+       `gap:6px`, so a sentence split into <span>/<strong>/<span> renders as
+       "Your AV Department ." — the gap lands before the full stop. P6's own
+       notices never hit this because neither of them puts an element mid
+       sentence. The <strong> goes INSIDE one span; the gap then only ever
+       falls between the sentence and the buttons, which is where it belongs. */
+    const sentence = document.createElement("span");
+    sentence.appendChild(document.createTextNode(`${plan.host} belongs to `));
+    const who = document.createElement("strong");
+    who.textContent = name;
+    sentence.appendChild(who);
+    sentence.appendChild(document.createTextNode("."));
+    box.appendChild(sentence);
+    pickBtn(`Link to ${name}`, only);
+  } else {
+    add("span", `${plan.matches.length} companies use ${plan.host}. Pick one:`);
+    plan.matches.forEach(c => pickBtn(c.name || "(unnamed company)", c));
+  }
+
+  /* THE ESCAPE, AND IT IS NOT OPTIONAL. Michael's own workflow is a Conference
+     Direct person attached to the association he is working for — the email
+     domain must not argue with him. So "keep mine" is always offered, and on
+     the blank-box branch it is the honest "leave it blank". */
+  pickBtn(plan.typed ? `Keep ${plan.typed}` : "Leave it blank", null);
+
+  add("span", "Nothing was linked.", "dup-email-tail");
+  box.classList.remove("hidden");
+}
+
+function hideCompanyMatchNotice(boxId) {
+  const box = document.getElementById(boxId);
+  if (!box) return;
+  box.classList.add("hidden");
+  box.innerHTML = "";
 }
 
 /* The detail view's Delete. It passes detailProspectId, NEVER
@@ -11441,8 +11796,104 @@ function openProspectModal(id = null) {
     document.getElementById("btn-pros-edit-company").classList.add("hidden");
   }
   
+  // Session 2B.18. A refusal and an answer from a previous open must never
+  // greet the next one — the modal's markup persists between opens, and an
+  // explicit "keep mine" must not outlive the record it was about.
+  hideCompanyMatchNotice("pros-company-match");
+  clearCompanyLinkAnswer();
+  syncProspectLookupButton(document.getElementById("pros-email").value);
+
   renderProspectTagsPreview();
   modal.classList.remove("hidden");
+}
+
+/* ⚠️⚠️ SESSION 2B.18, TASK 7 — THIS IS THE FEATURE, AND ITS TRIGGER IS THE
+   POINT. Michael asked for it in these words:
+
+     "As soon as I tab out of email, I want it to fill in company name."
+     "I want the company name to get entered immediately after I enter the
+      email address."
+
+   ⛔ SO IT FIRES ON `blur`, WHILE THE FORM IS STILL OPEN, NOT AT SAVE. A
+   Save-time-only implementation passes every state check that could be written
+   for it and IS NOT WHAT HE ASKED FOR — the whole request is that he sees the
+   company appear in the box before he has committed to anything. The plan says
+   this outright and a session that ships only the backstop has not built it.
+
+   ⚠️ AND YET THE BLUR IS STILL ONLY THE DISPLAY. Session 2B.19's second pass
+   paid for this lesson in the same afternoon: a blur handler can never be the
+   RULE, because there is always a way to reach Save without firing it — paste
+   and press Enter, or click Save while the box has never had focus. The rule
+   lives in saveProspect(), at the one place every write passes through. Both
+   halves are required and neither is redundant: delete the blur and the
+   feature is gone; delete the backstop and it is silent exactly when it
+   matters. */
+function handleProspectEmailCommit() {
+  const emailEl = document.getElementById("pros-email");
+  const compEl = document.getElementById("pros-company");
+  if (!emailEl || !compEl) return;
+
+  const email = emailEl.value.trim();
+  syncProspectLookupButton(email);
+
+  const currentId = editingProspectId
+    ? ((state.prospects.find(p => p.id === editingProspectId) || {}).companyId || "")
+    : "";
+
+  const plan = planCompanyLinkFromEmail(email, compEl.value, currentId);
+
+  if (plan.action === "link") {
+    // The silent branch. Nothing was typed to contradict, so nothing is asked.
+    compEl.value = plan.company.name || "";
+    hideCompanyMatchNotice("pros-company-match");
+    return;
+  }
+
+  if (plan.action === "suggest") {
+    /* Task 9's offline guess, into a BLANK box only. It is a suggestion he is
+       looking straight at and can overtype; nothing is stored by it, and
+       saveProspect() deliberately does NOT apply it — a guess that writes
+       itself at Save is the behind-the-back create this session exists to
+       stop. Modal only: every control in the detail view commits immediately,
+       so a guess there would BE a write. */
+    compEl.value = plan.name;
+    hideCompanyMatchNotice("pros-company-match");
+    return;
+  }
+
+  if (plan.action === "ask") {
+    if (companyLinkAlreadyAnswered(email)) return;
+    renderCompanyMatchNotice("pros-company-match", plan, company => {
+      companyLinkAnsweredFor = normalizedEmail(email);
+      if (company) compEl.value = company.name || "";
+      hideCompanyMatchNotice("pros-company-match");
+    });
+    return;
+  }
+
+  hideCompanyMatchNotice("pros-company-match");
+}
+
+/* Task 9's "Look up". OFFLINE ENRICHMENT IS FORBIDDEN — a browser cannot read
+   another site's page (CORS), so it would need a third-party API whose key
+   would sit in client-side JS in a PUBLIC repo: DIRECTIVES §4 new dependency,
+   Phase 4, on a Cloud Function. Michael accepted that and chose this instead:
+   a plain search in a new tab, which needs nothing.
+
+   Hidden unless there is something worth looking up, so the row does not grow
+   a permanently dead control. `noopener` because the opened page must not get
+   a handle on this window. */
+function syncProspectLookupButton(email) {
+  const btn = document.getElementById("btn-pros-lookup-company");
+  if (!btn) return;
+  const host = emailDomain(email);
+  if (!host || isFreeEmailHost(host)) {
+    btn.classList.add("hidden");
+    btn.dataset.host = "";
+    return;
+  }
+  btn.dataset.host = host;
+  btn.classList.remove("hidden");
 }
 
 function saveProspect() {
@@ -11484,12 +11935,55 @@ function saveProspect() {
   }
   hideDuplicateEmailWarning();
 
+  /* ⚠️ SESSION 2B.18 — THE BACKSTOP, AND IT SITS HERE FOR CONTRACT P6's
+     REASON, NOT FOR TIDINESS. It runs BEFORE resolveCompanyByName(), which
+     CREATES a company as a side effect: asking afterwards would leave a stray
+     company behind on every question the app asked. BUILD_NOTES records this
+     ordering trap; this is its third instance.
+
+     IT REFUSES RATHER THAN GUESSES. Paste an email, type a different company
+     name, click Save without ever leaving the Email box, and without this line
+     a second forked company is created silently — which is the exact failure
+     the whole session exists to stop, arriving through the one path the blur
+     handler cannot see.
+
+     companyLinkAlreadyAnswered() is what makes the refusal reachable past:
+     once he has said "keep mine", asking again on the next Save is not a
+     safety rail, it is a loop. The picker's callback re-enters saveProspect()
+     because the answer was the only thing missing. */
+  const currentCompanyId = editingProspectId
+    ? ((state.prospects.find(x => x.id === editingProspectId) || {}).companyId || "")
+    : "";
+  const linkPlan = planCompanyLinkFromEmail(email, compVal, currentCompanyId);
+
+  if (linkPlan.action === "ask" && !companyLinkAlreadyAnswered(email)) {
+    renderCompanyMatchNotice("pros-company-match", linkPlan, company => {
+      companyLinkAnsweredFor = normalizedEmail(email);
+      const compEl = document.getElementById("pros-company");
+      if (company && compEl) compEl.value = company.name || "";
+      hideCompanyMatchNotice("pros-company-match");
+      saveProspect();
+    });
+    return;
+  }
+  hideCompanyMatchNotice("pros-company-match");
+
   // Handle company allocation dynamically. Session 2B.3 extracted this to
   // resolveCompanyByName() (contract P5) and calls it from here and from
   // commitProspectField(). Behaviour is unchanged including the `loc` seed —
   // do not re-inline it; two company-creation paths is how two kinds of
   // company record appear.
-  const compId = resolveCompanyByName(compVal, email, loc);
+  //
+  /* SESSION 2B.18. The silent link takes the record's ID, not its name.
+     Resolving a matched company by NAME would be a round trip through the very
+     ambiguity this feature replaces — two records can share a name, and
+     resolveCompanyByName() returns whichever it finds first. The domain match
+     already knows exactly which record it means, so it says so.
+     ⛔ THE `suggest` PLAN IS DELIBERATELY NOT APPLIED HERE. A guessed name
+     that writes itself at Save is a company created behind his back. */
+  const compId = (!compVal && linkPlan.action === "link")
+    ? linkPlan.company.id
+    : resolveCompanyByName(compVal, email, loc);
 
   if (editingProspectId) {
     const p = state.prospects.find(x => x.id === editingProspectId);
@@ -11538,7 +12032,17 @@ function saveProspect() {
     state.selectedProspectId = newP.id;
   }
 
+  /* SESSION 2B.18. The reported ordering bug: fill Company BEFORE Email and
+     the brand-new company was created with an empty website that nothing ever
+     back-filled. ⚠️ AFTER the record is in state.prospects, never before —
+     the sole-contact condition counts contacts, and an unpushed prospect
+     counts as zero, which passes for the wrong reason. All three conditions
+     live inside maybeSeedCompanyFromEmail(); read them there before touching
+     this line. */
+  maybeSeedCompanyFromEmail(compId, email, editingProspectId || state.selectedProspectId);
+
   saveState();
+  clearCompanyLinkAnswer();
   document.getElementById("modal-prospect").classList.add("hidden");
   renderProspectsView();
   refreshAqAfterEdit();
@@ -11612,14 +12116,64 @@ function deleteCompany() {
 // Company CRUD
 let editingCompanyId = null;
 
-function openCompanyModal(compId) {
+/* SESSION 2B.19. THE MODAL IS SHARED BETWEEN CREATE AND EDIT, AND THIS FLAG
+   IS WHY THE TWO ARE TELLABLE APART. `editingCompanyId === null` used to mean
+   exactly one thing — "nothing is being edited" — and saveCompany() returned
+   on it. It now has to mean two things, so the mode is carried explicitly
+   rather than inferred from a null. DIRECTIVES Ladder rung 1: one extra
+   module-scope word costs less than a save path that has to guess. */
+let companyModalMode = "edit";
+
+/* THE FIFTEEN INPUT IDS, ENUMERATED ONCE, BECAUSE THE CREATE BRANCH MUST
+   BLANK ALL OF THEM. The failure this list prevents is the quiet one: a
+   create that forgets `postal` or `specialities` ships the LAST EDITED
+   company's value into a brand-new record, in a field nobody looks at, and
+   nothing in the UI says so. Blanking from a list is not defensive padding
+   here — it is the only way this is provably complete. A sixteenth field
+   added to #modal-company goes in this array in the same edit. */
+const COMPANY_MODAL_INPUT_IDS = [
+  "comp-name", "comp-domain", "comp-address", "comp-city", "comp-state",
+  "comp-postal", "comp-notes", "comp-phone", "comp-website", "comp-linkedin",
+  "comp-industry", "comp-employees", "comp-description", "comp-specialities",
+  "comp-hq"
+];
+
+/* A DELIBERATE null MEANS CREATE. Anything else is an id and must resolve.
+   ⚠️ THE ALERT BELOW IS KEPT ON PURPOSE and is NOT the create branch in
+   disguise: five call sites pass a real company id, and an id that fails to
+   resolve is a dangling reference the user needs told about. Two different
+   cases that shared one branch until this session. Note the direction of the
+   default — a stray `openCompanyModal(someEvent)` still falls into the alert,
+   never into create. */
+function openCompanyModal(compId = null) {
   const modal = document.getElementById("modal-company");
+  hideCompanyDomainWarning();
+
+  if (compId === null) {
+    companyModalMode = "create";
+    editingCompanyId = null;
+    COMPANY_MODAL_INPUT_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+    currentCompanyTags = [];
+    const title = document.getElementById("company-modal-title");
+    if (title) title.textContent = "Add Company";
+    renderCompanyTagsPreview();
+    modal.classList.remove("hidden");
+    return;
+  }
+
   const c = state.companies.find(x => x.id === compId);
   if (!c) {
     alert("Please save the prospect first to create the company record.");
     return;
   }
-  
+
+  companyModalMode = "edit";
+  const title = document.getElementById("company-modal-title");
+  if (title) title.textContent = "Edit Company Profile";
+  document.getElementById("comp-domain").value = c.domain || "";
   editingCompanyId = compId;
   document.getElementById("comp-name").value = c.name || "";
   document.getElementById("comp-address").value = c.address || "";
@@ -11641,7 +12195,117 @@ function openCompanyModal(compId) {
   modal.classList.remove("hidden");
 }
 
+/* SESSION 2B.19. The company duplicate-domain refusal, built on contract P6's
+   pattern (renderDuplicateEmailWarning) rather than as a second modal: same
+   shape, same .dup-email-warning stylesheet, same "here is the record you
+   actually mean, open it" escape. NO NEW CSS — that rule set was written to
+   serve two surfaces and now serves three.
+
+   A REAL <button>, BUILT IN JS, NEVER INTERPOLATED INTO innerHTML. Company
+   names are user text; a template string putting one into an onclick is an
+   injection surface. The id never leaves the closure. */
+function renderCompanyDomainWarning(existing, typedDomain) {
+  const box = document.getElementById("comp-dup-warning");
+  if (!box) return;
+  box.innerHTML = "";
+
+  const name = existing.name || "another company";
+
+  /* SESSION 2B.19b, Michael's request: SAY WHICH COMPANY OWNS THE DOMAIN, and
+     let him GO TO THAT RECORD. The name is a <strong> because it is the answer
+     to the question the refusal raises — "then who has it?" — and it was
+     previously buried mid-sentence in plain text. Built as nodes, never
+     interpolated into innerHTML: company names are user text. */
+  const lead = document.createElement("span");
+  lead.textContent = `${typedDomain} is already assigned to `;
+  box.appendChild(lead);
+
+  const who = document.createElement("strong");
+  who.textContent = name;
+  box.appendChild(who);
+
+  const dot = document.createElement("span");
+  dot.textContent = ".";
+  box.appendChild(dot);
+
+  const link = document.createElement("button");
+  link.type = "button";
+  link.className = "dup-email-link";
+  link.textContent = `Go to ${name}`;
+  link.addEventListener("click", () => {
+    /* ⚠️ THIS GOES TO THE COMPANY RECORD, NOT BACK INTO THIS MODAL — changed
+       at Michael's request 2026-09-02. `selectCompany()` is the shipped path
+       the companies-table row click uses, so the record opens in ProspectHub's
+       inspector exactly as it does from the directory, with Edit Company and
+       Associated Contacts on it. Reaching the edit form is one click from
+       there; reaching the CONTACTS was impossible from the old link.
+
+       switchView() first, because this modal can be opened from the prospect
+       detail view as well as from the directory, and selectCompany() renders
+       into a panel that has to be the visible one. It is a no-op when
+       ProspectHub is already active.
+
+       Following the link DISCARDS what was typed. That is contract P6's rule
+       and it is correct here for P6's reason: the record being typed already
+       exists, which is the entire finding. */
+    hideCompanyDomainWarning();
+    document.getElementById("modal-company").classList.add("hidden");
+    editingCompanyId = null;
+    companyModalMode = "edit";
+    switchView("prospects");
+
+    /* AND THE SEARCH BOX IS SET TO THE DOMAIN ON THE WAY THERE, which is not
+       decoration. Without it you land on the record with an EMPTY directory
+       behind it — ProspectHub's blank state shows no rows at all — so the
+       inspector floats over "Companies (0)" and the row it belongs to is not
+       highlighted. Filtering to the domain makes the destination coherent:
+       the company row is there, selected, and any contacts already on that
+       domain are listed beside it, which is the next question anyone asks
+       after "who has this domain?". It also explains itself — the box says
+       why this is what you are looking at. Reversible: Clear Filters, or
+       delete the text. Uses the search this session just taught to match
+       `domain` (2B.19b), so the two changes are one feature. */
+    const searchBox = document.getElementById("prospect-search");
+    if (searchBox) searchBox.value = normaliseDomain(existing.domain);
+
+    selectCompany(existing.id);
+  });
+  box.appendChild(link);
+
+  const tail = document.createElement("span");
+  tail.className = "dup-email-tail";
+  tail.textContent = "Nothing was created.";
+  box.appendChild(tail);
+
+  box.classList.remove("hidden");
+}
+
+function hideCompanyDomainWarning() {
+  const box = document.getElementById("comp-dup-warning");
+  if (!box) return;
+  box.classList.add("hidden");
+  box.innerHTML = "";
+}
+
+/* Every company already carrying this normalised domain, self excluded.
+   COMPARES NORMALISED AGAINST NORMALISED on both sides, because today's stored
+   `domain` values are three different kinds of thing — real hosts, the literal
+   "domain.com" placeholder, and CSV-import slugs — and a raw string compare
+   would miss "WWW.Acme.com" sitting next to "acme.com". */
+function companyByDomain(domain, excludeId) {
+  const needle = normaliseDomain(domain);
+  if (!needle) return null;
+  return state.companies.find(c => c.id !== excludeId && normaliseDomain(c.domain) === needle) || null;
+}
+
 function saveCompany() {
+  /* SESSION 2B.19. The create branch. The edit guard below is UNCHANGED for
+     the edit path — `companyModalMode` is what makes the null mean something
+     other than "nothing is open". */
+  if (companyModalMode === "create") {
+    saveNewCompany();
+    return;
+  }
   if (!editingCompanyId) return;
   const c = state.companies.find(x => x.id === editingCompanyId);
   if (c) {
@@ -11660,15 +12324,153 @@ function saveCompany() {
     c.description = document.getElementById("comp-description").value.trim();
     c.specialities = document.getElementById("comp-specialities").value.trim();
     c.headquarters = document.getElementById("comp-hq").value.trim();
+    /* SESSION 2B.19. The identity becomes hand-editable here for the first
+       time. NORMALISED ON THE WAY IN, so what is stored is always the same
+       shape the matcher compares against. ⚠️ NO UNIQUENESS CHECK ON THE EDIT
+       PATH — that guard is create-only, by scope. Blocking a save on an edit
+       would refuse the exact operation Michael needs in order to CLEAN UP the
+       duplicates he already has ("eventually there should be no different
+       companies sharing the same domain" is his goal, and merging is Finding
+       10b's job in Phase 2C). Phase backlog, not an oversight. */
+    c.domain = normaliseDomain(document.getElementById("comp-domain").value);
     c.tags = currentCompanyTags.length ? [...currentCompanyTags] : ["No Company Tag"];
     saveState();
-    
-    // Update the prospect form company field just in case name changed
-    document.getElementById("pros-company").value = c.name;
+
+    writeCompanyNameIntoProspectForm(c.name);
     document.getElementById("modal-company").classList.add("hidden");
+    syncCompaniesDatalist();
     renderProspectsView();
     refreshAqAfterEdit();
   }
+}
+
+/* SESSION 2B.19, THE SINGLE MOST LIKELY WAY THIS SESSION SHIPS SOMETHING THAT
+   LOOKS FINE AND CORRUPTS THE OTHER FORM.
+
+   saveCompany() has always ended with, verbatim:
+       document.getElementById("pros-company").value = c.name;
+   That was harmless for as long as the ONLY way into this modal was from a
+   prospect — the box it writes into was the box you came from, and a renamed
+   company needed to show its new name there. From the directory's new
+   + Add Company button there is no prospect being edited, and that line
+   silently overwrites whatever is sitting in the prospect create/edit form.
+
+   So it now writes only while #modal-prospect is actually open. Optional
+   chaining on the element as well, per the lesson Session 2B.6 paid for: an
+   unguarded getElementById(...).value inside a handler throws and takes the
+   rest of the handler with it. */
+function writeCompanyNameIntoProspectForm(name) {
+  const prosModal = document.getElementById("modal-prospect");
+  const prosCompany = document.getElementById("pros-company");
+  if (!prosModal || !prosCompany) return;
+  if (prosModal.classList.contains("hidden")) return;
+  prosCompany.value = name;
+}
+
+/* SESSION 2B.19. The front door. Everything Vantage has ever created has been
+   a SIDE EFFECT — of a prospect form, of the CSV import, or of a restore —
+   and the only human route to a new company was typing a name into a
+   prospect, which is the fork-prone path and the mechanism behind the four
+   SPL records. This is the path that can refuse. */
+function saveNewCompany() {
+  const name = document.getElementById("comp-name").value.trim();
+
+  /* ⚠️ SESSION 2B.19, SECOND PASS — THE DEFECT MICHAEL FOUND IN MINUTES, AND
+     THE REASON THE FIRST PASS'S OWN Done-when DID NOT CATCH IT.
+
+     The identity used to be read from #comp-domain alone, and #comp-domain was
+     seeded from #comp-website ONLY by that field's own blur handler. So the
+     seed fired for anyone who tabbed THROUGH the Domain box and never fired
+     for anyone who filled Website and went straight to Save — which is the
+     ordinary way to use this form. Those records were created with
+     `domain: ""`, an empty domain is deliberately not a collision, and the
+     uniqueness guard therefore never ran. Two companies on youravdept.com,
+     both saved, no warning. Verification had touched the Domain field every
+     time, so it proved the seed and never proved the SAVE.
+
+     THE FALLBACK LIVES HERE, AT THE SAVE, BECAUSE THIS IS THE ONE PLACE EVERY
+     CREATE PASSES THROUGH. A blur handler is an optimisation for what the user
+     SEES; it can never be the rule, because there is always a way to reach
+     Save without firing it (paste and press Enter, click Save while the box
+     has never had focus). The #comp-website blur below keeps the box honest on
+     screen; this line is what makes the identity true. */
+  const domain = normaliseDomain(
+    document.getElementById("comp-domain").value || document.getElementById("comp-website").value
+  );
+
+  if (!name) {
+    /* A company with no name is invisible everywhere — the directory, the
+       datalist, getCompanyName() — so it is refused rather than created.
+       Reuses the same warning box, which is why the box is not called
+       "the domain warning" in the markup. */
+    const box = document.getElementById("comp-dup-warning");
+    if (box) {
+      box.innerHTML = "";
+      const line = document.createElement("span");
+      line.textContent = "A company needs a name.";
+      box.appendChild(line);
+      box.classList.remove("hidden");
+    }
+    document.getElementById("comp-name").focus();
+    return;
+  }
+
+  /* THE UNIQUENESS GUARD, AT THE POINT OF CREATION. Without it the new front
+     door is simply a FOURTH way to make duplicates, which would make this
+     feature a net loss against the problem it was built for. An EMPTY domain
+     is not a collision — companyByDomain() returns null for it — because an
+     absent identity is honest and Michael has to be able to add a company he
+     has no domain for yet. */
+  const clash = companyByDomain(domain, null);
+  if (clash) {
+    renderCompanyDomainWarning(clash, domain);
+    return;
+  }
+
+  const city = document.getElementById("comp-city").value.trim();
+  const stateVal = document.getElementById("comp-state").value.trim();
+  const hq = document.getElementById("comp-hq").value.trim();
+
+  const newCompany = {
+    id: `comp-${Date.now()}`,
+    name,
+    /* NOT the "domain.com" placeholder resolveCompanyByName() still writes.
+       Michael, 2026-09-02: a hand-entered record gets an EMPTY domain, which
+       he can see and fix; placeholders exist to make a BULK import triageable
+       and are noise on a form he is looking straight at. */
+    domain,
+    website: document.getElementById("comp-website").value.trim(),
+    location: hq || [city, stateVal].filter(Boolean).join(", ") || "Unknown",
+    industry: document.getElementById("comp-industry").value.trim() || "General",
+    address: document.getElementById("comp-address").value.trim(),
+    city,
+    state: stateVal,
+    postal: document.getElementById("comp-postal").value.trim(),
+    phone: document.getElementById("comp-phone").value.trim(),
+    linkedin: document.getElementById("comp-linkedin").value.trim(),
+    notes: document.getElementById("comp-notes").value.trim(),
+    tags: currentCompanyTags.length ? [...currentCompanyTags] : ["No Company Tag"],
+    employees: document.getElementById("comp-employees").value.trim(),
+    employeeRange: "",
+    description: document.getElementById("comp-description").value.trim(),
+    specialities: document.getElementById("comp-specialities").value.trim(),
+    headquarters: hq
+  };
+
+  state.companies.push(newCompany);
+  saveState();
+
+  companyModalMode = "edit";
+  editingCompanyId = null;
+  hideCompanyDomainWarning();
+  document.getElementById("modal-company").classList.add("hidden");
+
+  /* The new company has to reach the autocomplete immediately — this is the
+     one creation path whose whole purpose is that the NEXT person to type a
+     company name is offered it instead of forking it. */
+  syncCompaniesDatalist();
+  renderProspectsView();
+  refreshAqAfterEdit();
 }
 
 // Interaction Logs Table Actions
@@ -12899,6 +13701,171 @@ function getCompanyName(compId) {
    wrong the first time somebody added a fourth. DIRECTIVES Ladder rung 3: at
    five companies this is free and at a few thousand it is still one pass and a
    sort, against a user who is about to spend seconds typing. */
+/* SESSION 2B.19. THE SHARED DOMAIN NORMALISER. Filed here beside
+   syncCompaniesDatalist() and getCompanyName() rather than in either view
+   block, for the same reason that one is: it serves the company modal (this
+   session), the prospect email commit (2B.18) and the CSV import (2B.20).
+   ⛔ 2B.18 AND 2B.20 CONSUME THIS ONE. DO NOT WRITE A SECOND COPY.
+
+   Lowercase · trim · strip the scheme · strip a leading "www." · strip a
+   port · drop everything from the first "/", "?" or "#" · strip a trailing
+   dot. THEN KEEP EVERY REMAINING LABEL AS-IS.
+
+   ⛔ DO NOT REDUCE THIS TO TWO LABELS. It looks like the obvious improvement
+   and it is the failure Michael explicitly rejected on 2026-09-02. He asked
+   for "always domain.suffix"; shown that `bbc.co.uk` reduced to two labels is
+   `co.uk`, he chose the conservative rule instead — because that reduction
+   collapses EVERY UK company in the database onto one identity, and identity
+   is exactly what this field is. Doing it properly needs the Public Suffix
+   List, ~15,000 entries, a DIRECTIVES §4 new dependency.
+
+   THE ACCEPTED COST IS A MISS, NEVER A MERGE. `mail.acme.com` does not match
+   `acme.com`, so an occasional contact does not auto-link and surfaces as a
+   question. That is the cheap failure. The rejected rule's failure is two real
+   companies silently becoming one record — the expensive one, and invisible
+   until the data is already wrong. A later session that "tidies" this by
+   collapsing labels is reintroducing a rejected failure, not improving
+   anything.
+
+   Returns "" when nothing is left — an ABSENT identity is honest, a shared
+   fake one is not (DIRECTIVES Ladder rung 2: the surface never lies about
+   state). It deliberately does NOT reject "domain.com": that placeholder is
+   real data written by resolveCompanyByName() and belongs to Phase 2C's
+   collision report, not to this function's judgement. */
+function normaliseDomain(v) {
+  let s = String(v == null ? "" : v).trim().toLowerCase();
+  if (!s) return "";
+
+  s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//, "");   // scheme
+  s = s.split(/[/?#]/)[0];                        // path, query, fragment
+  s = s.replace(/^[^@]*@/, "");                   // userinfo, or a pasted email
+  s = s.replace(/^www\./, "");                    // one leading www.
+  s = s.replace(/:\d+$/, "");                     // port
+  s = s.replace(/\.+$/, "");                      // trailing dot
+
+  return s.trim();
+}
+
+/* ==========================================================================
+   SESSION 2B.18 — THE EMAIL DOMAIN AS THE MATCH KEY.
+
+   Filed here, immediately below normaliseDomain(), because every one of these
+   consumes it and none of them may re-derive it. ⛔ THERE IS ONE NORMALISER
+   IN THIS FILE (2B.19) AND THESE ARE ITS CALLERS. A second copy is how the
+   company modal, the prospect form and the CSV import start disagreeing about
+   what a company's identity is.
+
+   WHY DOMAIN AT ALL, in one line: Vantage has always matched companies on
+   NAME (resolveCompanyByName), and names are unstable — "Your AV Dept" and
+   "Your AV Department" are two records, which is the mechanism behind the four
+   SPL records. Domains are stable.
+   ========================================================================== */
+
+/* THE HOST OF AN EMAIL ADDRESS, NORMALISED — or "" if there isn't one.
+
+   ⚠️ THE `@` TEST IS NOT REDUNDANT WITH normaliseDomain(). That function
+   strips userinfo with /^[^@]*@/, so it happily turns a bare word into
+   itself: normaliseDomain("marcus") is "marcus". Handing that to the matcher
+   would let a half-typed Email box match a company whose stored domain is a
+   CSV-import SLUG (BUILD_NOTES: `domain: p.companyId` writes exactly such
+   values). lastIndexOf, not indexOf, so a quoted local part containing an @
+   still yields the real host. */
+function emailDomain(email) {
+  const s = String(email == null ? "" : email).trim();
+  const at = s.lastIndexOf("@");
+  if (at < 0) return "";
+  return normaliseDomain(s.slice(at + 1));
+}
+
+/* ⛔ THE BLOCKLIST GATES THE MATCHER, NOT MERELY THE SEED (task 4).
+
+   Without it, ONE company accidentally created carrying `domain: "gmail.com"`
+   — and resolveCompanyByName() has been writing email hosts into that field
+   for as long as it has existed — silently becomes the employer of every
+   personal address in the database, retroactively, with no event to notice.
+
+   ⚠️ MICHAEL'S OWN youravdept.com IS DELIBERATELY NOT HERE. It is a real
+   company he wants matched. It was only ever proposed for the website-seed
+   blocklist and that proposal was withdrawn 2026-09-02.
+
+   Bare hosts, already normalised — compared against emailDomain()'s output,
+   which has had scheme, www. and port removed. */
+const FREE_EMAIL_DOMAINS = new Set([
+  "gmail.com", "googlemail.com",
+  "outlook.com", "hotmail.com", "live.com", "msn.com",
+  "yahoo.com", "ymail.com",
+  "icloud.com", "me.com", "mac.com",
+  "aol.com",
+  "proton.me", "protonmail.com",
+  "gmx.com", "gmx.net"
+]);
+
+function isFreeEmailHost(host) {
+  return FREE_EMAIL_DOMAINS.has(String(host || "").toLowerCase());
+}
+
+/* THE IDENTITY OF ONE COMPANY, RESOLVED FOR MATCHING — and the single place
+   the transitional fallback lives.
+
+   ⚠️ TRANSITIONAL. REMOVED BY PHASE 2C, NOT BY A TIDYING SESSION. Today's
+   `domain` column holds THREE different kinds of thing and two of them are not
+   hosts (BUILD_NOTES, "Data, migrations and backup"):
+
+     1. a real host, from resolveCompanyByName() with an email — correct;
+     2. the literal "domain.com", that function's no-email placeholder — a
+        FAKE identity every email-less company shares, so it must never match;
+     3. a SLUG like "spl-productions", written by the CSV import — the bulk
+        path, and therefore the largest source of bad identities in the file.
+
+   So a stored `domain` counts as an identity only when it is non-empty, is
+   not the placeholder, and actually contains a dot. Otherwise fall back to a
+   normalised `website`, which for cases (2) and (3) is the only true host the
+   record has. ⛔ Checking `domain` ALONE silently fails on most of the real
+   data; checking `website` alone fails on every record created before 2B.13
+   restored that seed. Both, in this order, or neither works. */
+function companyIdentityDomain(company) {
+  if (!company) return "";
+  const stored = normaliseDomain(company.domain);
+  if (stored && stored !== "domain.com" && stored.includes(".")) return stored;
+  return normaliseDomain(company.website);   // transitional — Phase 2C removes this line
+}
+
+/* EVERY company whose identity is this email's host. RETURNS AN ARRAY, never a
+   single record, because the 2+ branch of the behaviour table is the only
+   surface in Vantage that shows Michael the duplicates he already has — and a
+   function that returned the first hit would hide exactly that.
+
+   READ-ONLY. It creates nothing, and it is called BEFORE resolveCompanyByName()
+   everywhere, per the ordering rule contract P6 already enforces for the
+   duplicate-email check: that function CREATES a company as a side effect, so
+   resolving first means every warning leaves a stray company behind. */
+function companiesByEmailDomain(email) {
+  const host = emailDomain(email);
+  if (!host || isFreeEmailHost(host)) return [];
+  return (state.companies || []).filter(c => companyIdentityDomain(c) === host);
+}
+
+/* An offline company name guessed from a domain, for a BLANK box only
+   (task 9). "spl-productions.com" -> "Spl Productions".
+
+   Deliberately dumb and deliberately offline: reading the real name off the
+   site needs a third-party enrichment API, which is a DIRECTIVES §4 new
+   dependency whose key would sit in client-side JS in a PUBLIC repo. Phase 4,
+   on a Cloud Function. Michael accepted this and chose the offline route.
+
+   ⚠️ FIRST LABEL ONLY, which is a guess and is meant to be overtyped — it is
+   a suggestion sitting in a box he is looking straight at, not a stored value.
+   Never called for a free-email host; "Gmail" is not an employer. */
+function companyNameFromDomain(host) {
+  const first = String(host || "").split(".")[0];
+  if (!first) return "";
+  return first
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 function syncCompaniesDatalist() {
   const list = document.getElementById("companies-datalist");
   if (!list) return 0;
@@ -13108,6 +14075,38 @@ function setupEventListeners() {
     document.getElementById("modal-prospect").classList.add("hidden");
   });
   document.getElementById("pros-modal-confirm").addEventListener("click", saveProspect);
+
+  /* ⚠️ SESSION 2B.18, TASK 7. THIS LISTENER IS THE FEATURE. Michael asked for
+     the company to appear "as soon as I tab out of email", so the trigger is
+     the Email box losing focus — not Save. `change` as well as `blur`, because
+     the two fire on different gestures and neither covers the other: `change`
+     alone misses a re-focus-and-leave with no edit, and `blur` alone misses a
+     value set by autofill. handleProspectEmailCommit() is idempotent — it
+     computes a plan from current state and applies it — so double-firing is
+     harmless by construction rather than by a guard.
+
+     ⛔ THIS IS THE DISPLAY HALF. The rule is the backstop in saveProspect().
+     2B.19's second pass shipped a blur-only identity and Michael broke it in
+     minutes; see the comment there before deleting either one. */
+  document.getElementById("pros-email")?.addEventListener("blur", handleProspectEmailCommit);
+  document.getElementById("pros-email")?.addEventListener("change", handleProspectEmailCommit);
+
+  /* Leaving the Company box clears a stale notice — he answered it by typing.
+     Nothing is decided here; the plan is recomputed at Save. */
+  document.getElementById("pros-company")?.addEventListener("blur", () => {
+    hideCompanyMatchNotice("pros-company-match");
+  });
+
+  /* Task 9's "Look up". A search, in a new tab, with `noopener` — not an
+     enrichment API, which would be a DIRECTIVES §4 new dependency with a key
+     in client-side JS in a PUBLIC repo. The host comes from the dataset the
+     sync function wrote, so nothing is re-derived at click time. */
+  document.getElementById("btn-pros-lookup-company")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    const host = e.currentTarget.dataset.host;
+    if (!host) return;
+    window.open(`https://www.google.com/search?q=${encodeURIComponent(host)}`, "_blank", "noopener");
+  });
   /* Session 2B.6: #btn-edit-prospect, #btn-delete-prospect and
      #btn-edit-inspector-tags were unbound here when #prospect-inspector was
      removed from index.html. The first two used getElementById(...).add… with
@@ -13129,9 +14128,44 @@ function setupEventListeners() {
   });
 
   document.getElementById("comp-modal-cancel").addEventListener("click", () => {
+    hideCompanyDomainWarning();
     document.getElementById("modal-company").classList.add("hidden");
   });
   document.getElementById("comp-modal-confirm").addEventListener("click", saveCompany);
+
+  /* SESSION 2B.19. The front door itself. An ARROW, not a bare reference:
+     `addEventListener("click", openCompanyModal)` would hand the handler a
+     MouseEvent, which is not null, so it would take the id branch and alert.
+     BUILD_NOTES records this exact class of failure. */
+  document.getElementById("btn-add-company")?.addEventListener("click", () => openCompanyModal(null));
+
+  /* Normalise the identity in front of the user rather than only at save, so
+     what he sees in the box is what gets stored. Seeded from the Website
+     field when domain is blank — the common case is that he pastes a URL into
+     Website and the identity is derivable from it. */
+  document.getElementById("comp-domain")?.addEventListener("blur", (e) => {
+    const typed = e.target.value.trim();
+    const websiteEl = document.getElementById("comp-website");
+    const source = typed || (websiteEl ? websiteEl.value : "");
+    e.target.value = normaliseDomain(source);
+    hideCompanyDomainWarning();
+  });
+
+  /* SESSION 2B.19, SECOND PASS. Leaving Website fills the Domain box when it
+     is still empty, so the identity being stored is VISIBLE before Save rather
+     than computed behind him — DIRECTIVES Ladder rung 2, the surface never
+     lies about state. ⚠️ THIS IS THE DISPLAY HALF, NOT THE RULE: the real
+     fallback is in saveNewCompany(), because a user can always reach Save
+     without ever blurring this field. Deleting either one leaves a form that
+     is honest but wrong, or right but silent. It only ever fills a BLANK
+     domain box — a typed identity always wins over a derived one. */
+  document.getElementById("comp-website")?.addEventListener("blur", () => {
+    const domainEl = document.getElementById("comp-domain");
+    const websiteEl = document.getElementById("comp-website");
+    if (!domainEl || !websiteEl) return;
+    if (domainEl.value.trim()) return;
+    domainEl.value = normaliseDomain(websiteEl.value);
+  });
   document.getElementById("btn-comp-edit-tags").addEventListener("click", (e) => {
     e.preventDefault();
     openCompanyChooseTagsModal();
