@@ -1323,13 +1323,20 @@
              two tab bodies, 2B.5 the remaining three. -->
         <section id="view-prospect-detail" class="view-panel">
 
-          <!-- IDENTITY BLOCK — Phase 2B / Session 2B.3 · frozen contract P5.
+          <!-- IDENTITY BLOCK — Phase 2B / Session 2B.3, REDESIGNED 2B.17.
 
-               All 17 EDITABLE FIELDS, in the field order of #modal-prospect,
-               three columns at canvas width. The pairing here is the modal's
-               own sequence re-flowed from two columns into three, so the 17
-               fields occupy SIX rows rather than ten — which is what makes the
-               one-screen shape of contract S1 achievable at all.
+               ⚠️ CONTRACT P5 IS OUT OF DATE HERE, DELIBERATELY, AND 2B.10 OWES
+               THE AMENDMENT. P5 freezes "all 17 editable fields, in the field
+               order of #modal-prospect" and pins them in a numbered table.
+               Session 2B.17 replaced that order with MICHAEL'S OWN SHEET
+               (2026-09-02) and added `address` and `zip`, so this block now
+               holds 18 controls plus the tag chooser — 19 fields. He granted a
+               THIS-SESSION override at boot, 2026-09-03. Do not "restore" the
+               modal's order; the sheet is the newer decision.
+
+               THE GRID IS TWO COLUMNS with two explicit THREE-UP rows, not the
+               three even columns 2B.3 shipped. The row map is in the comment
+               directly above .pd-grid below.
 
                STATIC MARKUP, NOT BUILT BY JS, and that is deliberate. Every
                control has a stable id, so check_ids.py can see it, so the
@@ -1345,13 +1352,18 @@
                without being mistaken for fields.
 
                THE FIVE MODAL-ONLY FIELDS ARE HERE: seniority plus the four
-               conference fields. They are written by saveProspect() and read
-               back by openProspectModal() and displayed by NO OTHER SURFACE
-               in the app. Until this session, a conference name was
-               unviewable and uneditable outside the Add/Edit modal.
+               conference fields. Seniority is about to become detail-view-only
+               — 2B.22 drops it from #modal-prospect and lets
+               deriveSeniority(title) fill it on save.
+
+               `address` and `zip` ARE EDITABLE NOWHERE ELSE until 2B.22.
+               Session 2B.21 created them and put them in all four non-deferred
+               CSV writers; this is their first and only UI.
 
                THE CONFERENCE FIELDS RENDER ALWAYS, blank or not (Michael,
-               2026-08-30). No collapsing, no "+ add conference" affordance.
+               2026-08-30). No collapsing, no "+ add conference" affordance —
+               and 2B.17 gave them a bordered <fieldset> rather than 2B.16's
+               disclosure, because he rejected collapse here in as many words.
 
                Metro's record key is `location`, NOT `metro`. Company's is
                `companyId` and the control holds the company NAME — the only
@@ -1362,47 +1374,59 @@
                pros-*. They must never be merged. -->
           <div id="prospect-detail-identity" class="detail-identity">
 
+            <!-- SESSION 2B.17 — MICHAEL'S SHEET, 2026-09-02. The DOM order
+                 below IS the sheet, top to bottom, and the grid is TWO
+                 columns with two explicit THREE-UP rows. Read it as rows:
+
+                   First | Last | Seniority      <- .pd-row-3up
+                   Job Title | Company
+                   Email | Phone
+                   LinkedIn | Address
+                   City | State | Zip            <- .pd-row-3up
+                   Metro | Associated Tags
+                   ---- conference group, full width, two paired rows ----
+                   Notes                          <- .pd-span-2
+
+                 THE TRACK COUNT IS PINNED AT TWO, never auto-fit. A count
+                 that reads off the review window ships a layout nobody
+                 reviewed (BUILD_NOTES, Session 2B.3). The three-up rows are
+                 nested grids spanning both tracks, which is the one scoped
+                 rule the plan's task 2 called for.
+
+                 ⛔ THE CONFERENCE GROUP IS A BORDERED GROUP, NOT A
+                 DISCLOSURE. Michael was offered collapse here on 2026-09-01
+                 and rejected it in as many words. Session 2B.16's company
+                 card collapses; this must not. The two surfaces look like
+                 they should match and deliberately do not. -->
             <div class="pd-grid">
-              <div class="form-group">
-                <label for="pd-first-name">First Name</label>
-                <input type="text" id="pd-first-name" data-pd-key="firstName" placeholder="John">
-              </div>
-              <div class="form-group">
-                <label for="pd-last-name">Last Name</label>
-                <input type="text" id="pd-last-name" data-pd-key="lastName" placeholder="Doe">
-              </div>
-              <div class="form-group">
-                <label for="pd-email">Email Address</label>
-                <input type="email" id="pd-email" data-pd-key="email" placeholder="john.doe@company.com">
-                <!-- Session 2B.7 / contract P6. Same refusal as the modal's,
-                     different consequence: here the field has already been
-                     reverted to its stored value when this appears, so the
-                     link is a plain navigation and discards nothing. -->
-                <div id="pd-email-warning" class="dup-email-warning hidden"></div>
+
+              <!-- ROW 1 — THREE-UP. Seniority sits here and NOT in the create
+                   modal (2B.22 drops it): this is the surface for correcting
+                   a guess, and deriveSeniority(title) supplies it at create. -->
+              <div class="pd-row-3up">
+                <div class="form-group">
+                  <label for="pd-first-name">First Name</label>
+                  <input type="text" id="pd-first-name" data-pd-key="firstName" placeholder="John">
+                </div>
+                <div class="form-group">
+                  <label for="pd-last-name">Last Name</label>
+                  <input type="text" id="pd-last-name" data-pd-key="lastName" placeholder="Doe">
+                </div>
+                <div class="form-group">
+                  <label for="pd-seniority">Seniority</label>
+                  <select id="pd-seniority" data-pd-key="seniority">
+                    <option value="C-Level">C-Level / Executive</option>
+                    <option value="VP">VP</option>
+                    <option value="Director">Director</option>
+                    <option value="Manager">Manager</option>
+                    <option value="Individual Contributor">Individual Contributor</option>
+                  </select>
+                </div>
               </div>
 
-              <div class="form-group">
-                <label for="pd-phone">Phone Number</label>
-                <input type="text" id="pd-phone" data-pd-key="phone" placeholder="+1 (555) 123-4567">
-              </div>
-              <div class="form-group">
-                <label for="pd-linkedin">LinkedIn URL</label>
-                <input type="url" id="pd-linkedin" data-pd-key="linkedin" placeholder="https://linkedin.com/in/janesmith">
-              </div>
               <div class="form-group">
                 <label for="pd-title">Job Title</label>
                 <input type="text" id="pd-title" data-pd-key="title" placeholder="VP of Engineering">
-              </div>
-
-              <div class="form-group">
-                <label for="pd-seniority">Seniority</label>
-                <select id="pd-seniority" data-pd-key="seniority">
-                  <option value="C-Level">C-Level / Executive</option>
-                  <option value="VP">VP</option>
-                  <option value="Director">Director</option>
-                  <option value="Manager">Manager</option>
-                  <option value="Individual Contributor">Individual Contributor</option>
-                </select>
               </div>
               <div class="form-group">
                 <label for="pd-company">Company</label>
@@ -1412,6 +1436,17 @@
                      it. A <datalist> resolves by id from anywhere in the
                      document, so this reaches it across the DOM. -->
                 <input type="text" id="pd-company" data-pd-key="companyId" placeholder="Stripe" list="companies-datalist">
+                <!-- SESSION 2B.17, review Finding 11. READ-ONLY DERIVED DISPLAY.
+                     It is NOT an 18th editable field: no data-pd-key, no
+                     commitProspectField() path, nothing stored. It shows the
+                     LINKED COMPANY's `website`, which is the free-form
+                     clickable one — `domain` is the hidden identity field and
+                     is displayed in exactly one place, the company modal.
+                     ⚠️ IT IS ALWAYS IN THE DOM, never removed, so this cell's
+                     height is a constant. Removing it on an empty value would
+                     make the Job Title / Company row change height as records
+                     change, which is the layout shift Ladder rung 2 forbids. -->
+                <div id="pd-company-url" class="pd-derived">—</div>
                 <!-- Session 2B.18. The detail view's half of the domain match.
                      Same rule set as the modal's #pros-company-match; the
                      CONSEQUENCE differs, because every control on this surface
@@ -1419,16 +1454,68 @@
                      and nothing is written until he picks. -->
                 <div id="pd-company-match" class="dup-email-warning hidden"></div>
               </div>
+
               <div class="form-group">
-                <label for="pd-city">City</label>
-                <input type="text" id="pd-city" data-pd-key="city" placeholder="San Francisco">
+                <label for="pd-email">Email Address</label>
+                <input type="email" id="pd-email" data-pd-key="email" placeholder="john.doe@company.com">
+                <!-- Session 2B.7 / contract P6. Same refusal as the modal's,
+                     different consequence: here the field has already been
+                     reverted to its stored value when this appears, so the
+                     link is a plain navigation and discards nothing. -->
+                <div id="pd-email-warning" class="dup-email-warning hidden"></div>
+              </div>
+              <div class="form-group">
+                <label for="pd-phone">Phone Number</label>
+                <input type="text" id="pd-phone" data-pd-key="phone" placeholder="+1 (555) 123-4567">
               </div>
 
               <div class="form-group">
-                <label for="pd-state">State</label>
-                <input type="text" id="pd-state" data-pd-key="state" placeholder="CA">
+                <!-- SESSION 2B.17, Finding 14. The INPUT stays an input — this
+                     is an edit-in-place surface and the URL must remain
+                     typable. The link is a separate affordance in the label
+                     row, hidden while the field is empty, so it can never
+                     offer to open nothing. href is built with
+                     ensureUrlProtocol(), the same helper the companies table
+                     and the company inspector already use. -->
+                <div class="pd-label-row">
+                  <label for="pd-linkedin">LinkedIn URL</label>
+                  <a id="pd-linkedin-open" class="text-btn pd-open-link hidden" href="#" target="_blank" rel="noopener noreferrer">↗ Open</a>
+                </div>
+                <input type="url" id="pd-linkedin" data-pd-key="linkedin" placeholder="https://linkedin.com/in/janesmith">
               </div>
               <div class="form-group">
+                <!-- SESSION 2B.21 made `address` and `zip` real persisted
+                     prospect fields and put both in all four non-deferred CSV
+                     writers. 2B.17 is the first surface that can edit them.
+                     ⚠️ `address` also exists on COMPANIES (#comp-address) and
+                     is a different field on a different record. -->
+                <label for="pd-address">Address</label>
+                <input type="text" id="pd-address" data-pd-key="address" placeholder="1200 Broadway, Suite 400">
+              </div>
+
+              <!-- ROW — THREE-UP -->
+              <div class="pd-row-3up">
+                <div class="form-group">
+                  <label for="pd-city">City</label>
+                  <input type="text" id="pd-city" data-pd-key="city" placeholder="San Francisco">
+                </div>
+                <div class="form-group">
+                  <label for="pd-state">State</label>
+                  <input type="text" id="pd-state" data-pd-key="state" placeholder="CA">
+                </div>
+                <div class="form-group">
+                  <label for="pd-zip">Zip</label>
+                  <input type="text" id="pd-zip" data-pd-key="zip" placeholder="37203">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <!-- METRO IS `location` RELABELLED, NOT A NEW FIELD. The
+                     directory's PROSPECTS_COLUMNS already ships
+                     { key: "metro", label: "Metro" } reading p.location; this
+                     makes the detail view agree with it. THE STORED KEY STAYS
+                     `location` — anything that assumes `metro` writes a field
+                     nothing reads. -->
                 <label for="pd-location">Metro</label>
                 <input type="text" id="pd-location" data-pd-key="location" placeholder="Bay Area">
               </div>
@@ -1440,29 +1527,49 @@
                 <div id="pd-display-tags" class="interactive-tags-container pd-tags"></div>
               </div>
 
-              <div class="form-group">
-                <label for="pd-conference-name">Conference Name</label>
-                <input type="text" id="pd-conference-name" data-pd-key="conferenceName" placeholder="AV Summit 2026">
-              </div>
-              <div class="form-group">
-                <label for="pd-conference-venue">Conference City / Venue</label>
-                <input type="text" id="pd-conference-venue" data-pd-key="conferenceVenue" placeholder="Nashville">
-              </div>
-              <div class="form-group">
-                <label for="pd-conference-start">Conference Start Date</label>
-                <input type="text" id="pd-conference-start" data-pd-key="conferenceStart" placeholder="March 3, 2026">
-              </div>
+              <!-- THE CONFERENCE GROUP. Full width, below, in two paired rows
+                   — his sheet, which overrides the original 2B.17 text's "off
+                   to the side". Always visible, never collapsed, never hidden.
+                   The <fieldset>/<legend> pair is used for the border because
+                   it is what a labelled group of controls actually is; the
+                   inputs keep their pd-* ids and their data-pd-key, so the one
+                   delegated listener reaches them with no change at all. -->
+              <fieldset class="pd-conference-group">
+                <legend class="pd-group-title">Conference</legend>
+                <div class="pd-conference-grid">
+                  <div class="form-group">
+                    <label for="pd-conference-name">Conference Name</label>
+                    <input type="text" id="pd-conference-name" data-pd-key="conferenceName" placeholder="AV Summit 2026">
+                  </div>
+                  <div class="form-group">
+                    <label for="pd-conference-venue">Conference City / Venue</label>
+                    <input type="text" id="pd-conference-venue" data-pd-key="conferenceVenue" placeholder="Nashville">
+                  </div>
+                  <div class="form-group">
+                    <label for="pd-conference-start">Conference Start Date</label>
+                    <input type="text" id="pd-conference-start" data-pd-key="conferenceStart" placeholder="March 3, 2026">
+                  </div>
+                  <div class="form-group">
+                    <label for="pd-conference-end">Conference End Date</label>
+                    <input type="text" id="pd-conference-end" data-pd-key="conferenceEnd" placeholder="March 5, 2026">
+                  </div>
+                </div>
+              </fieldset>
 
-              <div class="form-group">
-                <label for="pd-conference-end">Conference End Date</label>
-                <input type="text" id="pd-conference-end" data-pd-key="conferenceEnd" placeholder="March 5, 2026">
-              </div>
-              <!-- Notes spans the remaining two columns and is FIXED HEIGHT
-                   with internal scroll (scope Assumption 6), so a long note
-                   cannot grow the identity block and push the tab strip off
-                   the screen. resize is disabled for the same reason. -->
+              <!-- Notes spans both columns and stays FIXED HEIGHT with
+                   internal scroll (scope Assumption 6). The identity block is
+                   flex: 0 0 auto, so a growing Notes box would push the tab
+                   strip and the tab body off the bottom of the screen —
+                   exactly the shape contract S1 exists to prevent.
+                   SESSION 2B.17 ADDS THE POP-OUT instead of making the box
+                   taller: ⤢ Expand opens #modal-pd-notes, which writes back
+                   through commitProspectField() — the SAME single writer
+                   (contract P5). There is no second write path. -->
               <div class="form-group pd-span-2">
-                <label for="pd-notes">Notes</label>
+                <div class="pd-label-row">
+                  <label for="pd-notes">Notes</label>
+                  <button id="btn-pd-expand-notes" type="button" class="text-btn">⤢ Expand</button>
+                </div>
                 <textarea id="pd-notes" data-pd-key="notes" placeholder="Enter notes here..."></textarea>
               </div>
             </div>
@@ -3302,6 +3409,42 @@
   </div>
 
   <!-- Choose Tags Modal -->
+  <!-- SESSION 2B.17 — THE NOTES POP-OUT (original 2B.17 task 3, confirmed by
+       Michael at this session's boot). It exists so the identity block's Notes
+       box can stay FIXED HEIGHT: contract S1 gives the tab body whatever the
+       identity block does not take, so a growing textarea on that surface is a
+       shrinking tab body.
+
+       ⛔ IT IS NOT A SECOND WRITE PATH. Save calls commitProspectField(), the
+       ONLY writer for this surface (contract P5), and then repaints the inline
+       #pd-notes box itself — the writer deliberately does not repaint the
+       control a value came from, and here the value did not come from that
+       control. Cancel writes nothing at all.
+
+       It reads detailProspectId, never state.selectedProspectId. Those are two
+       different cursors and confusing them opens a third person's notes. -->
+  <div id="modal-pd-notes" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 760px; max-height: 85vh; display: flex; flex-direction: column;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 16px;">
+        <h3 style="margin: 0; font-size: 18px;">📝 Notes — <span id="pd-notes-modal-who">contact</span></h3>
+        <button id="btn-pd-notes-close-x"
+          style="background: none; border: none; color: var(--color-text-muted); font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+
+      <div class="form-group" style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; margin-bottom: 0;">
+        <label for="pd-notes-expanded" class="hidden">Notes</label>
+        <textarea id="pd-notes-expanded" placeholder="Enter notes here..."
+          style="flex-grow: 1; min-height: 320px; resize: none; line-height: 1.5;"></textarea>
+      </div>
+
+      <div class="modal-actions" style="margin-top: 20px; justify-content: flex-end; gap: 10px;">
+        <button id="btn-pd-notes-cancel" class="header-action-btn secondary-btn">Cancel</button>
+        <button id="btn-pd-notes-save" class="header-action-btn primary-btn">Save Notes</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-choose-tags" class="modal-overlay hidden">
     <div class="modal-card" style="max-width: 440px; max-height: 80vh; display: flex; flex-direction: column;">
       <div

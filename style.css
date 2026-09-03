@@ -4204,35 +4204,36 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
    If a dashed box appears on this panel again, something is re-adding it. */
 
 /* --------------------------------------------------------------------------
-   THE IDENTITY BLOCK — Session 2B.3, frozen contract P5.
+   THE IDENTITY BLOCK — Session 2B.3, REDESIGNED BY SESSION 2B.17.
 
-   THREE COLUMNS, chosen with the screen up (scope Assumption 3). The canvas
-   gives roughly 1,590px with the sidebar pinned and roughly 1,790px unpinned.
-   At three columns the 17 fields land in six rows and the whole block clears
-   the tab strip with room; at four they land in five rows but each field is
-   ~370px, which is narrower than the LinkedIn URLs and conference names this
-   app actually holds, and a truncating field on a record view is worse than
-   one more row. Three also degrades honestly: minmax(0, 1fr) plus the
-   auto-fit fallback below means the block reflows to two columns on a narrow
-   window without a media query of its own.
+   ⚠️ THE TRACK COUNT IS NOW TWO, NOT THREE, AND THAT IS MICHAEL'S SHEET
+   (2026-09-02), NOT DRIFT. Session 2B.3 shipped three even columns because it
+   was reflowing the create modal's field order to fit one screen. 2B.17
+   replaced that order with the sheet, which pairs the fields the way he
+   actually fills them in and marks exactly two rows as THREE-UP. Those two
+   are .pd-row-3up below — nested grids spanning both tracks, which is the one
+   scoped rule this needed rather than a second track count on .pd-grid.
 
-   minmax(0, 1fr) NOT 1fr. A bare 1fr track is min-content-sized, so one long
-   unbroken value (a LinkedIn URL, an email) widens its column and squeezes
-   the other two. The inputs already carry min-width: 0 from .form-group, and
-   this is the other half of that same fix.
+   THE COUNT IS PINNED, NEVER repeat(auto-fit, minmax(Npx, 1fr)). This is
+   Session 2B.3's own lesson and it still applies: auto-fit reads the track
+   count off whatever window is open, so the layout that gets screenshotted
+   and reviewed is not the layout that ships, and nothing in the measurement
+   says so. A track count that reads off the window is not a decision, it is
+   the absence of one. The breakpoint below is explicit for the same reason.
 
-   THE COUNT IS PINNED AT THREE, NOT repeat(auto-fit, minmax(280px, 1fr)).
-   That was this session's first draft and it is wrong: auto-fit gives THREE
-   columns in a 937px canvas and FIVE in the ~1,590px canvas this block is
-   actually specified against, so the layout that gets reviewed is not the
-   layout that ships. A track count that reads off the window is not a
-   decision, it is the absence of one. The two breakpoints below are the
-   graceful degradation, and they are explicit.
+   minmax(0, 1fr) NOT 1fr, everywhere. A bare 1fr track is min-content-sized,
+   so one long unbroken value (a LinkedIn URL, an email) widens its column and
+   squeezes the others.
 
-   THE BLOCK IS flex: 0 0 auto (set above with the tab strip): it is
-   content-height and never scrolls. That is only safe because Notes is
-   FIXED-HEIGHT — see #pd-notes. Every other control is one line by
-   construction, so this block's height is a constant six rows.
+   ⚠️ THE VERTICAL BUDGET IS THE WHOLE CONSTRAINT HERE AND IT IS EASY TO SPEND
+   BY ACCIDENT. The block is flex: 0 0 auto (set above with the tab strip):
+   contract S1 gives the TAB BODY whatever this block does not take. Two
+   columns means nine rows where three meant six, so 2B.17 also cut
+   .pd-grid .form-group's margin-bottom from 8px to 4px and left #pd-notes at
+   its original height rather than growing it — the ⤢ Expand pop-out
+   (#modal-pd-notes) is the answer to "I need more room", not a taller box.
+   ⛔ ANY RULE ADDED HERE THAT GROWS A ROW COMES STRAIGHT OUT OF THE TAB BODY.
+   Measure identity + strip + body against the panel before and after.
    -------------------------------------------------------------------------- */
 #view-prospect-detail .detail-identity {
   padding: 4px 2px 0;   /* not the scaffold's 16px: the panel already has
@@ -4242,30 +4243,84 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 
 .pd-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px 20px;
 }
 
-/* The breakpoints are on VIEWPORT width, and the canvas is roughly the
-   viewport minus the sidebar (280px pinned, 76px collapsed), so these are
-   deliberately generous: measured on 2026-08-31, a 1,269px window gives a
-   937px canvas and three 299px columns, which still holds a LinkedIn URL.
-   1,150 is the floor for that; below ~820 one column is the only honest
-   answer. .pd-span-2 collapses with the second one — a span of 2 in a
-   one-track grid silently overflows the row. */
-@media (max-width: 1150px) {
-  .pd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* THE THREE-UP ROW — First/Last/Seniority and City/State/Zip. It spans both
+   tracks of .pd-grid and re-divides that width into three, which is why two
+   different row shapes coexist with a single track count on the parent.
+   1 / -1 rather than `span 2` so it stays full width if the parent's count
+   ever changes again. */
+.pd-row-3up {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 20px;
 }
 
-@media (max-width: 820px) {
-  .pd-grid { grid-template-columns: minmax(0, 1fr); }
-  .pd-span-2 { grid-column: span 1; }
+/* THE CONFERENCE GROUP — full width, below, two paired rows.
+
+   ⛔ A BORDERED GROUP, NEVER A DISCLOSURE. Michael was offered collapse for
+   these four fields on 2026-09-01 and rejected it in as many words. Session
+   2B.16 made the Company tab's company card a disclosure and the two surfaces
+   look like they should match; they must not. The fields render always, blank
+   or not, and nothing here may set display: none on them.
+
+   <fieldset>/<legend> rather than a div plus a heading, because that is what
+   a labelled group of controls is. Both need their UA defaults zeroed —
+   fieldset ships its own margin/padding/border and legend its own padding and
+   inline-box behaviour, and leaving either in place puts a stray gap at the
+   top of the group that reads as a CSS bug. */
+.pd-conference-group {
+  grid-column: 1 / -1;
+  margin: 2px 0 6px;
+  padding: 4px 14px 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  min-width: 0;   /* a fieldset defaults to min-width: min-content, which
+                     overflows the grid track on a long conference name */
+}
+
+.pd-group-title {
+  padding: 0 6px;
+  margin-left: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-primary);
+}
+
+.pd-conference-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 20px;
+}
+
+/* ONE BREAKPOINT, AND IT IS LOWER THAN 2B.3's PAIR. The base is already two
+   columns, so the old 1150px "drop to two" step no longer has anything to do.
+   Below ~900px (the same width the sidebar's own mobile rule uses) every grid
+   in this block collapses to one track together — the three-up rows included,
+   because three 80px columns are not a layout.
+
+   ⚠️ THIS DOES NOT MAKE THE BLOCK FIT A SHORT WINDOW, AND NOTHING HERE CAN.
+   One column is TALLER, not shorter. On a short viewport the identity block
+   is simply bigger than the panel and #canvas-body scrolls — that is the
+   known S1 shortfall carried since 2B.3, and it is a HEIGHT problem wearing a
+   width problem's clothes. Do not add a third track count trying to fix it. */
+@media (max-width: 900px) {
+  .pd-grid,
+  .pd-row-3up,
+  .pd-conference-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* .form-group ships margin-bottom: 16px for the modals' stacked rows. In a
-   grid the gap owns the spacing, and both would double it. */
+   grid the gap owns the spacing, and both would double it. 2B.17 cut this
+   from 8px to 4px: nine rows instead of six, and every pixel here is a pixel
+   the tab body does not get. */
 .pd-grid .form-group {
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 /* Purple labels, matching #modal-prospect's — this view carries ProspectHub's
@@ -4278,7 +4333,49 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 }
 
 .pd-span-2 {
-  grid-column: span 2;
+  grid-column: 1 / -1;
+}
+
+/* SESSION 2B.17 — THE TWO READ-ONLY DERIVED DISPLAYS.
+
+   #pd-company-url (review Finding 11) shows the linked company's `website`.
+   It is ALWAYS in the DOM and ALWAYS one line tall, even when empty, so the
+   Job Title / Company row does not change height as records change — layout
+   shift on a record view is what Ladder rung 2 forbids. That is the entire
+   reason for the .is-empty variant instead of a `hidden` class.
+
+   #pd-linkedin-open (Finding 14) is the opposite case and hides when empty,
+   because it sits in the LABEL ROW, whose height is set by the label text —
+   removing it costs nothing and a link that opens nothing is worse than no
+   link. */
+.pd-derived {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  min-height: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pd-derived.is-empty {
+  color: var(--color-text-muted);
+}
+
+.pd-derived a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.pd-derived a:hover {
+  text-decoration: underline;
+}
+
+.pd-open-link {
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 /* The label and its ✏️ button share a line, so the tags cell keeps the same

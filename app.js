@@ -6706,38 +6706,69 @@ function renderProspectDetail() {
 
 /* --- P5: the identity block, and the single field writer -----------------
 
-   THE FIELD TABLE IS THE ONLY LIST OF THE 17. Nothing else in this block
+   ⚠️⚠️ SESSION 2B.17 REORDERED THIS TABLE AND ADDED TWO ROWS. IT NO LONGER
+   MATCHES FROZEN CONTRACT P5, AND THAT IS DELIBERATE — 2B.10 OWES THE
+   AMENDMENT.
+
+   P5 (parent plan line 167) reads "All 17 editable fields, IN THE FIELD ORDER
+   OF #modal-prospect" and pins them in a numbered table: Seniority 7,
+   Company 8, City/State/Metro 9-11, the conference fields 13-16.
+
+   The live order below is MICHAEL'S OWN SHEET, supplied 2026-09-02, and it
+   adds `address` and `zip` (created by Session 2B.21, which put them in all
+   four non-deferred CSV writers). He granted a THIS-SESSION override at boot
+   on 2026-09-03, naming the contract and the departure before task 1.
+   ⛔ DO NOT "restore" the modal's order. The sheet is the newer decision, and
+   2B.22 is about to reorder the MODAL to match it rather than the reverse.
+
+   THE FIELD TABLE IS STILL THE ONLY LIST. Nothing else in this block
    enumerates them: the fill loop reads it, and the commit path reads
-   data-pd-key off the control the user touched. Adding an 18th field is one
-   row here plus one .form-group in index.html.
+   data-pd-key off the control the user touched. A 19th field is one row here
+   plus one .form-group in index.html.
 
    `tags` is not in the table because it is not an <input> — it is a chip
    strip plus a chooser button, and it commits through the same writer from
-   saveChosenTags(). 16 controls + tags = the 17 of contract P5.
+   saveChosenTags(). 18 controls + tags = 19 fields.
 
-   TWO KEYS ARE NOT WHAT THEY LOOK LIKE, and both have burned this codebase
-   before:
+   TWO PIECES IN THIS BLOCK ARE NOT FIELDS AND MUST NEVER BE ADDED HERE:
+   #pd-company-url and #pd-linkedin-open. Both are READ-ONLY DISPLAYS derived
+   from something already stored — they have no data-pd-key, they store
+   nothing, and they are repainted by their own two sync functions below.
+
+   THREE KEYS ARE NOT WHAT THEY LOOK LIKE, and each has burned this codebase:
      · Metro's record key is `location`, NOT `metro`.
      · Company's control holds the company NAME; the record key is
        `companyId`. It is the one field that is not a straight assignment.
+     · `address` here is the PROSPECT's. Companies have their own `address`
+       (#comp-address) and it is a different field on a different record.
    ------------------------------------------------------------------------ */
 
 const PROSPECT_DETAIL_FIELDS = [
+  // Row 1 — THREE-UP
   { key: "firstName",       id: "pd-first-name" },
   { key: "lastName",        id: "pd-last-name" },
+  { key: "seniority",       id: "pd-seniority", fallback: "Individual Contributor" },
+  // Job Title | Company
+  { key: "title",           id: "pd-title" },
+  { key: "companyId",       id: "pd-company",   asCompanyName: true },
+  // Email | Phone
   { key: "email",           id: "pd-email" },
   { key: "phone",           id: "pd-phone" },
+  // LinkedIn | Address
   { key: "linkedin",        id: "pd-linkedin" },
-  { key: "title",           id: "pd-title" },
-  { key: "seniority",       id: "pd-seniority", fallback: "Individual Contributor" },
-  { key: "companyId",       id: "pd-company",   asCompanyName: true },
+  { key: "address",         id: "pd-address" },
+  // THREE-UP
   { key: "city",            id: "pd-city" },
   { key: "state",           id: "pd-state" },
+  { key: "zip",             id: "pd-zip" },
+  // Metro | Associated Tags (tags is not in this table — see above)
   { key: "location",        id: "pd-location" },
+  // The conference group, two paired rows
   { key: "conferenceName",  id: "pd-conference-name" },
   { key: "conferenceVenue", id: "pd-conference-venue" },
   { key: "conferenceStart", id: "pd-conference-start" },
   { key: "conferenceEnd",   id: "pd-conference-end" },
+  // Notes, full width
   { key: "notes",           id: "pd-notes" }
 ];
 
@@ -6768,7 +6799,81 @@ function renderProspectDetailIdentity(prospect) {
     el.value = prospect[f.key] || f.fallback || "";
   });
 
+  // SESSION 2B.17. The two READ-ONLY DERIVED DISPLAYS. They are repainted
+  // here on every record, and again from commitProspectField() when the field
+  // they derive from changes — never on any other commit.
+  syncProspectDetailCompanyUrl(prospect);
+  syncProspectDetailLinkedinLink(prospect);
+
   renderProspectDetailTags(prospect);
+}
+
+/* SESSION 2B.17 — review Finding 11. THE COMPANY URL, READ-ONLY AND DERIVED.
+
+   It shows the LINKED COMPANY's `website` — the free-form clickable field —
+   NOT `domain`. Those are two different things and the plan is explicit about
+   it: `domain` is the hidden normalised identity the email matcher matches
+   against and is displayed in exactly one place in the whole app, the company
+   modal. There is no field called `url`.
+
+   IT STORES NOTHING. No data-pd-key, no entry in PROSPECT_DETAIL_FIELDS, no
+   path through commitProspectField(). It is not an editable field and must
+   not become one — editing a company's website from a prospect's record would
+   be a second write path onto another entity.
+
+   ⚠️ THE ELEMENT IS ALWAYS PRESENT AND ALWAYS ONE LINE TALL, even when there
+   is nothing to show. Hiding it on an empty value would make the Job Title /
+   Company row change height from record to record, which is the layout shift
+   DIRECTIVES Ladder rung 2 forbids on a record view.
+
+   ⚠️ MOST COMPANIES HAVE NO `website` YET. 2B.13 seeds it going forward and
+   the back-fill of existing rows is deferred to Phase 2C, so an em-dash here
+   is the honest and expected state, not a defect. */
+function syncProspectDetailCompanyUrl(prospect) {
+  const el = document.getElementById("pd-company-url");
+  if (!el) return;
+  el.innerHTML = "";
+  const company = prospect && prospect.companyId
+    ? (state.companies || []).find(c => c.id === prospect.companyId)
+    : null;
+  const site = company ? String(company.website || "").trim() : "";
+  if (!site) {
+    el.textContent = company ? "— no website on file" : "—";
+    el.classList.add("is-empty");
+    return;
+  }
+  el.classList.remove("is-empty");
+  // createElement, not innerHTML: a company website is user-entered text and
+  // this block is rebuilt on every record.
+  const a = document.createElement("a");
+  a.href = ensureUrlProtocol(site);
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.textContent = site;
+  el.appendChild(a);
+}
+
+/* SESSION 2B.17 — review Finding 14. LINKEDIN AS A REAL LINK.
+
+   THE INPUT STAYS AN INPUT. This is an edit-in-place surface and the URL has
+   to remain typable, so the link is a SEPARATE affordance in the label row
+   rather than a swap of the control. It is hidden while the field is empty,
+   which is the whole point: a link that opens nothing is worse than no link.
+
+   href goes through ensureUrlProtocol(), the same helper the companies table
+   (3993) and the company inspector (4258) already use — Michael's stored
+   values are frequently bare hosts. */
+function syncProspectDetailLinkedinLink(prospect) {
+  const link = document.getElementById("pd-linkedin-open");
+  if (!link) return;
+  const raw = prospect ? String(prospect.linkedin || "").trim() : "";
+  if (!raw) {
+    link.classList.add("hidden");
+    link.removeAttribute("href");
+    return;
+  }
+  link.href = ensureUrlProtocol(raw);
+  link.classList.remove("hidden");
 }
 
 /* The chip strip. Its own function because commitProspectField() repaints
@@ -6844,6 +6949,10 @@ function commitProspectField(prospect, key, value) {
     // an existing "Stripe" visibly snaps to the stored casing rather than
     // leaving the screen disagreeing with the database.
     if (el && prospect.id === detailProspectId) el.value = getCompanyName(prospect.companyId) || "";
+    // SESSION 2B.17. The company URL derives from THIS field and from nothing
+    // else, so this is the one commit that repaints it. Still "repaint only
+    // what depends on the field" — the rule, not an exception to it.
+    if (prospect.id === detailProspectId) syncProspectDetailCompanyUrl(prospect);
     return;
   }
 
@@ -6883,6 +6992,14 @@ function commitProspectField(prospect, key, value) {
 
   if (prospect.id === detailProspectId && (key === "firstName" || key === "lastName")) {
     syncProspectDetailSubtitle(prospect);
+  }
+
+  // SESSION 2B.17. Same rule as the company URL above: the ↗ Open affordance
+  // derives from `linkedin` and from nothing else, so this is the one commit
+  // that repaints it. Typing a URL into an empty box must make the link
+  // appear without a re-render of the block.
+  if (prospect.id === detailProspectId && key === "linkedin") {
+    syncProspectDetailLinkedinLink(prospect);
   }
 }
 
@@ -6939,6 +7056,71 @@ function applyDetailCompanyLink(prospect) {
   }
 
   hideCompanyMatchNotice("pd-company-match");
+}
+
+/* --- SESSION 2B.17: THE NOTES POP-OUT ------------------------------------
+
+   WHY IT EXISTS. The identity block is flex: 0 0 auto by contract S1 — the
+   tab body gets whatever the block does not take. So the inline Notes box
+   cannot grow, and the honest answer to "I need more room to write" is a
+   bigger surface somewhere else, not a taller box on this one.
+
+   ⛔ IT IS NOT A SECOND WRITE PATH. Save calls commitProspectField(), the
+   ONLY writer for this surface (contract P5), and there is no assignment to
+   prospect.notes anywhere in these three functions. Cancel and ✕ write
+   nothing at all — no dirty state, no autosave, no "are you sure".
+
+   THE ONE THING THE WRITER DELIBERATELY DOES NOT DO IS REPAINT THE CONTROL A
+   VALUE CAME FROM, because normally the control IS where the user typed it.
+   Here it is not, so the inline #pd-notes box is repainted here, right after
+   the commit, by the caller — the same shape as the tag chooser.
+
+   It reads detailProspectId, NEVER state.selectedProspectId. Those are two
+   different cursors (Session 2B.4's lesson) and confusing them here would
+   save one person's notes onto another.
+   ------------------------------------------------------------------------ */
+function openProspectNotesModal() {
+  const prospect = detailProspectId
+    ? (state.prospects || []).find(p => p.id === detailProspectId)
+    : null;
+  if (!prospect) return;
+
+  const who = document.getElementById("pd-notes-modal-who");
+  if (who) {
+    const name = `${prospect.firstName || ""} ${prospect.lastName || ""}`.trim();
+    who.textContent = name || "(unnamed prospect)";
+  }
+
+  const big = document.getElementById("pd-notes-expanded");
+  // Seeded from the RECORD, not from the inline box: the inline box may hold
+  // an uncommitted keystroke, and this modal must never save something the
+  // database has not seen.
+  if (big) big.value = prospect.notes || "";
+
+  document.getElementById("modal-pd-notes")?.classList.remove("hidden");
+  if (big) big.focus();
+}
+
+function closeProspectNotesModal() {
+  document.getElementById("modal-pd-notes")?.classList.add("hidden");
+}
+
+function saveProspectNotesModal() {
+  const prospect = detailProspectId
+    ? (state.prospects || []).find(p => p.id === detailProspectId)
+    : null;
+  const big = document.getElementById("pd-notes-expanded");
+  if (!prospect || !big) { closeProspectNotesModal(); return; }
+
+  commitProspectField(prospect, "notes", big.value);
+
+  // The inline box, from the RECORD — commitProspectField() trims, so reading
+  // back the stored value is what keeps the two boxes and the database saying
+  // the same thing.
+  const inline = document.getElementById("pd-notes");
+  if (inline) inline.value = prospect.notes || "";
+
+  closeProspectNotesModal();
 }
 
 /* Delegated ONCE at boot onto #prospect-detail-identity. data-pd-key is the
@@ -14486,15 +14668,25 @@ function setupEventListeners() {
   // contract P2). It replays detailOrigin; it is NOT history.back().
   document.getElementById("btn-prospect-detail-back")?.addEventListener("click", closeProspectDetail);
 
-  // Identity block (Session 2B.3, contract P5). ONE delegated `change`
-  // listener on the container, bound once here, for all 16 input/select
-  // controls — the markup is static, so there is nothing to re-bind on a
-  // render and nothing that can double-fire. data-pd-key is the opt-in.
+  // Identity block (Session 2B.3, contract P5; redesigned 2B.17). ONE
+  // delegated `change` listener on the container, bound once here, for all 18
+  // input/select controls — the markup is static, so there is nothing to
+  // re-bind on a render and nothing that can double-fire. data-pd-key is the
+  // opt-in, which is why 2B.17's three-up wrapper divs and its <fieldset>
+  // needed no listener change at all: `change` still bubbles to the container
+  // and the controls still carry the attribute.
   document.getElementById("prospect-detail-identity")?.addEventListener("change", handleProspectDetailFieldChange);
   document.getElementById("btn-pd-edit-tags")?.addEventListener("click", () => {
     if (detailProspectId) openChooseTagsModalForProspectInspector(detailProspectId);
   });
   document.getElementById("btn-pd-delete-prospect")?.addEventListener("click", handleProspectDetailDelete);
+
+  // SESSION 2B.17 — the Notes pop-out. Three buttons, one write path, and the
+  // write path is commitProspectField() like everything else on this surface.
+  document.getElementById("btn-pd-expand-notes")?.addEventListener("click", openProspectNotesModal);
+  document.getElementById("btn-pd-notes-save")?.addEventListener("click", saveProspectNotesModal);
+  document.getElementById("btn-pd-notes-cancel")?.addEventListener("click", closeProspectNotesModal);
+  document.getElementById("btn-pd-notes-close-x")?.addEventListener("click", closeProspectNotesModal);
 
   // Tab strip (Session 2B.4, contract P4). ONE delegated `click` listener on
   // the static container, for all six buttons — the buttons themselves are
