@@ -1,161 +1,142 @@
 # AI Context
 
-**Updated:** 2026-09-03 12:50 (America/New_York) — session closed here.
+**Updated:** 2026-09-03 15:17 (America/New_York) — session closed here.
 
-**Last run:** Phase 2B / **Session 2B.22 — Add Prospect modal: field order, and Save and Open Contact.** Compartment: `#modal-prospect` only. Plan: `ai/phases/phase-2b-review-response-plan.md` **line 449**.
-**State:** `node --check app.js` clean · `check_ids.py` at its standing baseline of two (`{'export-backup-btn', 'restore-backup-input'}`) · `CACHE_NAME` **v123 → v124, CONFIRMED LIVE** (`caches.keys()` `['vantageprm-cache-v124']`, `controlled: true`, after four reloads) · `app.js` 17,052 → **17,180** / `index.html` 3,698 → **3,769** / `style.css` 4,862 → **4,939** · **console: 5 lines, one boot, ZERO errors** (`onlyErrors` empty; the one WARNING is the snapshot pruner, see Open items) · parked: ProspectHub, light theme, no modal, 6 companies / 4 prospects / 31 tasks · `localStorage` **28,941 bytes at open and 28,941 at close — byte-identical, no net data change** · git **COMMITTED AND PUSHED CLEAN — `50253cc`, `refs/heads/main` == `refs/remotes/origin/main`, verified by reading BOTH ref files after Michael ran it (13:01:50 and 13:01:53 EDT). Previous commit was `bd39305`.** ⛔ Git is always Michael-runs-it on this machine and that is settled — hand him the commands, do not go looking for a fourth door. BUILD_NOTES **§ Git, from a session with no shell** has all of it · deployed n/a.
-**Estimate vs actual:** sized **S / ~5 min / High**. **It ran M, not S** — the plan's four tasks were exactly as described, but the modal's own height turned out to be a fifth task nobody had scoped (see Assumption 1). Confidence was right. **Michael's time: ~2 minutes** — one boot question block of two, nothing since.
+**Last run:** Phase 2B / **Session 2B.15 — ProspectHub tag filter becomes the pop-out chooser.** Compartment: ProspectHub directory only. Plan: `ai/phases/phase-2b-review-response-plan.md` line 654. Finding 6. **Ran under the P8 revision Michael approved at the top of the session — the first frozen contract this phase has amended.**
+**State:** `node --check app.js` clean · `check_ids.py` at its standing baseline of two (`{'export-backup-btn', 'restore-backup-input'}`) · `CACHE_NAME` **v125 → v126, CONFIRMED LIVE** (`caches.keys()` `['vantageprm-cache-v126']`, `controlled: true`, and the tell that cannot lie — `typeof openProspectFilterChooseTagsModal` went `"undefined"` on reload 1 to `"function"` on reload 2) · `app.js` 17,188 → **17,346** · `index.html` 3,769 → **3,796** · `style.css` 4,939 → **4,926 (SMALLER — four dead rules deleted)** · **console: 5 lines, one boot, ZERO errors AND ZERO warnings** — the zero-byte-snapshot warning did **not** fire this time · **THE PRODUCTION DATABASE IS LOADED — 651 prospects / 1,090 companies** · `localStorage` **byte-identical across every filter operation (delta 0)** · git **UNCOMMITTED — `app.js`, `index.html`, `style.css`, `sw.js` and the `ai/` documents are outstanding, ON TOP OF 2B.14's uncommitted work. Last commit is still `50253cc`.** ⛔ Git is always Michael-runs-it on this machine; I did not run it. BUILD_NOTES **§ Git, from a session with no shell** · deployed n/a.
+**Estimate vs actual:** sized **M / ~8 min / Medium confidence**. **It ran M**, and the Medium was right for the wrong reason — the risk priced in was the modal being too entangled with *assigning* to serve *filtering*, and it was not entangled at all; the real work was making sure the five assign targets got their chrome back. **Michael's time: ~3 minutes** — one boot block of four questions, answered in one pass, and nothing since.
 
-**One-glance version tell:** open Add Prospect. **The primary button reads "Save and Open Contact", Job Title is full-width under the names, and there is a bordered CONFERENCE group.** If there is still a Seniority dropdown beside Job Title, you are on v123.
+**One-glance version tell:** ProspectHub Row 3. **It is a button reading "🏷️ Filter by Tag…", not a type-ahead box.** If you can type into it, you are on v125.
 
-## ⛔ THE P9 OVERRIDE — THIS IS THE THIRD OWED AMENDMENT. THIS HEADING IS WHERE TO FIND IT.
+## What was done
 
-**Frozen contract P9 ("What does not change", parent plan line 262) reads:** *"`#modal-prospect` is untouched and remains the create path."*
+Row 3 of the ProspectHub filter column stopped being the Advanced Query inline chip picker and became a **button onto the shared pop-out `#modal-choose-tags`** — the control MediaHub, CampaignHub, `#modal-prospect` and the prospect detail view already used. 2B.9's picker was the app's only outlier; that is the whole of Finding 6.
 
-**Session 2B.22 reordered that modal's markup, added `#pros-address` and `#pros-zip`, and removed `#pros-seniority` and `#pros-location`.** Michael granted a **this-session override at boot** (the review-response plan's standing procedure, lines 326–345: name the contract, quote the line, ask before task 1, never mid-run). He also confirmed, in the same block, that **Save and Open Contact REPLACES Save Contact** rather than sitting beside it.
+| Piece | What happened |
+| --- | --- |
+| `index.html` Row 3 | `<input>` + dropdown → one `<button id="btn-prospect-tag-filter">`. **Wrapper id `#prospect-tag-chooser` and `#prospect-tag-chips` unchanged.** |
+| `#modal-choose-tags` | ids added to the title, the hint and the create-a-tag block so filter mode can rewrite them |
+| `PROSPECT_TAG_PICKER` | `searchId` / `dropdownId` **removed**; `onChange` back to plain `renderProspectsView()` |
+| `tagSelectionTarget` | **sixth value, `"prospect-filter"`** — the only one that assigns nothing |
+| `applyChooseTagsModalMode()` | **new.** Sets title / hint / confirm label / create-block visibility from the target, **both branches exhaustive** |
+| `openProspectFilterChooseTagsModal()` | **new.** Ticks come from `aqPickerState`, options from `buildProspectTagFilterOptions()` — unchanged since 2B.9 |
+| `saveChosenTags()` | **new first branch.** Rebuilds the include Set, repaints chips, closes, re-filters. No `saveState()`, no record touched |
+| `setupEventListeners()` | `initAqPickers([PROSPECT_TAG_PICKER])` → button listener **+ `renderAqPickerChips(PROSPECT_TAG_PICKER)` once at boot** |
+| `style.css` | four now-dead rules **deleted**, not left; one new `.pt-filter-btn` rule |
 
-⚠️ **P9's "untouched" CLAUSE IS NOW FALSE AS WRITTEN.** The amendment 2B.10 owes is roughly: *"P9's `#modal-prospect` clause is superseded as to LAYOUT by Michael's sheet of 2026-09-02, applied by Session 2B.22: the field order is the sheet's, `address` and `zip` gained controls, and Seniority and Metro lost theirs. The 'remains the create path' half is unchanged and still holds — it is still the only create surface and must not be deleted as cleanup."*
-
-⛔ **2B.10 NOW OWES THREE AMENDMENTS, AND THIS IS THE LAST OF THEM: 2B.21's P9 (data), 2B.17's P5, and this one. ONE BATCH.**
-
-## What was done — the four plan tasks, plus one the plan did not have
-
-1. **The `.form-group`s reordered to the sheet**, `#pros-address` and `#pros-zip` added, `#pros-seniority` and `#pros-location` removed. **Every surviving id is byte-identical; only the order moved.**
-2. **All four reads of the two removed controls are gone** — two in `openProspectModal()` (edit + create branch), two in `saveProspect()`. ⛔ **And the two WRITES with them** — see the two warnings below, which are the whole risk of this session.
-3. **`deriveSeniority(titleVal)` fills `seniority` on CREATE only.**
-4. **`saveProspect()` now RETURNS the saved id or a falsy value**, and `saveProspectAndOpen()` is the new listener on `#pros-modal-confirm`.
-5. ⚠️ **NOT IN THE PLAN: the modal card had to be given its own scroll.** See Assumption 1.
+**Untouched, and proved so:** `renderAqInspectorDrawer()`, every `aq-insp-*` id, `runCampaignQuery()`, `exportAqRecordsCSV()`, `resetAllAqPickers()`, `AQ_PICKERS`, and `renderProspectsView()` — which has now survived three different widgets in Row 3 without a line changing.
 
 ## Verified — real output, not a claim
 
-**THE ROW MAP, read out of the LIVE DOM by grouping every labelled control in the card by its y-position. This IS his sheet:**
+**THE ADVANCED QUERY MODAL IS BYTE-FOR-BYTE UNCHANGED.** Old and new files hashed over the whole `#modal-advanced-query` markup and over the entire `AQ_PICKERS` → `initAqPickers()` span of `app.js`:
 
 ```
-pros-first-name | pros-last-name
-pros-title
-pros-company
-pros-address
-pros-city | pros-state | pros-zip          <- .form-row-3up, tracks 143.1 | 143.1 | 143.1
-pros-email
-pros-phone
-pros-linkedin
-pros-conference-name | pros-conference-venue   <- inside the bordered <fieldset>
-pros-conference-start | pros-conference-end
-pros-display-tags
-pros-notes
+index.html  <div id="modal-advanced-query"> … <div id="modal-choose-tags">
+   old sha256[:16] 112d6c020eeb9c47  85161 bytes
+   new sha256[:16] 112d6c020eeb9c47  85161 bytes     IDENTICAL: True
+app.js      const AQ_PICKERS = [ … end of initAqPickers()
+   old sha256[:16] 5e0a463509f7ddae  17128 bytes
+   new sha256[:16] 5e0a463509f7ddae  17128 bytes     IDENTICAL: True
+renderAqInspectorDrawer / runCampaignQuery / exportAqRecordsCSV / resetAllAqPickers
+                                                    IDENTICAL: True (all four)
+every 'aq-insp-*' string, app.js 43 / index.html 25  SAME SEQUENCE: True
+live: AQ_PICKERS.length 5 · all five search inputs, dropdowns and chip rows present
+      AQ_PICKERS.includes(PROSPECT_TAG_PICKER) === false
 ```
 
-**THE CHECK THAT MATTERS — `location` SURVIVES AN EDIT-AND-SAVE. And it is a test that CAN fail, because the record was really changed:**
+**PARITY — the pop-out against the accessor's Sets set directly, on the production database:**
 
 ```
-SAVE_REALLY_RAN     phoneBefore "+1 (555) 321-4567" -> phoneAfter "2B22-PHONE-MARKER"
-                    phoneInLocalStorage "2B22-PHONE-MARKER"
-LOCATION_SURVIVED   before "San Francisco, CA"  after "San Francisco, CA"
-                    inLocalStorage "San Francisco, CA"   identical: true
-city "" state "" zip "37203" address "1200 Broadway, Suite 400"
-```
-⚠️ **A SAVE-UNCHANGED TEST WOULD HAVE PROVED NOTHING HERE, AND I RAN THAT ONE FIRST AND THREW IT AWAY.** Jane's record is byte-identical before and after an unchanged save, so "location is still there" passes whether or not `saveProspect()` ever ran. **The marker in a second field is what makes the location check evidence.**
-
-**SENIORITY IS NOT RE-DERIVED ON EDIT — proved with a value the heuristic cannot produce:**
-
-```
-title "Developer Advocate"   whatDeriveWouldSay "Individual Contributor"
-hand-corrected to "C-Level"  ->  after a full modal save: "C-Level"   in localStorage: "C-Level"
-HAND_CORRECTION_SURVIVED: true      locationStillIntact "San Francisco, CA"
+direct (aqPickerState.include = {Auto-eight, Tumbler}; renderProspectsView())
+   terms ['7-7-26 auto-eight','tumbler audience']   contacts 11   companies 10
+pop-out (btn-prospect-tag-filter.click() -> tick both -> tags-modal-confirm.click())
+   terms ['7-7-26 auto-eight','tumbler audience']   contacts 11   companies 10
+   chips ['7-7-26 Auto-eight','Tumbler Audience']   modal closed: true
 ```
 
-**BOTH REFUSALS REFUSE, AND NEITHER NAVIGATES:**
+Both driven through the **real buttons**, not the functions behind them. The numbers match 2B.14's recorded 11/10 exactly.
+
+**ROUND TRIP, UNTICK, CHIP ✕, CANCEL, AND THE STORAGE PROOF:**
 
 ```
-P6 DUPLICATE EMAIL (create, different case: "JANE.SMITH@STRIPE.COM")
-  notice: "That email is already on file for Jane Smith — Stripe. Open Jane Smith Nothing was saved."
-  modalStillOpen true   samePanelAsBefore true   prospects 4 -> 4   companies 6 -> 6
-  typedDataStillInForm "Dup / JANE.SMITH@STRIPE.COM"
-
-2B.18 COMPANY CONFLICT (email @stripe.com, box typed "Totally Different Co")
-  notice: "stripe.com belongs to Stripe. Link to Stripe  Keep Totally Different Co  Nothing was linked."
-  modalStillOpen true   samePanelAsBefore true   prospects 5 -> 5   companies 6 -> 6
-
-THEN ANSWERING IT SAVES *AND* NAVIGATES  <- the wrapper in the picker callback
-  clicked "Link to Stripe" -> created pros-1788453889000, company "Stripe", companies 6 -> 6
-  activePanel "view-prospect-detail"   detailProspectId === the new id   subtitle "Conflict Test"
+reopen -> checked ['7-7-26 Auto-eight','Tumbler Audience']   (reflects what is filtering now)
+untick Tumbler -> Apply   terms ['7-7-26 auto-eight']  contacts 11  companies 10  chips 1
+chip ✕                    terms []                     chips 0
+open, tick, CANCEL        terms []                     chips 0     (cancel applies nothing)
+localStorage delta across all of the above: 0 bytes
 ```
 
-**THE CREATE BRANCH, END TO END (throwaway record, later removed):**
+**ALL THREE CLEAR ROUTES:**
 
 ```
-id pros-1788453859681           prospects 4 -> 5    companies 6 -> 6 (no company minted)
-title "VP of Sales" -> seniority "VP"   matchesDerive: true
-address "  99 Throwaway Rd  " -> "99 Throwaway Rd"  (trimmed by the writer)
-city "Nashville"  state "TN"  zip "37203"
-location ""  typeof "string"  hasOwnKey true      <- seeded, NOT undefined
-2B.18 BLUR AUTOFILL STILL FIRES: company box "" -> "Stripe" on a real blur event
-NAVIGATED: activePanel "view-prospect-detail", detailProspectId === the new id,
-           detailOrigin {"view":"prospects",...}, modalHidden true
+Clear Filters       -> terms [] chips 0
+See All Contacts    -> terms [] chips 0
+See All Companies   -> terms [] chips 0
 ```
 
-**CONTRACT S1 / THE SEVEN-PANEL SWEEP, after a full reload at 1710×1178:**
+**THE ASSIGN-MODE REGRESSION CHECK — the one this session could most easily have shipped:**
 
 ```
-dashboard | prospects | media | campaigns | tasks | data-management | prospect-detail
-all seven: active-panel true, height 1010.67px (DEFINITE, not auto), min-height 0px
-document.getAnimations().length 0 before every measurement
+openChooseTagsModal(media[0])              title '✏️ Choose Associated Tags'
+                                           confirm 'Save Tags'   create block hidden: false
+openChooseTagsModalForProspectInspector()  title '✏️ Choose Associated Tags'
+                                           confirm 'Save Tags'   create block hidden: false
+filter mode                                title '🏷️ Filter by Tag'
+                                           confirm 'Apply Filter' create block hidden: true
 ```
 
-| Check | Result |
-| --- | --- |
-| Order, both themes | Screenshotted. Edit (Jane) in light + dark; empty create modal in light |
-| Real listener | `#add-prospect-btn` still opens it — heading "Add New Prospect", all 16 fields blank |
-| Console | **5 lines, one boot, zero errors.** `onlyErrors` empty |
-| `node --check` / `check_ids.py` | Clean parse; `Missing IDs: {'export-backup-btn', 'restore-backup-input'}` — the baseline pair exactly |
-| Jane restored | Byte-identical to her opening JSON (`restored: true`), keys the original lacked deleted |
-| `localStorage` bytes | **28,941 at open, 28,941 at close.** No net data change |
+**THE `addChooseTagsNewTag()` GUARD — it must write nothing in filter mode:**
+
+```
+clicked #btn-dash-add-tag AND called addChooseTagsNewTag() with "ZZ-should-never-be-created"
+   prospect_tags delta 0 · media_tags delta 0 · localStorage delta 0 · any tag named ZZ-: false
+```
+
+**EMPTY STATE:** filter mode renders *"No tags are in use yet. Tag a contact or a company and it becomes a filter option here."*; assign mode still renders a blank grid with the create box beneath it. Both read back from the live DOM.
+
+**KEYBOARD** (authoring habit, not Gate F): the button is a real `<button>`, `focus()` lands on it (`activeElement.id === "btn-prospect-tag-filter"`), the rows are real `<input type=checkbox>` inside `<label>`, and there is **no positive `tabindex` anywhere in the modal**.
+
+**BOOT AFTER RELOAD:** 5 console lines, zero errors, zero warnings; `terms []`, chips container empty; `#view-prospects` active; 651 / 1,090.
+
+**SCREENSHOTS:** hub with two chips and Contacts (11) / Companies (10), and the pop-out open with both ticked — **both themes**, `document.getAnimations().length === 0` before each (transition kill-switch injected).
 
 ## Assumptions logged this session
 
-1. ⚠️⚠️ **THE MODAL CARD NOW SCROLLS ITSELF, AND THIS WAS NOT IN THE PLAN. MEASURED BEFORE ANY MARKUP MOVED: at `innerHeight` 884 the card was ALREADY 869px tall, 8px from each edge, and NOTHING sets `overflow` on `.modal-overlay` or `.modal-card`.** The sheet turns four paired fields into full-width singles (+2 rows), so the card would have grown past the viewport with `align-items: center` clipping BOTH ends — First Name off screen, unreachable at any scroll position. `#modal-prospect .modal-card { max-height: calc(100vh - 24px); overflow-y: auto }`, scoped by id because `.modal-card` is shared by every modal in the app. **A/B'd at his shorter height, since `resize_window` does not work here: forcing `max-height: calc(884px - 24px)` clamped the card to 860px, `scrolls: true`, and both First Name and Notes reachable; removing the override restored 1042px and `scrolls: false`.**
-2. **`#modal-prospect .form-group` margin-bottom cut 16px → 10px.** Twelve rows of 16px is 192px of pure gap; 6px back per row is ~72px and a shorter scroll. Purely a vertical-budget trim, scoped by id. **Reverting costs scroll distance and nothing else.**
-3. ⛔ **`p.seniority` IS NOT ASSIGNED ON THE EDIT BRANCH.** The plan's task 3 says "`deriveSeniority(title)` fills `seniority` on save"; taken literally on BOTH branches that overwrites a hand-correction made in the detail view — which the plan itself calls "the surface for correcting a guess" — with a guess off the job title. **Create only.** `ensureStateDefaults()`'s `if (!p.seniority)` still fills a record that never had one.
-4. **`location` IS SEEDED `""` ON CREATE though it is not assigned on edit.** A brand-new record has no geography to destroy, and there is no `p.location` default in `ensureStateDefaults()` — every reader is written `p.location || ""` — so omitting it entirely would mint the one record in the file holding `undefined` where the rest hold a string. The plan's "never write the field at all" is about the EDIT branch.
-5. **`resolveCompanyByName(compVal, email, "")` — the third argument is now always empty.** It seeds a new company's `location` and used to carry the Metro box. `[city, state]` was refused for 2B.13's reason: a contact's city is not their employer's location, so "Unknown" is an honest empty and "San Francisco, CA" on a Chicago company is a confident wrong answer. Ladder rung 2. **Company location stays editable in the company modal.**
-6. **The conference group is a `<fieldset class="modal-fieldset">`, its OWN rule set, not `.pd-conference-group`.** Same values, but that class carries `grid-column: 1 / -1` for the identity grid and its title takes `--color-primary`, which inside a modal is whichever hub is behind the overlay.
-7. **`saveProspectAndOpen()` always passes `{ view: "prospects" }`.** Three of the detail view's four entry points come from there and `#add-prospect-btn` lives there.
+1. **The empty-state wording is mine and is the one thing Michael has not seen in words.** He decided the button label ("Apply Filter") and the create-block (hidden); the plan's third "needs my eyes" item was the empty state, and stopping again for one muted sentence was not worth a round trip. **Filter mode only** — the five assign targets keep their existing blank grid, which keeps this inside ProspectHub. One line to change.
+2. **`searchId` / `dropdownId` were REMOVED from the config rather than left as dangling ids.** Every shared function that reads them already guards, so their absence is a no-op; leaving two ids pointing at elements that no longer exist is the shape a later session mistakes for a bug.
+3. **`initAqPickers([PROSPECT_TAG_PICKER])` was removed rather than left to return early.** It would have registered a document-level click listener that can never do anything. Its one still-useful effect — painting the chips at boot — is now an explicit `renderAqPickerChips()` call on the next line.
+4. **The AQ modal was proved unchanged statically, and deliberately not clicked into.** Byte identity over the whole modal, the whole shared-function span and all four AQ functions is stronger evidence than opening it, and the standing instruction is that both query surfaces stay DEFERRED.
 
 ## Backup coverage — DIRECTIVES §4
 
-**NO NEW STORE, NO NEW FIELD, NO NEW KEY, NO MIGRATION. This session is UI plus one return value.** `address` and `zip` were persisted, migrated and given columns in both prospect CSV writers by **2B.21**; every field this modal writes was already covered. **`ensureStateDefaults()`, `wipeAllData()`, every CSV writer and the whole restore path are BYTE-UNCHANGED.** No new `localStorage` key, no new IndexedDB store.
-
-⚠️ **AND THE COVERAGE MOVED THE OTHER WAY TOO, WHICH IS THE ONLY THING HERE WORTH A SECOND LOOK: two fields lost their only modal writer.** `seniority` and `location` are still exported, restored and displayed — they are simply no longer editable from this surface. `location` is editable in the detail view (Metro); `seniority` likewise. Neither is orphaned.
-
-**One ZIP landed in the real backup folder before any markup moved** (`queryPermission({mode:"readwrite"})` `"granted"`): **`vantage_data_backup_9-3-26_1230.zip` — 22,585 bytes, written 12:30:41 PM — the rollback point for this session.** No closing ZIP was taken because no data changed (28,941 bytes in, 28,941 out).
+**NO NEW STORE, NO NEW FIELD, NO NEW KEY, NO MIGRATION, NO RECORD WRITTEN.** The filter's selection lives in `aqPickerState`, module scope, deliberately not persisted (contract P9) — it clears on reload, exactly as the inline picker did. `ensureStateDefaults()`, `wipeAllData()`, every CSV writer and the whole restore path are **byte-unchanged**. **Proved rather than asserted: `localStorage` delta 0 across an apply, an un-tick, a chip removal and the new-tag guard test.** No manual ZIP was taken and none was required — the run sheet's backup points do not list this session.
 
 ## Open items
 
-- **⚠️ NEEDS YOUR EYES — three, all decided, all reversible:**
-  1. **The modal scrolls on a short window** (Assumption 1). At your 1178px window it does not scroll at all; at 884px it does. There is no version of your sheet that fits 884px unscrolled.
-  2. **Seniority is not re-derived when you edit an existing contact** (Assumption 3). Change someone's job title in the modal and their Seniority stays as it was. Say the word and it becomes one line.
-  3. **A new company created from this modal gets `location: "Unknown"`** (Assumption 5), where typing a Metro used to seed it.
-- ⚠️ **REAL-MOUSE CLICKS FROZE CDP TWICE THIS SESSION AND THE APP WAS FINE BOTH TIMES.** Console read 5 lines, one boot, zero errors while `Runtime.evaluate` and screenshot injection were both timing out; one `navigate` recovered it each time. **The screenshot↔CSS scale is `css × (screenshotWidth ÷ innerWidth) × devicePixelRatio` = 0.585 here, NOT the 0.781 that BUILD_NOTES' formula gives** — a click computed the old way landed off screen. BUILD_NOTES carries the corrected arithmetic. **Nothing in the app is implicated; do not go looking for a bug.**
-- ⚠️ **ONE SNAPSHOT FILE WAS WRITTEN ZERO-BYTE AND THE PRUNER CLEANED IT UP.** `[Snapshot] Ignoring 1 zero-byte snapshot file(s) — truncated writes, not snapshots.` then `Pruned 1 file(s) — 1 zero-byte, 0 aged out. 15 kept.` at 12:37:10. Self-healing and pre-existing, but **a truncated snapshot write is a Tier-1 recovery event** and it is the second thing on the snapshot pile with the chip defect. Not mine; not investigated.
-- **⚠️ THE PRODUCTION DATABASE IS STILL NOT LOADED.** 4 prospects / 6 companies. The duplicate-domain report has still never run against a real duplicate cluster, and it is still the cheapest thing you can do next.
-- **Still owed by you:** the **P8 revision** (gates 2B.15) · and **Finding 10d's meaning** in one word.
-- **⛔ THE IMPORT NOT WRITING `notes` IS DELIBERATE — ASKED AND ANSWERED 2026-09-03.** Not a defect. Only the SHAPE is open: `ensureStateDefaults()` has no `p.notes` default, so imported records hold `undefined` where others hold `""`. Cosmetic, unowned. **BUILD_NOTES carries the full entry.**
-- **`domain` IS STILL DISPLAYED IN EXACTLY ONE PLACE: the company modal** — plus the duplicate-domain report. ⚠️ **`#pd-company-url` shows `website`, NOT `domain`.**
-- **Phase backlog:** the cosmetic `p.notes` shape default; **a `p.location` shape default, now that the create path seeds it by hand (Assumption 4)**; the uniqueness guard on the company edit path; the snapshot chip display defect (`renderSnapshotHealthChip()` / `computeSnapshotState()`, and 2B.10's "confirmed green snapshot" gate is unsatisfiable as written); the headquarters duplication question needs the production database; ZIP restore reports 1 orphaned task on a round trip; `.col-resize-handle` keeps the stock cursor; the §4 back-fill of existing `"domain.com"` and slug rows, deferred to Phase 2C's collision report.
-- **Carried, unchanged:** `#btn-see-all-contacts` does not exist (it is `btn-show-all-contacts`). Both `forceShowAll*` true blanks the directory. CampaignHub identifies itself twice. Dashboard/DataHub emptiness is `renderDashboardView()`'s `slice(0, 5)`. MediaHub's tag rail off the right edge. `.checkbox-scroller` inline `max-height: 350px`. `.tags-filter-scroller` `max-height: 400px`. `state.columnLayouts.taskhub.widths` carries `firstName: 0` and `lastName: 0`.
+- **⚠️ NEEDS YOUR EYES — three things, all one-liners.** (1) The **empty-state sentence** above, the only wording you have not approved. (2) The **button label "🏷️ Filter by Tag…"** and its left-aligned 400px shape against the two placeholder-only rows above it. (3) Whether the pop-out should show a **count** on the button when tags are selected — the chips already say it, so I did not add one.
+- **⚠️ TWO SESSIONS ARE NOW UNCOMMITTED.** 2B.14's `app.js`/`sw.js` plus this session's four files, all against `50253cc`. You declined the commit at boot; it is a bigger diff every session.
+- ⚠️ **THE ZERO-BYTE SNAPSHOT WARNING DID NOT FIRE THIS TIME.** Three sessions running it appeared; this boot's console was clean of it. **Not fixed by anything here — nothing this session touched goes near the snapshotter.** Treat it as intermittent rather than resolved, which is a slightly worse fact than "it happens every boot".
+- **The snapshot chip still reads "Not protected"** with a snapshot from 14:55:17 on disk — visible in both screenshots. Same display defect, still on the backlog.
+- **Still owed by you:** the **2B.17 layout design** — no, that is unblocked; the remaining items are **Finding 10d's meaning** in one word, **`LA` = Louisiana or Los Angeles** (2B.11), and three carried cosmetics from 2B.4 raised twice. **The P8 revision is DONE and applied.**
+- **⛔ 2B.10 OWES FIVE AMENDMENTS NOW, IN ONE BATCH:** 2B.21's P9 (data), 2B.17's P5, 2B.22's P9 (`#modal-prospect` layout override), Finding 5's note that 2B.14 REVERSES what 2B.9 verified, **and now the P8 revision itself — a frozen contract was amended mid-phase with your approval, and the close should record that it was authorised rather than drifted.**
+- **⚠️ THE ACCEPTANCE TAG IS `7-7-26`, NOT `7-7-28`, IN ALL THREE PLANNING DOCUMENTS.** Carried; a one-character correction owed at 2B.10. Confirmed again this session — `buildProspectTagFilterOptions()` offers `7-7-26 Auto-eight` and nothing containing 7-7-28.
+- **⚠️ RAISED AFTER THIS SESSION CLOSED, AND IT IS A SCOPING GAP RATHER THAN A DEFECT.** Michael reported Advanced Query still AND-ing tags; **it was a stale build in his own window** (confirmed by him). But chasing it surfaced something real: **ProspectHub OR-s prospect and company tags because they share one picker, while Advanced Query splits them across the chip picker and the `#aq-p-company-tags` TEXT FIELD and therefore AND-s them** — the same two tags, opposite results, both behaving as designed. The text field also has no exclude half. **On the backlog; needs a decision, not a fix.** See BUILD_NOTES § Tag filter semantics.
+- **Phase backlog:** the cosmetic `p.notes` shape default; a `p.location` shape default; the uniqueness guard on the company edit path; the snapshot chip display defect; ZIP restore reports 1 orphaned task on a round trip; `.col-resize-handle` keeps the stock cursor; the §4 back-fill of existing `"domain.com"` and slug rows; the missing `<link rel="icon">`.
+- **Carried, unchanged:** `#btn-see-all-contacts` does not exist (it is `btn-show-all-contacts`). Both `forceShowAll*` true blanks the directory. CampaignHub identifies itself twice. MediaHub's tag rail off the right edge. `state.columnLayouts.taskhub.widths` carries `firstName: 0` and `lastName: 0`.
 - **Unchanged from Phase 1:** `parseCSVRow()` `""` gap; repo is PUBLIC; DIRECTIVES §0 compliance undecided; stale `..\backups\`; `schema_update.sql` still deletable.
 
 ## Files changed
 
-**Code:** `app.js` (17,052 → **17,180**, +128, of which roughly 95 are comment), `index.html` (3,698 → **3,769**, +71, of which roughly 55 are comment), `style.css` (4,862 → **4,939**, +77, of which roughly 45 are comment), `sw.js` (**v123 → v124**, one deploy — the second bump was budgeted and not needed).
+**Code:** `app.js` (17,188 → **17,346**), `index.html` (3,769 → **3,796**), `style.css` (4,939 → **4,926**), `sw.js` (**v125 → v126**, one bump, and it held).
 
-**Documents:** `ai/AIContext.md`, `ai/archive/2026-09-03_1250_AIContext.md` (new), `ai/BUILD_NOTES.md`.
+**Documents:** `ai/AIContext.md`, `ai/archive/2026-09-03_1517_AIContext.md` (new), `ai/BUILD_NOTES.md`, **`ai/phases/phase-2b-prospect-detail-view.md` (§P8 REVISED, session order)**, `ai/phases/phase-2b-review-response-plan.md` (2B.15 done, owed-item 1 closed, the three decisions recorded).
 
-**No `DECLARATIONS.md` or `DECISIONS.md` change.**
+**No `DECLARATIONS.md` or `DECISIONS.md` change.** ⚠️ **2B.10 should consider one:** a phase plan's frozen contract was formally revised mid-phase for the first time, and `DECISIONS.md` has no entry describing how that is done.
 
 ## Next step
 
-**2B.14.** Then **2B.15**, **2B.11**, **2B.12** · **2B.10**, **ALWAYS LAST** — and 2B.10 opens by writing the **three owed amendments** (2B.21's P9, 2B.17's P5, 2B.22's P9) in one batch.
-✅ **Nothing outstanding in git** — 2B.22 is committed and pushed at `50253cc`, so 2B.14 starts from a clean tree.
+**2B.19 — Add Company: the front door and the domain normaliser.** Unblocked; the 2B.13 exception covers it; it builds what 2B.18 consumes. **2B.11, 2B.12, 2B.17 and 2B.22 are also unblocked** — 2B.22 wants the P9 waiver. **2B.10 is ALWAYS LAST**, and it opens by writing the five owed amendments in one batch.
 
-**Carry forward:** the `🧱 HUB SHELL` block stays LAST in `style.css`. `#canvas-body` is never edited. `state` is not `window.state`; `activeView` is not a global — read `.active-panel`. `state.selectedProspectId` and `detailProspectId` are two cursors. No routing, ever. `switchView()` calls `saveState()` — **do not navigate inside a byte-comparison window.** Inject the transition kill-switch after every reload **and after every theme toggle**. The theme button is **`#theme-toggle-btn`**, not `#theme-toggle`. `resize_window` does not work on this machine **and neither does `documentElement.style.zoom`** — A/B a viewport constant with an injected `!important` rule instead, which worked cleanly this session. **Both query surfaces stay DEFERRED — `renderAqInspectorDrawer()`, the `aq-insp-*` ids, the Audience Query Engine and `exportAqRecordsCSV()` are untouched; the AQ drawer's `openProspectModal()` call at ~9884 now inherits Save-and-Open's navigation, which is known and accepted.** `PROSPECT_DETAIL_TABS` is deliberately out of order versus P4. A native `<datalist>` popup freezes the renderer to CDP; one `navigate` clears it. **`el.dispatchEvent(new MouseEvent("click", …))` exercises the real shipped listener and never freezes CDP — prefer it to a real mouse click for functional proof, and keep real clicks for layout screenshots only.** **`wipeIndexedDB()` clears only the `files` store, NOT `handles`** — the backup-folder handle survives a full wipe.
+⚠️ **COMMIT.** Two sessions' work is outstanding against `50253cc`.
+
+**Carry forward:** the `🧱 HUB SHELL` block stays LAST in `style.css`. `#canvas-body` is never edited. `state` is not `window.state`. `state.selectedProspectId` and `detailProspectId` are two cursors. No routing, ever. `switchView()` calls `saveState()` — **do not navigate inside a byte-comparison window.** Inject the transition kill-switch after every reload and after every theme toggle. The theme button is **`#theme-toggle-btn`** — **put the theme back the way you found it before you finish**; this session left it light, as it found it. `resize_window` does not work on this machine. **`setAdvancedQueryTarget()` takes `"prospect"` / `"company"` — SINGULAR.** **Both query surfaces stay DEFERRED.** `wipeIndexedDB()` clears only the `files` store, NOT `handles`. **A new top-level function name is the cheapest honest version probe there is** — `toString()` lies in both directions, a new global cannot.

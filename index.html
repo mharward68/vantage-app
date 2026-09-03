@@ -270,31 +270,43 @@
 
                 <!-- Row 3: Tags.
 
-                     SESSION 2B.9 / contract P8. This was a native
-                     `<select multiple size="1">` carrying the last three
-                     inline event handlers on any control in this app —
-                     onfocus/onblur/onchange, which grew and shrank the list
-                     box by hand — with Ctrl/Cmd-click as the multi-select
-                     gesture. It is now the same chip picker the Advanced
-                     Query modal uses, driven by the SHARED functions from a
-                     config (PROSPECT_TAG_PICKER in app.js). The `.aq-picker`
-                     class is not decoration: initAqPickers()'s outside-click
-                     close finds its wrapper with closest(".aq-picker").
+                     SESSION 2B.15 / contract P8 AS REVISED 2026-09-03. THIS
+                     ROW HAS NOW HELD THREE WIDGETS AND ONE UNCHANGING
+                     CONTRACT. It began as a native `<select multiple
+                     size="1">` with three inline onfocus/onblur/onchange
+                     handlers and Ctrl/Cmd-click as the multi-select gesture;
+                     2B.9 made it the Advanced Query chip picker; 2B.15 makes
+                     it a button onto the shared pop-out chooser
+                     `#modal-choose-tags` — the control MediaHub,
+                     CampaignHub, `#modal-prospect` and the prospect detail
+                     view all already use. 2B.9's picker was the app's only
+                     outlier, which is the whole of review Finding 6.
 
-                     `#prospect-tag-chooser` IS STILL HERE, ON THE WRAPPER.
-                     P8 — the id is the contract, the widget is not. Anything
-                     that located this filter by id still finds it. What must
-                     never come back is a reader reaching INTO the control:
-                     the selection is read only through
-                     prospectTagFilterTerms(). -->
-                <div class="search-box-wrapper aq-picker prospect-tag-picker" id="prospect-tag-chooser"
-                  data-aq-picker="prospectHubTags">
-                  <label for="prospect-tag-search" class="pt-picker-label">Filter by tag</label>
-                  <div class="aq-picker-control">
-                    <input type="text" id="prospect-tag-search" class="aq-picker-search"
-                      placeholder="Filter by tag…" autocomplete="off">
-                    <div id="prospect-tag-dropdown" class="aq-picker-dropdown hidden"></div>
-                  </div>
+                     ⛔ THE INLINE SEARCH BOX AND DROPDOWN ARE GONE, NOT
+                     HIDDEN. `#prospect-tag-search` and
+                     `#prospect-tag-dropdown` no longer exist anywhere. A
+                     control that is merely invisible is still reachable, and
+                     a later restyle of `.aq-picker-*` has no way to know a
+                     `display:none` was load-bearing — the same reasoning
+                     2B.9 used for the exclude button.
+
+                     `#prospect-tag-chooser` IS STILL HERE, ON THE WRAPPER,
+                     AND `#prospect-tag-chips` IS UNCHANGED. P8 — the id is
+                     the contract, the widget is not. Anything that located
+                     this filter by id still finds it, the chips are still
+                     painted by the SHARED renderAqPickerChips(), and the
+                     selection is still read only through
+                     prospectTagFilterTerms(). Three widgets, one accessor,
+                     and renderProspectsView() has not been touched by any of
+                     them.
+
+                     NO <label>: a <button> supplies its own accessible name
+                     from its text. The visually-hidden `.pt-picker-label`
+                     that sat here went with the input it described. -->
+                <div class="search-box-wrapper prospect-tag-picker" id="prospect-tag-chooser">
+                  <button type="button" id="btn-prospect-tag-filter"
+                    class="header-action-btn secondary-btn pt-filter-btn"
+                    title="Choose which tags the directory is filtered by">🏷️ Filter by Tag…</button>
                   <div id="prospect-tag-chips" class="aq-picker-chips"></div>
                 </div>
 
@@ -3520,13 +3532,21 @@
     <div class="modal-card" style="max-width: 440px; max-height: 80vh; display: flex; flex-direction: column;">
       <div
         style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 16px;">
-        <h3 style="margin: 0; font-size: 18px;">✏️ Choose Associated Tags</h3>
+        <!-- SESSION 2B.15. The title, the hint below, the confirm button's
+             label and the "Create a New Tag" block are all rewritten at open
+             time by applyChooseTagsModalMode() in app.js, because this one
+             modal now serves SIX targets and one of them (ProspectHub's tag
+             FILTER) selects rather than assigns. The text below is the
+             assign-mode wording and is what the other five still see — it is
+             restored on every open, never left as the filter's. -->
+        <h3 id="choose-tags-title" style="margin: 0; font-size: 18px;">✏️ Choose Associated Tags</h3>
         <button id="btn-tags-close-x"
           style="background: none; border: none; color: var(--color-text-muted); font-size: 18px; cursor: pointer;">✕</button>
       </div>
 
       <div style="flex-grow: 1; overflow-y: auto; margin-bottom: 16px;">
-        <p style="font-size: 12px; color: var(--color-text-muted); margin-bottom: 12px;">Toggle tags to associate with
+        <p id="choose-tags-hint" style="font-size: 12px; color: var(--color-text-muted); margin-bottom: 12px;">Toggle
+          tags to associate with
           this content outline.</p>
 
         <!-- Tags checklist grid -->
@@ -3536,8 +3556,15 @@
         </div>
       </div>
 
-      <!-- Fast Add Tag Inline -->
-      <div style="border-top: 1px solid var(--color-border); padding-top: 12px; margin-bottom: 16px;">
+      <!-- Fast Add Tag Inline.
+
+           SESSION 2B.15 gave this block an id so filter mode can hide it.
+           Creating a tag here WRITES to a managed list and calls saveState();
+           on a screen that only chooses what to filter by, the tag it creates
+           is carried by nobody and filters to zero rows. Hidden there, shown
+           for the five assign targets — set both ways on every open. -->
+      <div id="choose-tags-newtag-block"
+        style="border-top: 1px solid var(--color-border); padding-top: 12px; margin-bottom: 16px;">
         <span
           style="font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 700; display: block; margin-bottom: 6px;">Create
           a New Tag</span>

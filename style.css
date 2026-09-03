@@ -3271,67 +3271,54 @@ body {
 }
 
 /* ==========================================================================
-   👥 PROSPECTHUB TAG FILTER — the picker in the hub, not in the modal
-   (Phase 2B / Session 2B.9, contract P8)
+   👥 PROSPECTHUB TAG FILTER — the button and its chips
+   (Phase 2B / Session 2B.15, contract P8 as revised 2026-09-03.
+    Session 2B.9 built the inline chip picker this replaced.)
 
-   The markup and every function are the Advanced Query picker's. Only three
-   things differ, and each is here rather than in the block above so that the
-   modal is untouched:
+   ⚠️ THIS BLOCK USED TO STYLE A WHOLE PICKER — a search input, a dropdown,
+   per-option include buttons and a visually-hidden <label>. Row 3 is now one
+   button onto `#modal-choose-tags`, so FOUR RULES WERE DELETED RATHER THAN
+   LEFT TO ROT: `.pt-picker-label` (the label went with the input it
+   described — a <button> names itself), `.aq-picker-dropdown { z-index: 40 }`
+   and both `.aq-picker-include-btn` rules. **The z-index note is the one
+   worth knowing about**: it existed because the dropdown had to clear the two
+   directory tables' `position: sticky; z-index: 2` header cells. There is no
+   dropdown here any more, and `#modal-choose-tags` is a `.modal-overlay` at
+   `z-index: 999999`, so the tables are no longer in the same conversation.
+   ⛔ Do not reinstate a 40 here for a control that does not exist.
 
-   1. IT IS PURPLE, VIA `var(--color-primary)`. Unlike the 2B.8 table-header
-      tints — which are literal hexes because they are composited against a
-      specific surface — these are plain foreground/border colours on a flat
-      background, so the token does the right thing on its own. The token is
-      set per hub on `body.module-*` near the top of this file, which means
-      this picker is ProspectHub purple in the hub and correctly themed in
-      BOTH themes with no `.light-theme` rule of its own. Do not replace it
-      with a hex: that is what would need a second rule.
+   Two rules survive, and both are about the chips, which did NOT change:
 
-   2. THERE IS NO EXCLUDE. `includeOnly` on the config means the "− Exclude"
-      button and the ⇄ chip toggle are NOT RENDERED — nothing here hides
-      them, so a future restyle of `.aq-picker-add-btn` cannot resurrect a
-      control the filter has no semantics for. The include chips are
-      therefore the only chips this surface can produce, which is why the
-      green `.aq-picker-chip-include` colours are overridden unconditionally.
+   1. THEY ARE PURPLE, VIA `var(--color-primary)`. Unlike the 2B.8
+      table-header tints — literal hexes, because they are composited against
+      a specific surface — these are plain foreground/border colours on a
+      flat background, so the token does the right thing on its own. It is
+      set per hub on `body.module-*` near the top of this file, which is why
+      the chips are ProspectHub purple in the hub and correctly themed in
+      BOTH themes with no `.light-theme` rule. Do not replace it with a hex:
+      that is what would need a second rule.
 
-   3. THE LABEL IS VISUALLY HIDDEN. Its two siblings in this filter column
-      (Search and Geography) are placeholder-only, so a visible caption on
-      this row alone would read as a mistake. The <label> still exists and is
-      still associated with the input — DIRECTIVES §0's authoring habit for
-      new markup, which is a habit and not Gate F.
+   2. THERE IS NO EXCLUDE. `includeOnly` on the config means the ⇄ chip
+      toggle is NOT RENDERED — nothing here hides it, so a future restyle
+      cannot resurrect a control the filter has no semantics for. Include
+      chips are therefore the only chips this surface can produce, which is
+      why the green `.aq-picker-chip-include` colours are overridden
+      unconditionally.
 
    EVERY SELECTOR LEADS WITH `#prospect-tag-chooser`, the wrapper id. That is
    what keeps these rules off the five pickers in the Advanced Query modal,
    which share every class name below.
    ========================================================================== */
 
-#prospect-tag-chooser .pt-picker-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-/* The two directory tables start a few pixels below this control and their
-   header cells are `position: sticky; z-index: 2`. 40 already wins, and it is
-   restated here so that a session tuning the tables' stacking sees the number
-   it has to stay under. Nothing between this wrapper and <body> creates a
-   stacking context, so these two values are compared directly. */
-#prospect-tag-chooser .aq-picker-dropdown {
-  z-index: 40;
-}
-
-#prospect-tag-chooser .aq-picker-include-btn {
-  color: var(--color-primary);
-}
-
-#prospect-tag-chooser .aq-picker-include-btn:hover {
-  background-color: var(--color-primary-glow);
-  border-color: var(--color-primary);
+/* The wrapper is capped at 400px by the FILTER COLUMN rule below, so the
+   button fills the row and lines its left edge up with the Search and
+   Geography boxes above it. `.header-action-btn` is `display: flex`, which
+   centres its content by default and would leave the label floating in the
+   middle of a 400px control; `flex-start` puts it where the placeholder text
+   in the two rows above sits. */
+#prospect-tag-chooser .pt-filter-btn {
+  width: 100%;
+  justify-content: flex-start;
 }
 
 #prospect-tag-chooser .aq-picker-chip {
@@ -3340,7 +3327,7 @@ body {
   color: var(--color-primary);
 }
 
-/* The chips sit directly under the search box and above the "See All" button
+/* The chips sit directly under the button and above the "See All" button
    row, both of which are spaced by `.card-header-actions`' own 12px gap. With
    no chips the container is `:empty` and collapses, so this margin is the
    only thing separating a full chip row from the buttons below it. */

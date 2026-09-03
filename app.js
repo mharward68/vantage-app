@@ -43,7 +43,16 @@ let editingMasterFileId = null; // Track master file being edited/linked
 let currentProspectTags = [];
 let currentCompanyTags = [];
 let currentCampaignTags = [];
-let tagSelectionTarget = "media"; // "media", "prospect", "company", or "campaign"
+/* Which surface #modal-choose-tags is currently serving. SIX values, and the
+   comment that said "media, prospect, company, or campaign" had been three
+   behind since the two -inspector targets landed.
+     "media" | "prospect" | "company" | "campaign"
+       | "prospect-inspector" | "company-inspector"   ← the five that ASSIGN
+     "prospect-filter"                                ← 2B.15: SELECTS, and
+                                                        writes nothing at all
+   See applyChooseTagsModalMode() for why the sixth changes the modal's
+   wording, and saveChosenTags() for why its branch touches no record. */
+let tagSelectionTarget = "media";
 
 // Media type icon glyphs — shared between the Media Hub type filter bar and
 // the type badge on each media card. Falls back to a generic folder icon
@@ -3560,31 +3569,52 @@ let lastFilteredCompanies = [];
    `.selectedOptions` appear nowhere against this control any more.
 
    INCLUDE-ONLY, ON PURPOSE, AND IT IS ONE WORD TO REVERSE. The downstream
-   filter in renderProspectsView() classifies each term into company-tag and
-   prospect-tag queries and matches by substring; it has no NOT semantics
-   anywhere, and the both-lists OR branch below is already the most tangled
-   logic in this view. Offering "− Exclude" before that filter can honour it
-   would be the control lying about what the results mean. Delete the
-   `includeOnly` line and exclusion appears in the UI the moment the filter
-   grows a matching branch — not before.
+   filter in renderProspectsView() matches each term by substring against the
+   record's own tags and its company's; it has no NOT semantics anywhere.
+   Offering "− Exclude" before that filter can honour it would be the control
+   lying about what the results mean. Delete the `includeOnly` line and
+   exclusion appears in the UI the moment the filter grows a matching branch —
+   not before.
+
+   ⚠️ SESSION 2B.14 REWROTE WHAT THIS FILTER MEANS, NOT WHAT IT READS. The
+   sentence above used to describe a pass that classified each term into a
+   company-tag list and a prospect-tag list and required both lists in full.
+   That pass is gone: the terms are now OR-ed (Finding 5 — adding a term never
+   reduces the result count). The accessor, the id, the config and every line
+   of this picker are untouched, which is the whole point of P8.
+
+   ⚠️⚠️ SESSION 2B.15 REPLACED THE WIDGET AGAIN, UNDER THE P8 REVISION MICHAEL
+   APPROVED 2026-09-03. The inline search box and dropdown are gone; Row 3 is
+   now a button onto the shared pop-out `#modal-choose-tags`, on a sixth
+   `tagSelectionTarget` of "prospect-filter". Finding 6: four surfaces already
+   used the pop-out and this was the only one that did not.
+
+   ⛔ THE CONFIG IS STILL HERE AND IS STILL THE THING TO EDIT. It is no
+   longer read by a widget, but it is read by everything else — the chips
+   (renderAqPickerChips), the chip ✕ (removeAqPickerSelection) and all three
+   clear routes (resetAqPicker). `searchId` and `dropdownId` are GONE, not
+   emptied: they were the only two keys the pop-out has no counterpart for,
+   and every shared function that touches them already guards
+   (`if (!input || !dropdown) return`, `if (input)`, `if (dropdown)`), so
+   their absence is a no-op rather than a hazard. Do not re-add them to
+   "complete" the shape — see the config-shape comment above AQ_PICKERS.
+
+   ⛔ `initAqPickers()` IS NO LONGER CALLED FOR THIS PICKER. It exists to wire
+   a text input, so with no input it would return early and leave only a dead
+   document-level click listener behind. setupEventListeners() paints the
+   chips directly instead. Do not "restore" the call.
    ========================================================================== */
 
 const PROSPECT_TAG_PICKER = {
   key: "prospectHubTags",
-  searchId: "prospect-tag-search",
-  dropdownId: "prospect-tag-dropdown",
   chipsId: "prospect-tag-chips",
   includeOnly: true,
-  onChange: () => {
-    renderProspectsView();
-    // Keyboard flow: selecting an option rebuilds the dropdown, which
-    // destroys the button that was just activated and drops focus to <body>.
-    // Putting focus back on the search input means a second tag is one Tab
-    // away instead of a walk from the top of the document. Deliberately done
-    // HERE rather than inside setAqPickerSelection(), so the five Advanced
-    // Query pickers keep exactly the focus behaviour they shipped with.
-    document.getElementById("prospect-tag-search")?.focus();
-  },
+  // 2B.15: this used to also put focus back into the inline search box after
+  // each selection. There is no search box now — the pop-out owns focus while
+  // it is open and the selection arrives in one batch on Apply Filter — so
+  // the config is back to the plain "the view must re-filter" callback the
+  // other consumers use.
+  onChange: () => renderProspectsView(),
   getOptions: () => buildProspectTagFilterOptions()
 };
 
@@ -3813,29 +3843,51 @@ function renderProspectsView() {
   // the code that shipped before this session.
   const tagTerms = prospectTagFilterTerms();
 
-  // Classify tag queries into company tags vs prospect tags
-  const allCompanyTagsStr = Array.from(new Set(state.companies.flatMap(c => c.tags || []))).map(t => t.toLowerCase());
-  const allProspectTagsStr = Array.from(new Set(state.prospects.flatMap(p => p.tags || []))).map(t => t.toLowerCase());
+  /* ┌──────────────────────────────────────────────────────────────────────┐
+     │ SESSION 2B.14 — THE CLASSIFICATION PASS THAT USED TO SIT HERE IS     │
+     │ GONE, AND ITS ABSENCE IS THE CHANGE.                                 │
+     └──────────────────────────────────────────────────────────────────────┘
+     What was here: every picker term was sorted into a `companyTagQueries`
+     list and a `prospectTagQueries` list (a term that is globally both went
+     into both, a term that is globally neither also went into both "so it
+     fails"). Each list was then required IN FULL — `.every()` — and the two
+     results were AND-ed. A third branch, keyed on the terms appearing in both
+     lists, existed only to stop a dual-nature tag being demanded twice.
 
-  let companyTagQueries = [];
-  let prospectTagQueries = [];
-  
-  tagTerms.forEach(term => {
-    const isComp = allCompanyTagsStr.some(ct => ct.includes(term));
-    const isPros = allProspectTagsStr.some(pt => pt.includes(term));
-    
-    if (isComp && !isPros) companyTagQueries.push(term);
-    else if (isPros && !isComp) prospectTagQueries.push(term);
-    else if (isComp && isPros) {
-      // If it matches both types of tags, we don't know which they meant.
-      // But typically they want it to match either. Let's just require it on the appropriate table.
-      companyTagQueries.push(term);
-      prospectTagQueries.push(term);
-    } else {
-      // Not found globally, push to both so it fails
-      companyTagQueries.push(term);
-      prospectTagQueries.push(term);
-    }
+     ⛔ WHY IT COULD NOT SURVIVE A MECHANICAL `.every()` → `.some()`. Finding 5
+     is Michael's operational rule: ADDING A TERM NEVER REDUCES THE RESULT
+     COUNT. OR within a picker, AND across pickers. Swapping only the
+     quantifiers here leaves the `&&` between the two lists intact, so picking
+     one company tag and one prospect tag STILL narrows — a half-fix that
+     passes any spot-check using two tags of the same kind. `#prospect-tag-
+     chooser` is ONE picker (buildProspectTagFilterOptions() offers company
+     tags and prospect tags in a single list), so all of its terms are OR-ed.
+
+     And once they are OR-ed the classification has nothing left to decide: a
+     term either matches somewhere on the record or it does not. Both the
+     sorting pass and the both-lists reconciliation collapse into one
+     `.some()` per record, in each of the two predicates below.
+
+     ⚠️ DO NOT REINSTATE THE CLASSIFICATION to "make company tags stricter."
+     Strictness between surfaces is what cross-picker AND is for, and this hub
+     has exactly one picker. `allCompanyTagsStr` / `allProspectTagsStr` were
+     read ONLY by that pass and went with it — the identically named locals
+     inside buildProspectTagFilterOptions() are a different, live pair, so a
+     grep for those names finds survivors and they are not these.
+
+     Two lookups, built once per render for the same reason `companyDomainById`
+     above is: renderProspectsView() runs on every keystroke and loops both
+     directories, so a `find()` per record would be O(records × companies) per
+     character. */
+  const companyTagsById = new Map(
+    state.companies.map(c => [c.id, (c.tags || []).map(t => (t || "").toLowerCase())])
+  );
+  const contactTagsByCompanyId = new Map();
+  state.prospects.forEach(p => {
+    if (!p.companyId) return;
+    const bucket = contactTagsByCompanyId.get(p.companyId) || [];
+    (p.tags || []).forEach(t => bucket.push((t || "").toLowerCase()));
+    contactTagsByCompanyId.set(p.companyId, bucket);
   });
 
   if (query || geoQueryStr || tagTerms.length > 0) {
@@ -3880,49 +3932,18 @@ function renderProspectsView() {
                    prospectsForCompany.some(p => geoFormsMatchRecord(geoForms, p));
       }
       
-      let matchCompTags = true;
-      if (companyTagQueries.length > 0) {
-        const cTags = (c.tags || []).map(t => t.toLowerCase());
-        // For companies that match both, we should only require the tag if it's strictly a company tag, 
-        // or if it's meant as a company tag. To be safe, we require it.
-        matchCompTags = companyTagQueries.every(q => cTags.some(t => t.includes(q)));
-      }
-      
-      let matchProsTagsForComp = true;
-      if (prospectTagQueries.length > 0) {
-        const prospectsForCompany = state.prospects.filter(p => p.companyId === c.id);
-        matchProsTagsForComp = prospectsForCompany.some(p => {
-          const pTags = (p.tags || []).map(t => t.toLowerCase());
-          return prospectTagQueries.every(q => pTags.some(t => t.includes(q)));
-        });
-      }
-
-      // Handle OR logic for tags that are in both
-      const bothQueries = companyTagQueries.filter(q => prospectTagQueries.includes(q));
-      if (bothQueries.length > 0) {
-        const cTags = (c.tags || []).map(t => t.toLowerCase());
-        const prospectsForCompany = state.prospects.filter(p => p.companyId === c.id);
-        
-        let matchBoth = bothQueries.every(q => {
-          const compHasTag = cTags.some(t => t.includes(q));
-          const prosHasTag = prospectsForCompany.some(p => (p.tags || []).map(t => t.toLowerCase()).some(t => t.includes(q)));
-          return compHasTag || prosHasTag;
-        });
-
-        const strictCompQueries = companyTagQueries.filter(q => !bothQueries.includes(q));
-        const strictProsQueries = prospectTagQueries.filter(q => !bothQueries.includes(q));
-
-        matchCompTags = strictCompQueries.length === 0 || strictCompQueries.every(q => cTags.some(t => t.includes(q)));
-        matchProsTagsForComp = strictProsQueries.length === 0 || strictProsQueries.every(q => {
-          return prospectsForCompany.some(p => {
-            const pTags = (p.tags || []).map(t => t.toLowerCase());
-            return strictProsQueries.every(sq => pTags.some(t => t.includes(sq)));
-          });
-        });
-
-        if (!matchBoth) {
-          matchProsTagsForComp = false;
-        }
+      /* SESSION 2B.14 — OR. A company matches if ANY selected term is found on
+         its OWN tags or on ANY of its contacts'. The "or its contacts'" half is
+         not new — it is what matchProsTagsForComp did. What is new is that one
+         term is enough, so adding a second can only ADD companies to this list,
+         never remove one. Substring matching is unchanged. */
+      let matchTags = true;
+      if (tagTerms.length > 0) {
+        const cTags = companyTagsById.get(c.id) || [];
+        const contactTags = contactTagsByCompanyId.get(c.id) || [];
+        matchTags = tagTerms.some(q =>
+          cTags.some(t => t.includes(q)) || contactTags.some(t => t.includes(q))
+        );
       }
 
       let matchQuery = true;
@@ -3937,7 +3958,7 @@ function renderProspectsView() {
                                    (!!queryDomain && domain.includes(queryDomain))));
       }
 
-      return matchGeo && matchCompTags && matchProsTagsForComp && matchQuery;
+      return matchGeo && matchTags && matchQuery;
     });
     }
   }
@@ -4036,39 +4057,17 @@ function renderProspectsView() {
           matchGeo = geoFormsMatchRecord(geoForms, p);
         }
 
-      let matchProsTags = true;
-      if (prospectTagQueries.length > 0) {
-        const pTags = (p.tags || []).map(t => t.toLowerCase());
-        matchProsTags = prospectTagQueries.every(q => pTags.some(t => t.includes(q)));
-      }
-
-      let matchCompTagsForPros = true;
-      if (companyTagQueries.length > 0) {
-        const c = state.companies.find(x => x.id === p.companyId);
-        const cTags = c ? (c.tags || []).map(t => t.toLowerCase()) : [];
-        matchCompTagsForPros = companyTagQueries.every(q => cTags.some(t => t.includes(q)));
-      }
-
-      // If a tag is in BOTH queries (meaning it's both a company and prospect tag globally),
-      // we should allow a match if the prospect OR the company has it, to avoid being too strict.
-      const bothQueries = companyTagQueries.filter(q => prospectTagQueries.includes(q));
-      if (bothQueries.length > 0) {
-        const c = state.companies.find(x => x.id === p.companyId);
-        const cTags = c ? (c.tags || []).map(t => t.toLowerCase()) : [];
-        const pTags = (p.tags || []).map(t => t.toLowerCase());
-        
-        let matchBoth = bothQueries.every(q => cTags.some(t => t.includes(q)) || pTags.some(t => t.includes(q)));
-        
-        // Remove them from strict requirements since we checked them via OR
-        const strictCompQueries = companyTagQueries.filter(q => !bothQueries.includes(q));
-        const strictProsQueries = prospectTagQueries.filter(q => !bothQueries.includes(q));
-        
-        matchCompTagsForPros = strictCompQueries.length === 0 || strictCompQueries.every(q => cTags.some(t => t.includes(q)));
-        matchProsTags = strictProsQueries.length === 0 || strictProsQueries.every(q => pTags.some(t => t.includes(q)));
-        
-        if (!matchBoth) {
-          matchProsTags = false;
-        }
+      /* SESSION 2B.14 — OR, exactly as in the companies predicate above. A
+         contact matches if ANY selected term is found on their OWN tags or on
+         their company's. The company lookup is the render-scoped Map rather
+         than a `find()` per record per keystroke. */
+      let matchTags = true;
+      if (tagTerms.length > 0) {
+        const pTags = (p.tags || []).map(t => (t || "").toLowerCase());
+        const cTags = companyTagsById.get(p.companyId) || [];
+        matchTags = tagTerms.some(q =>
+          pTags.some(t => t.includes(q)) || cTags.some(t => t.includes(q))
+        );
       }
 
       let matchQuery = true;
@@ -4094,7 +4093,7 @@ function renderProspectsView() {
                (!!compDomain && (compDomain.includes(query) ||
                                  (!!queryDomain && compDomain.includes(queryDomain))));
       }
-      return matchGeo && matchProsTags && matchCompTagsForPros && matchQuery;
+      return matchGeo && matchTags && matchQuery;
     });
     }
   }
@@ -8478,10 +8477,15 @@ function renderMediaView() {
     if (state.activeMediaFilterType !== "all" && m.type !== state.activeMediaFilterType) {
       return false;
     }
-    // 1c. Tag Filter check (multi-select AND logic)
+    /* 1c. Tag Filter check — OR logic.
+       ⚠️ SESSION 2B.14 changed this from AND (`.every`). MediaHub sits OUTSIDE
+       Phase 2B's compartment and is here under the cross-compartment exception
+       Michael granted 2026-09-02 at full scope, so that the tag rail does not
+       silently disagree with ProspectHub and Advanced Query. Finding 5: adding
+       a term never reduces the result count. */
     if (state.activeMediaFilterTags && state.activeMediaFilterTags.length > 0) {
-      const hasAllTags = state.activeMediaFilterTags.every(tag => (m.media_tags || []).includes(tag));
-      if (!hasAllTags) {
+      const hasAnyTag = state.activeMediaFilterTags.some(tag => (m.media_tags || []).includes(tag));
+      if (!hasAnyTag) {
         return false;
       }
     }
@@ -8788,10 +8792,20 @@ let aqPickerState = {
    THE PICKER CONFIG SHAPE  (read by the six functions below)
 
      key         required   the aqPickerState key holding its two Sets
-     searchId    required   id of the text input
-     dropdownId  required   id of the options dropdown
      chipsId     required   id of the chips container
      getOptions  required   () => string[]  — the selectable labels
+
+     searchId    required FOR THE INLINE WIDGET ONLY   id of the text input
+     dropdownId  required FOR THE INLINE WIDGET ONLY   id of the dropdown
+
+   ⚠️ SESSION 2B.15 MOVED searchId/dropdownId OUT OF "required". A consumer
+   driven by the pop-out chooser rather than by an inline text box omits both
+   — PROSPECT_TAG_PICKER now does. Nothing breaks because every function that
+   reads them already guarded: renderAqPickerDropdown and initAqPickers return
+   early, and setAqPickerSelection / resetAqPicker test before touching. Four
+   of the six functions therefore work in full without them, and the two that
+   drive a dropdown are simply inert. The first three keys above are what a
+   picker genuinely cannot do without.
 
    Three OPTIONAL keys. Every one is absent on all five Advanced Query
    pickers, so each is a no-op there and none of them changes AQ behaviour:
@@ -8984,12 +8998,19 @@ function matchesStateFilter(fieldVal, filterVal) {
   return orGroups.some(andTerms => andTerms.every(term => matchesSingleStateTerm(fieldVal, term)));
 }
 
+/* The Advanced Query modal's comma-separated tags TEXT field (company tags on
+   the prospect target, and the tags field on the company target).
+
+   ⚠️ SESSION 2B.14 — include changed from `.every()` to `.some()`. "a, b" now
+   means "carries a OR b", matching the chip pickers beside it. Finding 5.
+   This field has no exclude half at all, so there is nothing here to leave
+   alone; the whole function is the include. */
 function matchesTagsFilter(recordTags, filterVal) {
   if (!filterVal) return true;
   const terms = filterVal.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
   if (terms.length === 0) return true;
   const tags = (recordTags || []).map(t => t.toLowerCase());
-  return terms.every(term => tags.some(t => t.includes(term)));
+  return terms.some(term => tags.some(t => t.includes(term)));
 }
 
 // --- Tags / Campaigns / Audiences picker rendering & interaction ---
@@ -9182,14 +9203,27 @@ function initAqPickers(pickers = AQ_PICKERS) {
   });
 }
 
-// Include/exclude matching helper shared by tags/campaigns/audiences filters.
-// `itemNames` is the array of names the record actually has (e.g. p.tags);
-// the record must have ALL "include" names and NONE of the "exclude" names.
+/* Include/exclude matching helper shared by tags/campaigns/audiences/industry.
+   `itemNames` is the array of names the record actually has (e.g. p.tags);
+   the record must have AT LEAST ONE "include" name and NONE of the "exclude"
+   names.
+
+   ⚠️ SESSION 2B.14 CHANGED INCLUDE FROM `.every()` TO `.some()` — it used to
+   read "ALL include names". Finding 5: adding a term never reduces the result
+   count. OR within a picker; AND across pickers is preserved by the CALLERS,
+   each of which is its own `if (!matchesIncludeExclude(…)) return false;`.
+
+   ⛔ THIS IS ONE OF TWO. `matchesIncludeExcludeSmart()` below is the Title
+   picker's, and it had the identical `.every()`. Changing only one leaves
+   Title silently AND-ed and passes every spot-check that does not use Title.
+
+   ⛔ EXCLUDE STAYS `.some()` AND WAS ALREADY CORRECT. Under OR it still reads
+   "none of these" — do not "make it symmetrical." */
 function matchesIncludeExclude(itemNames, includeSet, excludeSet) {
   const names = (itemNames || []).map(n => (n || "").toLowerCase());
   if (includeSet.size > 0) {
-    const hasAll = Array.from(includeSet).every(inc => names.includes(inc.toLowerCase()));
-    if (!hasAll) return false;
+    const hasAny = Array.from(includeSet).some(inc => names.includes(inc.toLowerCase()));
+    if (!hasAny) return false;
   }
   if (excludeSet.size > 0) {
     const hasAny = Array.from(excludeSet).some(exc => names.includes(exc.toLowerCase()));
@@ -9219,14 +9253,20 @@ function getProspectIndustry(prospectId) {
   return c ? (c.industry || "") : "";
 }
 
-// Include/exclude matching where each chip term is compared against a single
-// text field using a fuzzy matcher (e.g. matchesTitleFilter) rather than
-// exact membership in an array — used for the Title picker so a chip like
-// "VP" still catches "Vice President", "Senior VP", etc.
+/* Include/exclude matching where each chip term is compared against a single
+   text field using a fuzzy matcher (e.g. matchesTitleFilter) rather than
+   exact membership in an array — used for the Title picker so a chip like
+   "VP" still catches "Vice President", "Senior VP", etc.
+
+   ⚠️ SESSION 2B.14 — THIS IS THE SECOND OF THE TWO INCLUDE FUNCTIONS, and the
+   one a half-fix forgets. Include is now `.some()`: a title matching ANY chip
+   passes. Under the old `.every()`, "VP" + "Director" asked for a person who
+   is somehow both, which is nobody — the Title picker got emptier with every
+   chip added. Exclude is untouched and still correct. */
 function matchesIncludeExcludeSmart(fieldVal, includeSet, excludeSet, matchFn) {
   if (includeSet.size > 0) {
-    const matchesAll = Array.from(includeSet).every(term => matchFn(fieldVal, term));
-    if (!matchesAll) return false;
+    const matchesAny = Array.from(includeSet).some(term => matchFn(fieldVal, term));
+    if (!matchesAny) return false;
   }
   if (excludeSet.size > 0) {
     const matchesAny = Array.from(excludeSet).some(term => matchFn(fieldVal, term));
@@ -10955,11 +10995,13 @@ function renderCampaignDashboard() {
   const filtered = state.campaigns.filter(c => {
     // 1. Phase Filter
     if (activeCampaignFilterPhase !== "all" && c.status !== activeCampaignFilterPhase) return false;
-    // 2. Tag Filters (AND search logic)
+    /* 2. Tag Filters — OR search logic.
+       ⚠️ SESSION 2B.14 changed this from AND (`.every`), same exception and
+       same reason as the MediaHub rail above. Finding 5. */
     if (activeCampaignFilterTags.length > 0) {
       const cTags = c.tags || [];
-      const hasAllTags = activeCampaignFilterTags.every(t => cTags.includes(t));
-      if (!hasAllTags) return false;
+      const hasAnyTag = activeCampaignFilterTags.some(t => cTags.includes(t));
+      if (!hasAnyTag) return false;
     }
     return true;
   });
@@ -14777,13 +14819,22 @@ function setupEventListeners() {
   // 1. Prospect Database Views listeners
   document.getElementById("prospect-search").addEventListener("input", renderProspectsView);
   document.getElementById("prospect-geo-search").addEventListener("input", renderProspectsView);
-  // Session 2B.9 / contract P8. The tag filter is a chip picker now, so there
-  // is no `input` event on a <select> to listen for — the picker reports a
-  // selection change through PROSPECT_TAG_PICKER.onChange, which calls
-  // renderProspectsView() itself. Wired with the SHARED initAqPickers(),
-  // given this one config: focus/input open the dropdown, Escape closes it,
-  // an outside click closes it, and the chips paint once at boot.
-  initAqPickers([PROSPECT_TAG_PICKER]);
+  /* SESSION 2B.15 / contract P8 as revised. The tag filter is a button onto
+     the shared pop-out now, so there is no text input to wire and the
+     `initAqPickers([PROSPECT_TAG_PICKER])` call that stood here since 2B.9 is
+     gone — with no `searchId` it would return early and leave nothing behind
+     but a dead document-level click listener.
+
+     TWO LINES REPLACE IT. The opener, and the one thing initAqPickers() did
+     for this picker that still matters: PAINT THE CHIPS ONCE AT BOOT. Drop
+     that second call and the chip row is empty until the first selection,
+     which looks correct on a fresh load and wrong after nothing at all.
+
+     The re-filter still goes through PROSPECT_TAG_PICKER.onChange, called by
+     saveChosenTags() on Apply Filter and by removeAqPickerSelection() on a
+     chip ✕. Nothing listens for a change on the button itself. */
+  document.getElementById("btn-prospect-tag-filter")?.addEventListener("click", openProspectFilterChooseTagsModal);
+  renderAqPickerChips(PROSPECT_TAG_PICKER);
   document.getElementById("btn-clear-prospects-filters")?.addEventListener("click", clearProspectsFilters);
   document.getElementById("btn-prospects-settings")?.addEventListener("click", openSettingsModal);
   document.getElementById("btn-close-inspector-panel")?.addEventListener("click", closeInspectorPanel);
@@ -16726,6 +16777,21 @@ function renderTagsChecklistGrid(availableTags, selectedTags) {
   checklistGrid.innerHTML = "";
   document.getElementById("input-dash-new-tag").value = "";
 
+  /* SESSION 2B.15 — THE EMPTY STATE IS FILTER-MODE ONLY, ON PURPOSE. The five
+     assign targets have always rendered a blank grid here and the "Create a
+     New Tag" box directly below it is the obvious next move, so a message
+     would be telling the user what the screen already shows. Filter mode has
+     no create box — it is hidden, because a tag nobody carries filters to
+     zero rows — so a blank panel there is a dead end with no way out of it.
+     Leaving the other five alone also keeps this session inside ProspectHub. */
+  if (availableTags.length === 0 && tagSelectionTarget === "prospect-filter") {
+    checklistGrid.innerHTML =
+      `<p style="font-size:12px;color:var(--color-text-muted);margin:0;padding:8px 4px;">` +
+      `No tags are in use yet. Tag a contact or a company and it becomes a filter option here.</p>`;
+    applyChooseTagsModalMode();
+    return;
+  }
+
   availableTags.forEach((tag) => {
     const isChecked = selectedTags.includes(tag);
     checklistGrid.innerHTML += `
@@ -16735,6 +16801,68 @@ function renderTagsChecklistGrid(availableTags, selectedTags) {
       </label>
     `;
   });
+
+  applyChooseTagsModalMode();
+}
+
+/* ==========================================================================
+   #modal-choose-tags — ONE MODAL, TWO MEANINGS  (Session 2B.15, P8 revised)
+
+   Five of the six tagSelectionTargets ASSIGN tags to a record. The sixth,
+   "prospect-filter", SELECTS which tags ProspectHub's directory is filtered
+   by and writes nothing at all. Same checklist, same Cancel, different verb —
+   so the title, the hint, the confirm button and the create-a-tag block are
+   set from the target rather than hard-coded in index.html.
+
+   ⛔ EVERY BRANCH SETS EVERY FIELD. The failure this shape is guarding
+   against is one-way: hide the create box for the filter and forget to show
+   it again, and MediaHub silently loses the ability to make a tag — on a
+   screen nobody would think to re-test. There is no "leave it as it was"
+   path here; both branches are exhaustive.
+
+   ⛔ CALLED FROM renderTagsChecklistGrid(), NOT FROM THE SIX OPENERS. Every
+   opener already sets tagSelectionTarget and then calls that function, and a
+   seventh opener written later will do the same without knowing this exists.
+   Wiring it to the six would mean a new target renders with whatever wording
+   the last one left behind.
+
+   "Apply Filter" is Michael's wording, chosen 2026-09-03 over "Show Results"
+   and over leaving it as "Save Tags" — the point being that this screen saves
+   nothing.
+   ========================================================================== */
+function applyChooseTagsModalMode() {
+  const title = document.getElementById("choose-tags-title");
+  const hint = document.getElementById("choose-tags-hint");
+  const confirm = document.getElementById("tags-modal-confirm");
+  const newTagBlock = document.getElementById("choose-tags-newtag-block");
+
+  if (tagSelectionTarget === "prospect-filter") {
+    if (title) title.textContent = "🏷️ Filter by Tag";
+    if (hint) hint.textContent =
+      "Tick the tags to filter the directory by. A contact matches if it carries ANY ticked tag — adding one never narrows the list.";
+    if (confirm) confirm.textContent = "Apply Filter";
+    if (newTagBlock) newTagBlock.classList.add("hidden");
+    return;
+  }
+
+  if (title) title.textContent = "✏️ Choose Associated Tags";
+  if (hint) hint.textContent = "Toggle tags to associate with this record.";
+  if (confirm) confirm.textContent = "Save Tags";
+  if (newTagBlock) newTagBlock.classList.remove("hidden");
+}
+
+/* ProspectHub's tag FILTER opener. The selected set comes straight out of
+   aqPickerState — the same Sets the chips and prospectTagFilterTerms() read,
+   so what is ticked when this opens is exactly what is filtering right now.
+   The option labels come from buildProspectTagFilterOptions(), unchanged
+   since 2B.9, so the checklist offers precisely what the old dropdown did. */
+function openProspectFilterChooseTagsModal() {
+  tagSelectionTarget = "prospect-filter";
+  renderTagsChecklistGrid(
+    buildProspectTagFilterOptions(),
+    Array.from(aqPickerState.prospectHubTags.include)
+  );
+  document.getElementById("modal-choose-tags").classList.remove("hidden");
 }
 
 /* Which prospect the "prospect-inspector" tag target is currently editing.
@@ -16783,13 +16911,43 @@ function saveChosenTags() {
   const checkedCheckboxes = document.querySelectorAll("#tags-checklist-grid input[type='checkbox']:checked");
   const selectedTags = Array.from(checkedCheckboxes).map(cb => cb.value);
 
+  /* ⛔ FIRST, AND IT IS THE ONE BRANCH THAT WRITES NOTHING (Session 2B.15).
+     ProspectHub's tag filter. No record is touched, no saveState() is called
+     and nothing enters `state` — the selection lives in aqPickerState, which
+     is module-scope and deliberately not persisted (contract P9). Reloading
+     the app clears the filter, exactly as the inline picker did.
+
+     THE SETS ARE REBUILT WHOLESALE rather than diffed, because the checklist
+     is the complete truth of the selection every time it is confirmed —
+     unticking is expressed by absence, so a merge would make chips
+     unremovable from inside the modal.
+
+     `exclude` is cleared for completeness only. `includeOnly: true` means
+     nothing in this app can put a value there; clearing it costs one line and
+     means this branch stays correct if that ever changes.
+
+     Chips repaint through the SHARED renderAqPickerChips(), and the re-filter
+     goes through the config's own onChange — the same two calls
+     removeAqPickerSelection() makes, in the same order, so the chip ✕ and
+     this button cannot drift apart. */
+  if (tagSelectionTarget === "prospect-filter") {
+    const sel = aqPickerState[PROSPECT_TAG_PICKER.key];
+    sel.include.clear();
+    sel.exclude.clear();
+    selectedTags.forEach(t => sel.include.add(t));
+    renderAqPickerChips(PROSPECT_TAG_PICKER);
+    document.getElementById("modal-choose-tags").classList.add("hidden");
+    PROSPECT_TAG_PICKER.onChange();
+    return;
+  }
+
   if (tagSelectionTarget === "prospect") {
     currentProspectTags = selectedTags;
     renderProspectTagsPreview();
     document.getElementById("modal-choose-tags").classList.add("hidden");
     return;
   }
-  
+
   if (tagSelectionTarget === "company") {
     currentCompanyTags = selectedTags;
     renderCompanyTagsPreview();
@@ -16851,6 +17009,14 @@ function saveChosenTags() {
 }
 
 function addChooseTagsNewTag() {
+  /* SESSION 2B.15 — belt and braces. The block holding this button is hidden
+     in filter mode, so nothing can reach here through the UI. The guard is
+     for the path that does not go through the UI: this function has no other
+     defence against `tagSelectionTarget` being "prospect-filter", and its
+     `else` falls through to state.media_tags — so a stray call would write a
+     tag into MediaHub's managed list from ProspectHub's filter screen. */
+  if (tagSelectionTarget === "prospect-filter") return;
+
   const input = document.getElementById("input-dash-new-tag");
   const val = input.value.trim();
   if (!val) return;

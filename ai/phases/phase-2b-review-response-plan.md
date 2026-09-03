@@ -27,7 +27,7 @@ sessions sized honestly; spending it on a convenient catch-all is how phases sto
 2B.12  Resize cursor       (UI,   S)  — cursor + drag guard       ✅ UNBLOCKED
 2B.13  Company dup guard   (DATA, M)  — website seed + datalist   ⚠️ EXCEPTION NEEDED
 2B.14  Include semantics   (UI,   M)  — OR within a picker        ⚠️ EXCEPTION NEEDED
-2B.15  Tag filter pop-out  (UI,   M)  — after 2B.14               ⚠️ P8 REVISION NEEDED
+2B.15  Tag filter pop-out  (UI,   M)  — after 2B.14               ✅ DONE 2026-09-03
 2B.16  Company tab         (UI,   S)  — collapse + tab reorder    ✅ DONE 2026-09-02
 2B.19  Add Company          (DATA, M)  — the front door + normaliser ✅ NEXT, unblocked
 2B.18  Email → company      (DATA, M)  — domain match + arrow        ✅ after 2B.19
@@ -675,6 +675,11 @@ Title on save, so nothing is lost.
   - Screenshot the pop-out and the resulting chips, both themes.
 - **Needs my eyes:** the **Save Tags** button's label in a filtering context — it means "apply
   filter" here, not "save." And the empty state. **Decide it with me; do not improvise it.**
+  → **DECIDED 2026-09-03 at the top of 2B.15.** Label: **"Apply Filter"** (over "Show Results" and
+  over leaving it). Create-a-tag block: **hidden in filter mode.** Empty state: written by the
+  session as *"No tags are in use yet. Tag a contact or a company and it becomes a filter option
+  here."* — **filter mode only**, the five assign targets keep their existing blank grid, and this
+  one string is the only part of the three Michael has not seen in words. One line to change.
 - **Risk and fallback:** if the modal proves too entangled with *assigning* to serve *filtering*, the
   fallback is checkbox rows in the existing inline dropdown — **not** a second modal.
 
@@ -1080,7 +1085,7 @@ A coherent theme, and **not** 2B's. Do not smuggle these in as backlog.
 
 ## Still owed by Michael
 
-1. **The P8 revision** — gates 2B.15.
+1. ~~**The P8 revision**~~ — **APPROVED 2026-09-03 and APPLIED** to `phase-2b-prospect-detail-view.md` §P8 at the 2B.15 close. The tag filter is the shared pop-out; the accessor and the wrapper id are unchanged. **2B.15 is done.** Two design points went with it, both Michael's: the confirm button reads **"Apply Filter"** in filter mode (it saves nothing), and the **"Create a New Tag" block is hidden** there (a tag nobody carries filters to zero rows).
 2. ~~**The cross-compartment exception**~~ — **GRANTED 2026-09-02, full scope.** It covered 2B.13 and covers 2B.14 and 2B.18.
 3. **The ID layout design** — gates 2B.17.
 4. **`LA` = Louisiana or Los Angeles** — 2B.11 asks, and can start without it.

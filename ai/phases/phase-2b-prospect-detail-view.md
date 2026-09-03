@@ -247,11 +247,15 @@ initHeaderDrag(tableId)                // was initTaskHubHeaderDrag()
 - **`.table-scroll-container` has `padding: 12px`, and a sticky header does not cover a scrollport's top padding.** Both tables need `padding-top: 0`, **scoped by view id** (`#view-prospects .foo`) because the base rule sits ~950 lines below the TaskHub block and wins on source order at equal specificity.
 - The one-shot suppress flag (`taskSuppressNextHeaderClick`) generalises with the rest and simply never fires on these two tables — **neither sorts today**; their `<th>`s are static markup with no handlers. That removes three of Sessions 1.10/1.11's four gotchas here, and makes adding sortable headers later cheap.
 
-### P8 — The tag chooser
+### P8 — The tag chooser · **REVISED 2026-09-03, approved by Michael. Applied at Session 2B.15.**
 
-`#prospect-tag-chooser` is replaced with the **Advanced Query picker pattern** — `renderAqPickerDropdown` / `renderAqPickerChips` / `setAqPickerSelection` / `toggleAqPickerMode` / `removeAqPickerSelection` / `initAqPickers`, driven by the `AQ_PICKERS` config at `app.js` 6148. **Reuse, not invention.**
+ProspectHub's tag filter is the **shared pop-out chooser `#modal-choose-tags`**, entered from a button in Row 3 of the filter column, on its own `tagSelectionTarget` (`"prospect-filter"`, the sixth). **Reuse, not invention** — `renderTagsChecklistGrid()` already takes any tag list and `saveChosenTags()` already branches on the target.
 
-Today's control is a native `<select multiple size="1">` with `onfocus` / `onblur` / `onchange` handlers written inline in the HTML (`index.html` 236–239) and Ctrl/Cmd-click as the multi-select gesture. **The id is the contract, the widget is not** — the same shape that made C14's `#task-prospect` select→hidden-input swap a zero-risk change to the save path. Whatever reads the chooser's selection reads it through one accessor, not through `.options` / `.selectedIndex`.
+**The id is the contract, the widget is not.** `#prospect-tag-chooser` remains the id of the wrapper, and **`prospectTagFilterTerms()` remains the single read path**; nothing reads into the control. `aqPickerState.prospectHubTags` remains the store, so the chips (`renderAqPickerChips`), the chip ✕ (`removeAqPickerSelection`) and all three clear routes (`resetAqPicker`) are the shared functions still. `PROSPECT_TAG_PICKER` stays out of the `AQ_PICKERS` array. **The Advanced Query modal and its five pickers are untouched.**
+
+> **Supersedes the original P8**, which specified the Advanced Query inline chip picker and was built to at Session 2B.9. Review Finding 6. **Not a reversal on taste:** four surfaces — MediaHub, CampaignHub, `#modal-prospect` and the prospect detail view — already shared the pop-out, and 2B.9's picker was the app's only outlier. The escape hatch that made the revision cheap is inside P8's own wording: 2B.9 built the single accessor, so the third widget in this row still feeds the same one function and `renderProspectsView()` has never been touched by any of the three.
+>
+> **The original text, for reference:** *"`#prospect-tag-chooser` is replaced with the Advanced Query picker pattern — `renderAqPickerDropdown` / `renderAqPickerChips` / `setAqPickerSelection` / `toggleAqPickerMode` / `removeAqPickerSelection` / `initAqPickers`, driven by the `AQ_PICKERS` config at `app.js` 6148. Reuse, not invention. Today's control is a native `<select multiple size="1">` with `onfocus` / `onblur` / `onchange` handlers written inline in the HTML (`index.html` 236–239) and Ctrl/Cmd-click as the multi-select gesture."* The `<select>` and its three inline handlers are gone and are not coming back; that half of the original is history, not a live requirement.
 
 ### P9 — What does not change
 
@@ -544,7 +548,7 @@ Today's control is a native `<select multiple size="1">` with `onfocus` / `onblu
 2B.12 Resize cursor      (UI,    S)  — cursor + drag guard    ✅ unblocked
 2B.13 Company dup guard  (DATA,  M)  — needs the exception    ⚠️ ZIP first
 2B.14 Include semantics  (UI,    M)  — needs the exception
-2B.15 Tag filter pop-out (UI,    M)  — after 2B.14. NEEDS P8 REVISION
+2B.15 Tag filter pop-out (UI,    M)  — after 2B.14. ✅ DONE 2026-09-03 (P8 revised)
 2B.16 Company tab        (UI,    S)  — collapse + reorder     ✅ unblocked
 2B.17 ID block redesign  (UI,    L)  — after 2B.13. BLOCKED on the design
 2B.10 Close              (QA,    M)  — LAST. Always last.    ⚠️ ZIP + green snapshot first
