@@ -2696,6 +2696,83 @@ body {
   margin-top: 24px;
 }
 
+/* ============================================================================
+   SESSION 2B.22 — THE ADD/EDIT PROSPECT MODAL. Four rules, and three of them
+   exist because of one measurement.
+
+   ⚠️⚠️ THE MEASUREMENT, TAKEN BEFORE ANY MARKUP MOVED: on Michael's shorter
+   window (innerHeight 884) the modal card was ALREADY 869px tall, sitting 8px
+   from the top and 8px from the bottom — and NOTHING in .modal-overlay or
+   .modal-card sets overflow. His sheet turns four paired fields into
+   full-width singles (Job Title, Address, Email, Phone, LinkedIn), which is
+   +2 rows, so the card would have grown past the viewport with `align-items:
+   center` clipping BOTH ends and the top rows unreachable at any scroll
+   position. That is not a cosmetic overflow: First Name would have been off
+   screen with no way to get to it.
+
+   ⛔ SO THE SCROLL IS LOAD-BEARING, NOT POLISH. Do not remove it to "let the
+   modal size itself" — it cannot, at his real window height.
+
+   SCOPED TO #modal-prospect BY ID, DELIBERATELY. .modal-card is shared by
+   every modal in the app, several of which are short and centre correctly
+   today; a global max-height/overflow would give all of them a scroll
+   container and a global margin trim would reflow all of them. This is the
+   one modal whose field count outgrew the viewport.
+   ========================================================================= */
+
+/* 1. THE THREE-UP ROW — City | State | Zip. THE COUNT IS PINNED, never
+      repeat(auto-fit, minmax(Npx, 1fr)): Session 2B.3's lesson, restated by
+      2B.17. auto-fit reads the track count off whatever window is open, so
+      the layout that gets screenshotted is not the layout that ships and
+      nothing in the measurement says so.
+      minmax(0, 1fr) NOT 1fr — a bare 1fr track is min-content-sized, so one
+      long value widens its column and squeezes the other two. */
+.form-row-3up {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* 2. THE CARD SCROLLS ITSELF. max-height leaves the flex centring intact:
+      the card stops growing and owns its own overflow instead of spilling
+      past both edges of the overlay. */
+#modal-prospect .modal-card {
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+
+/* 3. THE VERTICAL TRIM. .form-group ships margin-bottom: 16px for the modals'
+      stacked rows; twelve rows of it is 192px of pure gap. 6px back per row is
+      ~72px, which is most of a row and a shorter scroll. Purely a budget trim
+      — reverting it costs only scroll distance, nothing structural. */
+#modal-prospect .form-group {
+  margin-bottom: 10px;
+}
+
+/* 4. THE CONFERENCE FIELDSET. Same values as the detail view's
+      .pd-conference-group (Session 2B.17) but its OWN rule set: that class
+      carries grid-column: 1 / -1 for the identity grid, and its title takes
+      --color-primary, which inside a modal is whichever hub happens to be
+      behind the overlay. A fieldset ships its own margin/padding/border and a
+      legend its own padding and inline-box behaviour; leaving either in place
+      puts a stray gap at the top of the group that reads as a CSS bug. */
+.modal-fieldset {
+  margin: 2px 0 12px;
+  padding: 6px 14px 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  min-width: 0;   /* a fieldset defaults to min-width: min-content, which
+                     overflows on a long conference name */
+}
+
+.modal-fieldset-title {
+  padding: 0 6px;
+  margin-left: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted);
+}
+
 .cursor-pointer {
   cursor: pointer;
 }

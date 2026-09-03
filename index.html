@@ -1606,6 +1606,38 @@
     <div class="modal-card">
       <h3 id="prospect-modal-title">Add Prospect</h3>
 
+      <!-- ============================================================
+           SESSION 2B.22 — THE FIELD ORDER IS MICHAEL'S SHEET OF
+           2026-09-02, AND IT IS NOT THE ORDER THIS MODAL SHIPPED WITH.
+
+           ⛔ THIS DEPARTS FROM FROZEN CONTRACT P9, which reads
+           "#modal-prospect is untouched and remains the create path."
+           Michael granted a THIS-SESSION override at boot on 2026-09-03,
+           with the change named and the line quoted (the review-response
+           plan's standing procedure, lines 326-345). The create-path half
+           of P9 is UNCHANGED: this is still the only create surface, it is
+           not vestigial, and it must not be deleted as cleanup. The
+           amendment P9 now owes is recorded in ai/AIContext.md for 2B.10.
+
+           ⚠️ EVERY SURVIVING id IS BYTE-IDENTICAL. Only the ORDER moved.
+           Two ids are new (#pros-address, #pros-zip) and two are GONE
+           (#pros-seniority, #pros-location) — see the two warnings below
+           before restoring either.
+
+           THE ORDER, verbatim from the sheet:
+             First Name | Last Name
+             Job Title
+             Company            (+ Look Up, Edit Profile, match notice)
+             Address
+             City | State | Zip
+             Email Address      (+ duplicate warning)
+             Phone Number
+             LinkedIn URL
+             ----- Conference Name | City/Venue, Start | End
+             ----- Associated Tags, Notes
+             ----- [ Save and Open Contact ]
+           ============================================================ -->
+
       <div class="form-row">
         <div class="form-group">
           <label for="pros-first-name">First Name</label>
@@ -1617,46 +1649,17 @@
         </div>
       </div>
 
+      <!-- ⛔ SENIORITY HAS NO CONTROL HERE ANY MORE, AND THAT IS THE FEATURE.
+           deriveSeniority(title) fills it on CREATE, and the prospect detail
+           view is the surface for correcting the guess. ⚠️ AND saveProspect()
+           DELIBERATELY DOES NOT WRITE p.seniority ON THE EDIT BRANCH — a
+           re-derivation there would silently overwrite a hand-correction made
+           in the detail view with a guess off the job title. Adding a select
+           back here means auditing that branch too; read the long note above
+           the edit branch in app.js first. -->
       <div class="form-group">
-        <label for="pros-email">Email Address</label>
-        <input type="email" id="pros-email" placeholder="john.doe@company.com">
-        <!-- Session 2B.7 / contract P6. The duplicate-email refusal, INLINE
-             rather than in an alert(), because the notice carries a real link
-             to the existing contact's detail view and an alert() cannot hold
-             one. Hidden on every openProspectModal() and on every successful
-             save; populated only by saveProspect(). Its text is written by
-             renderDuplicateEmailWarning() in app.js — do not hardcode a name
-             here. -->
-        <div id="pros-dup-warning" class="dup-email-warning hidden"></div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label for="pros-phone">Phone Number</label>
-          <input type="text" id="pros-phone" placeholder="+1 (555) 123-4567">
-        </div>
-        <div class="form-group">
-          <label for="pros-linkedin">LinkedIn URL</label>
-          <input type="url" id="pros-linkedin" placeholder="https://linkedin.com/in/janesmith">
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label for="pros-title">Job Title</label>
-          <input type="text" id="pros-title" placeholder="VP of Engineering">
-        </div>
-        <div class="form-group">
-          <label for="pros-seniority">Seniority</label>
-          <select id="pros-seniority" class="premium-select"
-            style="background-color: rgba(0,0,0,0.25); border: 1px solid var(--color-border); color: var(--color-text-main); padding: 8px 12px; border-radius: var(--border-radius-md); font-size: 13px; outline: none; transition: var(--transition-smooth); cursor: pointer;">
-            <option value="C-Level">C-Level / Executive</option>
-            <option value="VP">VP</option>
-            <option value="Director">Director</option>
-            <option value="Manager">Manager</option>
-            <option value="Individual Contributor">Individual Contributor</option>
-          </select>
-        </div>
+        <label for="pros-title">Job Title</label>
+        <input type="text" id="pros-title" placeholder="VP of Engineering">
       </div>
 
       <div class="form-group">
@@ -1683,11 +1686,29 @@
              P6's .dup-email-warning rule set — a fourth surface, still no new
              CSS. It sits under COMPANY, not under Email, because the choice it
              offers is about the company. Text is written by
-             renderCompanyMatchNotice() in app.js; do not hardcode a name. -->
+             renderCompanyMatchNotice() in app.js; do not hardcode a name.
+             ⚠️ SESSION 2B.22 — COMPANY NOW SITS ABOVE EMAIL, so the natural tab
+             order has him typing the company name first. 2B.18's blur matcher
+             only fills a BLANK box, so the silent auto-fill fires less and this
+             notice fires more. That is the intended trade and it does NOT
+             reintroduce 2B.18's ordering defect: nothing in this modal is
+             written until Save. -->
         <div id="pros-company-match" class="dup-email-warning hidden"></div>
       </div>
 
-      <div class="form-row">
+      <!-- SESSION 2B.22. #pros-address and #pros-zip are NEW controls over
+           fields 2B.21 already persists, migrates and carries in both CSV
+           writers — so this is markup only and adds no backup surface. -->
+      <div class="form-group">
+        <label for="pros-address">Address</label>
+        <input type="text" id="pros-address" placeholder="500 Market St, Suite 400">
+      </div>
+
+      <!-- THE THREE-UP, AND THE COUNT IS PINNED. Never repeat(auto-fit, ...):
+           Session 2B.3's lesson, restated by 2B.17 — a track count that reads
+           off whatever window is open is not a decision, it is the absence of
+           one, and the layout that gets reviewed is not the layout that ships. -->
+      <div class="form-row form-row-3up">
         <div class="form-group">
           <label for="pros-city">City</label>
           <input type="text" id="pros-city" placeholder="San Francisco">
@@ -1696,44 +1717,89 @@
           <label for="pros-state">State</label>
           <input type="text" id="pros-state" placeholder="CA">
         </div>
+        <div class="form-group">
+          <label for="pros-zip">Zip</label>
+          <input type="text" id="pros-zip" placeholder="94105">
+        </div>
       </div>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label for="pros-location">Metro</label>
-          <input type="text" id="pros-location" placeholder="Bay Area">
-        </div>
-        <div class="form-group">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-            <label style="margin:0;">Associated Tags</label>
-            <button id="btn-pros-edit-tags" type="button" class="text-btn"
-              style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Choose Tags</button>
+      <!-- ⛔⛔ THERE IS NO METRO CONTROL HERE, AND REMOVING IT WAS ONLY HALF
+           THE JOB. His working database keeps geography ONLY in p.location —
+           all four live records carry it and none carry city/state — so
+           saveProspect()'s edit branch, which assigned every field
+           unconditionally, would have written location: "" over every record
+           it touched. THE WRITE WAS REMOVED WITH THE MARKUP. If a Metro input
+           ever comes back here, restore the write in the same commit; a
+           control with no writer is the mirror-image defect. -->
+
+      <div class="form-group">
+        <label for="pros-email">Email Address</label>
+        <input type="email" id="pros-email" placeholder="john.doe@company.com">
+        <!-- Session 2B.7 / contract P6. The duplicate-email refusal, INLINE
+             rather than in an alert(), because the notice carries a real link
+             to the existing contact's detail view and an alert() cannot hold
+             one. Hidden on every openProspectModal() and on every successful
+             save; populated only by saveProspect(). Its text is written by
+             renderDuplicateEmailWarning() in app.js — do not hardcode a name
+             here. -->
+        <div id="pros-dup-warning" class="dup-email-warning hidden"></div>
+      </div>
+
+      <div class="form-group">
+        <label for="pros-phone">Phone Number</label>
+        <input type="text" id="pros-phone" placeholder="+1 (555) 123-4567">
+      </div>
+
+      <div class="form-group">
+        <label for="pros-linkedin">LinkedIn URL</label>
+        <input type="url" id="pros-linkedin" placeholder="https://linkedin.com/in/janesmith">
+      </div>
+
+      <!-- THE CONFERENCE GROUP. A bordered <fieldset>/<legend>, matching what
+           Session 2B.17 shipped in the detail view's identity block, because
+           these are the same four fields on the sibling surface and his sheet
+           draws a separator around them on both.
+
+           ⛔ BORDERED GROUP, NEVER A DISCLOSURE. Michael was offered collapse
+           for these four on 2026-09-01 and rejected it in as many words. They
+           render always, blank or not; nothing may display: none them.
+
+           ⚠️ IT DOES NOT SHARE .pd-conference-group's CLASS ON PURPOSE. That
+           class carries grid-column: 1 / -1 for the identity GRID and its title
+           takes --color-primary, which in a modal is whichever hub happens to be
+           behind it. Two surfaces, two rule sets, same values. -->
+      <fieldset class="modal-fieldset">
+        <legend class="modal-fieldset-title">Conference</legend>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="pros-conference-name">Conference Name</label>
+            <input type="text" id="pros-conference-name" placeholder="AV Summit 2026">
           </div>
-          <div id="pros-display-tags" class="interactive-tags-container"
-            style="display: flex; flex-wrap: wrap; gap: 6px; cursor: pointer; padding: 6px; border-radius: var(--border-radius-sm); border: 1px dashed transparent; transition: var(--transition-smooth); background-color: rgba(0,0,0,0.15); min-height: 38px;">
+          <div class="form-group">
+            <label for="pros-conference-venue">Conference City / Venue</label>
+            <input type="text" id="pros-conference-venue" placeholder="Nashville">
           </div>
         </div>
-      </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="pros-conference-start">Conference Start Date</label>
+            <input type="text" id="pros-conference-start" placeholder="March 3, 2026">
+          </div>
+          <div class="form-group">
+            <label for="pros-conference-end">Conference End Date</label>
+            <input type="text" id="pros-conference-end" placeholder="March 5, 2026">
+          </div>
+        </div>
+      </fieldset>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label for="pros-conference-name">Conference Name</label>
-          <input type="text" id="pros-conference-name" placeholder="AV Summit 2026">
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+          <label style="margin:0;">Associated Tags</label>
+          <button id="btn-pros-edit-tags" type="button" class="text-btn"
+            style="font-size: 11px; text-transform: uppercase; font-weight: 700;">✏️ Choose Tags</button>
         </div>
-        <div class="form-group">
-          <label for="pros-conference-venue">Conference City / Venue</label>
-          <input type="text" id="pros-conference-venue" placeholder="Nashville">
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label for="pros-conference-start">Conference Start Date</label>
-          <input type="text" id="pros-conference-start" placeholder="March 3, 2026">
-        </div>
-        <div class="form-group">
-          <label for="pros-conference-end">Conference End Date</label>
-          <input type="text" id="pros-conference-end" placeholder="March 5, 2026">
+        <div id="pros-display-tags" class="interactive-tags-container"
+          style="display: flex; flex-wrap: wrap; gap: 6px; cursor: pointer; padding: 6px; border-radius: var(--border-radius-sm); border: 1px dashed transparent; transition: var(--transition-smooth); background-color: rgba(0,0,0,0.15); min-height: 38px;">
         </div>
       </div>
 
@@ -1745,7 +1811,12 @@
 
       <div class="modal-actions">
         <button id="pros-modal-cancel" class="header-action-btn secondary-btn">Cancel</button>
-        <button id="pros-modal-confirm" class="header-action-btn primary-btn">Save Contact</button>
+        <!-- SESSION 2B.22 / task 4. ONE primary button, replacing "Save Contact"
+             (Michael, 2026-09-03: the sheet shows one button). Its id is UNCHANGED.
+             ⚠️ It is bound to saveProspectAndOpen(), NOT to saveProspect() — the
+             navigation must not happen on either refusal branch (P6 duplicate email,
+             2B.18 company conflict). Read that wrapper before rebinding this. -->
+        <button id="pros-modal-confirm" class="header-action-btn primary-btn">Save and Open Contact</button>
       </div>
     </div>
   </div>

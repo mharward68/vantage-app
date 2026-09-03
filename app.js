@@ -12220,11 +12220,20 @@ function openProspectModal(id = null) {
       document.getElementById("pros-email").value = p.email || "";
       document.getElementById("pros-phone").value = p.phone || "";
       document.getElementById("pros-title").value = p.title || "";
-      document.getElementById("pros-seniority").value = p.seniority || "Individual Contributor";
       document.getElementById("pros-company").value = getCompanyName(p.companyId) || "";
+      /* SESSION 2B.22. address and zip were persisted, migrated and given CSV
+         columns by 2B.21; this session is the first surface in the modal to
+         read or write them. */
+      document.getElementById("pros-address").value = p.address || "";
       document.getElementById("pros-city").value = p.city || "";
       document.getElementById("pros-state").value = p.state || "";
-      document.getElementById("pros-location").value = p.location || "";
+      document.getElementById("pros-zip").value = p.zip || "";
+      /* ⛔ NO pros-seniority AND NO pros-location LINE HERE — both controls
+         were removed by 2B.22 under Michael's P9 override. A getElementById
+         read of either now returns null and throws
+         "Cannot read properties of null", and the modal STOPS OPENING. That
+         is the theme-toggle failure shape and it is why these two absences
+         are commented rather than silent. */
       document.getElementById("pros-notes").value = p.notes || "";
       document.getElementById("pros-linkedin").value = p.linkedin || "";
       document.getElementById("pros-conference-name").value = p.conferenceName || "";
@@ -12248,11 +12257,12 @@ function openProspectModal(id = null) {
     document.getElementById("pros-email").value = "";
     document.getElementById("pros-phone").value = "";
     document.getElementById("pros-title").value = "";
-    document.getElementById("pros-seniority").value = "Individual Contributor";
     document.getElementById("pros-company").value = "";
+    document.getElementById("pros-address").value = "";
     document.getElementById("pros-city").value = "";
     document.getElementById("pros-state").value = "";
-    document.getElementById("pros-location").value = "";
+    document.getElementById("pros-zip").value = "";
+    // ⛔ No pros-seniority / pros-location line — see the edit branch above.
     document.getElementById("pros-notes").value = "";
     document.getElementById("pros-linkedin").value = "";
     document.getElementById("pros-conference-name").value = "";
@@ -12363,6 +12373,27 @@ function syncProspectLookupButton(email) {
   btn.classList.remove("hidden");
 }
 
+/* ⚠️⚠️ SESSION 2B.22 — THIS FUNCTION NOW RETURNS AN ANSWER, AND THE ANSWER IS
+   THE FEATURE.
+
+   It returns the SAVED PROSPECT'S ID on a real save, and a FALSY value on
+   every path that did not save. There are four such paths and all four are
+   reachable by ordinary use:
+     1. the required-fields alert (First / Last / Email),
+     2. contract P6's duplicate-email refusal,
+     3. Session 2B.18's company-conflict question, which returns to WAIT for an
+        answer and is not a refusal at all, and
+     4. the edit branch failing to find its own record.
+   saveProspectAndOpen() below is the only reason this matters: navigating to a
+   detail view after any of the four would take him away from a form still
+   holding his typed data, with a notice he never got to read.
+
+   ⛔ DO NOT MAKE THIS RETURN `true`. The caller needs the id, and on CREATE
+   the id is minted in here and never assigned back to editingProspectId.
+   BUILD_NOTES ("A SAVE FUNCTION THAT CLOSES ITS OWN EDITOR CLEARS THE ID YOU
+   WERE ABOUT TO READ") is the same trap one step removed: state.selectedProspectId
+   happens to hold it today, and reading a cursor instead of a return value is
+   how that stops being true. */
 function saveProspect() {
   const first = document.getElementById("pros-first-name").value.trim();
   const last = document.getElementById("pros-last-name").value.trim();
@@ -12370,11 +12401,11 @@ function saveProspect() {
   const phone = document.getElementById("pros-phone").value.trim();
   const linkedinVal = document.getElementById("pros-linkedin").value.trim();
   const titleVal = document.getElementById("pros-title").value.trim();
-  const seniorityVal = document.getElementById("pros-seniority").value;
   const compVal = document.getElementById("pros-company").value.trim();
+  const addressVal = document.getElementById("pros-address").value.trim();
   const city = document.getElementById("pros-city").value.trim();
   const stateVal = document.getElementById("pros-state").value.trim();
-  const loc = document.getElementById("pros-location").value.trim();
+  const zipVal = document.getElementById("pros-zip").value.trim();
   const notesVal = document.getElementById("pros-notes").value.trim();
   const conferenceNameVal = document.getElementById("pros-conference-name").value.trim();
   const conferenceStartVal = document.getElementById("pros-conference-start").value.trim();
@@ -12383,7 +12414,7 @@ function saveProspect() {
 
   if (!first || !last || !email) {
     alert("First Name, Last Name, and Email are required!");
-    return;
+    return null;
   }
 
   /* CONTRACT P6 — the check on BOTH branches, and it runs BEFORE
@@ -12398,7 +12429,7 @@ function saveProspect() {
   const dup = prospectByEmail(email, editingProspectId);
   if (dup) {
     renderDuplicateEmailWarning(dup);
-    return;
+    return null;
   }
   hideDuplicateEmailWarning();
 
@@ -12429,9 +12460,14 @@ function saveProspect() {
       const compEl = document.getElementById("pros-company");
       if (company && compEl) compEl.value = company.name || "";
       hideCompanyMatchNotice("pros-company-match");
-      saveProspect();
+      /* SESSION 2B.22. THE WRAPPER, NOT saveProspect() — answering the question
+         is the last thing that was missing, so this re-entry is a real save and
+         must open the contact exactly as clicking the button would. Calling
+         saveProspect() here instead saves correctly and silently declines to
+         navigate, which looks like the button not working. */
+      saveProspectAndOpen();
     });
-    return;
+    return null;
   }
   hideCompanyMatchNotice("pros-company-match");
 
@@ -12450,29 +12486,68 @@ function saveProspect() {
      that writes itself at Save is a company created behind his back. */
   const compId = (!compVal && linkPlan.action === "link")
     ? linkPlan.company.id
-    : resolveCompanyByName(compVal, email, loc);
+    /* ⚠️ SESSION 2B.22 — THE THIRD ARGUMENT IS NOW ALWAYS "", AND THAT IS A
+       DECISION, NOT A LEFTOVER. It seeds a brand-new company's `location`
+       (resolveCompanyByName writes `location || "Unknown"`), and it used to
+       carry whatever was typed into the Metro box — a box this modal no longer
+       has. The tempting substitute is [city, state], and it is refused for the
+       same reason 2B.13 refused to seed `website` with "domain.com": a
+       CONTACT's city is not their EMPLOYER's location, and a person at a
+       national company is exactly the case that breaks. "Unknown" is an honest
+       empty; "San Francisco, CA" on a Chicago company is a confident wrong
+       answer. DIRECTIVES Ladder rung 2 — the surface never lies about state.
+       Company location is editable in the company modal, which is its surface. */
+    : resolveCompanyByName(compVal, email, "");
+
+  /* SESSION 2B.22. Captured explicitly rather than read back off a cursor
+     afterwards. On CREATE the id is minted inside the else-branch and never
+     assigned to editingProspectId; on EDIT editingProspectId is the id. */
+  let savedProspectId = null;
 
   if (editingProspectId) {
     const p = state.prospects.find(x => x.id === editingProspectId);
-    if (p) {
-      p.firstName = first;
-      p.lastName = last;
-      p.email = email;
-      p.phone = phone;
-      p.linkedin = linkedinVal;
-      p.title = titleVal;
-      p.seniority = seniorityVal;
-      p.companyId = compId;
-      p.city = city;
-      p.state = stateVal;
-      p.location = loc;
-      p.notes = notesVal;
-      p.conferenceName = conferenceNameVal;
-      p.conferenceStart = conferenceStartVal;
-      p.conferenceEnd = conferenceEndVal;
-      p.conferenceVenue = conferenceVenueVal;
-      p.tags = currentProspectTags.length ? [...currentProspectTags] : ["No Prospect Tag"];
-    }
+    if (!p) return null;
+    savedProspectId = editingProspectId;
+    p.firstName = first;
+    p.lastName = last;
+    p.email = email;
+    p.phone = phone;
+    p.linkedin = linkedinVal;
+    p.title = titleVal;
+    p.companyId = compId;
+    p.address = addressVal;
+    p.city = city;
+    p.state = stateVal;
+    p.zip = zipVal;
+    p.notes = notesVal;
+    p.conferenceName = conferenceNameVal;
+    p.conferenceStart = conferenceStartVal;
+    p.conferenceEnd = conferenceEndVal;
+    p.conferenceVenue = conferenceVenueVal;
+    p.tags = currentProspectTags.length ? [...currentProspectTags] : ["No Prospect Tag"];
+
+    /* ⛔⛔ SESSION 2B.22 — TWO FIELDS ARE DELIBERATELY NOT ASSIGNED HERE, AND
+       BOTH ABSENCES ARE THE POINT OF THIS SESSION. This branch used to assign
+       EVERY field unconditionally, so deleting a control without deleting its
+       write turns an ordinary "open a contact, fix a typo, Save" into silent
+       data destruction across the whole record set.
+
+       p.location — HIS WORKING DATABASE KEEPS GEOGRAPHY ONLY HERE. Measured
+       2026-09-03 before any edit: all four live prospects carry `location`
+       ("San Francisco, CA", "New York, NY") and NONE carry city or state. With
+       the Metro box gone, `p.location = ""` would have wiped every record he
+       edited, and nothing on screen would have said so — the directory's Metro
+       column would just start reading "—". The field is untouched here; the
+       prospect detail view's Metro control (contract P5, one writer) is now its
+       only editor.
+
+       p.seniority — the detail view is the surface for CORRECTING the guess
+       (the plan says so in as many words). deriveSeniority(title) is a
+       heuristic over the job title; re-deriving it on every modal save would
+       overwrite a hand-corrected "VP" with "Individual Contributor" the moment
+       he fixed an unrelated typo. It is written on CREATE only, below.
+       ⚠️ ensureStateDefaults() fills a MISSING seniority (`if (!p.seniority)`),
+       so a record that never had one still gets one at boot. */
   } else {
     const newP = {
       id: `pros-${Date.now()}`,
@@ -12482,21 +12557,31 @@ function saveProspect() {
       phone: phone,
       linkedin: linkedinVal,
       title: titleVal,
-      seniority: seniorityVal,
+      /* SESSION 2B.22. DERIVED, because the modal no longer has a Seniority
+         control — his sheet drops it. The value still exists on every new
+         record, and the prospect detail view is where he corrects it. This is
+         the SAME function ensureStateDefaults() and the CSV import already use,
+         so there is one heuristic, not three. */
+      seniority: deriveSeniority(titleVal),
       companyId: compId,
+      /* SESSION 2B.21, now read off the DOM. Seeded "" so a brand-new record
+         has the SAME SHAPE the ensureStateDefaults() migration writes — see the
+         long note there. 2B.21 wrote these as literals because the modal had no
+         control for either; 2B.22 added #pros-address and #pros-zip, so they
+         are real reads now. ⛔ Do not "tidy" them away: without them a record
+         created between two reloads carries `undefined`, the exact shape the
+         house convention exists to prevent. */
+      address: addressVal,
       city: city,
       state: stateVal,
-      location: loc,
-      /* SESSION 2B.21. Seeded "" so a brand-new record has the SAME SHAPE the
-         ensureStateDefaults() migration writes — see the long note there. There
-         is no #modal-prospect control for either field yet (2B.22 adds them),
-         so these are deliberately literals and not reads off the DOM. ⛔ Do not
-         "tidy" them away as redundant: without them a record created between
-         two reloads carries `undefined`, which is the exact shape the house
-         convention exists to prevent. Contract P9's markup is untouched — this
-         is the create function, not the modal. */
-      address: "",
-      zip: "",
+      zip: zipVal,
+      /* SESSION 2B.22. `location` IS SEEDED "" ON CREATE THOUGH IT IS NOT
+         ASSIGNED ON EDIT, and the asymmetry is deliberate: a brand-new record
+         has no geography to destroy, and ensureStateDefaults() has no
+         `p.location` default — every reader is written `p.location || ""` — so
+         omitting it entirely would mint the one record in the file holding
+         `undefined` where the rest hold a string. Seed, never overwrite. */
+      location: "",
       notes: notesVal,
       conferenceName: conferenceNameVal,
       conferenceStart: conferenceStartVal,
@@ -12507,6 +12592,7 @@ function saveProspect() {
     };
     state.prospects.push(newP);
     state.selectedProspectId = newP.id;
+    savedProspectId = newP.id;
   }
 
   /* SESSION 2B.18. The reported ordering bug: fill Company BEFORE Email and
@@ -12523,6 +12609,44 @@ function saveProspect() {
   document.getElementById("modal-prospect").classList.add("hidden");
   renderProspectsView();
   refreshAqAfterEdit();
+
+  return savedProspectId;
+}
+
+/* ⚠️⚠️ SESSION 2B.22, TASK 4 — "SAVE AND OPEN CONTACT". THE WHOLE NON-COSMETIC
+   PART OF THIS SESSION IS THE `if` BELOW.
+
+   Michael's sheet shows ONE button where "Save Contact" used to be, and he
+   confirmed replace-not-add on 2026-09-03. So #pros-modal-confirm is bound to
+   THIS function, never to saveProspect() directly.
+
+   ⛔ THE REFUSALS ARE WHY THIS IS NOT A ONE-LINER. saveProspect() has four
+   paths that do not save — the required-fields alert, contract P6's
+   duplicate-email refusal, Session 2B.18's company-conflict question (which is
+   not a refusal at all: it is waiting for an answer), and an edit branch that
+   cannot find its record. Every one of them leaves the modal OPEN with his
+   typed data in it and a notice on screen he has not read yet. Navigating to a
+   detail view on any of them would throw the form away and hide the
+   explanation, which is worse than the bug the notices exist to prevent.
+
+   `if (!savedId) return;` — the modal stays exactly as saveProspect() left it.
+   Do not "simplify" this to always navigate, and do not test it against
+   whether the modal is hidden: on the 2B.18 question the modal is open AND
+   nothing was written, and on a successful save saveProspect() hides it itself.
+   The return value is the only honest signal. */
+function saveProspectAndOpen() {
+  const savedId = saveProspect();
+  if (!savedId) return;
+
+  /* Origin is ProspectHub. Three of the detail view's four entry points come
+     from there and it is where #add-prospect-btn lives, so the back arrow lands
+     where he started. ⚠️ THE ONE OTHER CALLER OF openProspectModal() IS THE
+     DEFERRED ADVANCED QUERY DRAWER (app.js ~9884). Saving from there now opens
+     the detail view too, and its back arrow goes to ProspectHub rather than
+     back to the drawer. That is a consequence of one shared Save button, it is
+     known and accepted, and NO AQ CODE WAS TOUCHED to produce it — the drawer
+     gets its own origin shape when §2.1 un-defers it. */
+  openProspectDetail(savedId, { view: "prospects" });
 }
 
 /* Contract P5. The body of the old zero-argument deleteProspect() takes an
@@ -14765,7 +14889,11 @@ function setupEventListeners() {
   document.getElementById("pros-modal-cancel").addEventListener("click", () => {
     document.getElementById("modal-prospect").classList.add("hidden");
   });
-  document.getElementById("pros-modal-confirm").addEventListener("click", saveProspect);
+  /* SESSION 2B.22. Bound to the WRAPPER, not to saveProspect(). The wrapper is
+     what refuses to navigate on a refusal; binding saveProspect() here would
+     save correctly and never open the contact, which is the button not doing
+     what its label says. Read saveProspectAndOpen()'s header before rebinding. */
+  document.getElementById("pros-modal-confirm").addEventListener("click", saveProspectAndOpen);
 
   /* ⚠️ SESSION 2B.18, TASK 7. THIS LISTENER IS THE FEATURE. Michael asked for
      the company to appear "as soon as I tab out of email", so the trigger is
