@@ -31,8 +31,10 @@ sessions sized honestly; spending it on a convenient catch-all is how phases sto
 2B.16  Company tab         (UI,   S)  — collapse + tab reorder    ✅ DONE 2026-09-02
 2B.19  Add Company          (DATA, M)  — the front door + normaliser ✅ NEXT, unblocked
 2B.18  Email → company      (DATA, M)  — domain match + arrow        ✅ after 2B.19
-2B.20  Import identity      (DATA, M)  — repair on import + report   ✅ after 2B.18
-2B.17  ID block redesign   (UI,   L)  — after 2B.13               ⛔ BLOCKED ON MICHAEL
+2B.20  Import identity      (DATA, M)  — repair on import + report   ✅ DONE 2026-09-02
+2B.21  Prospect fields      (DATA, M)  — address, zip, conference CSV ⚠️ ZIP first
+2B.17  ID block redesign   (UI,   L)  — after 2B.13 and 2B.21     ✅ UNBLOCKED 2026-09-02
+2B.22  Add Prospect layout (UI,   S)  — after 2B.21               ⚠️ P9 WAIVER NEEDED
 2B.10  Close               (QA,   M)  — LAST. Always last.        ⚠️ ZIP + green snapshot
 ```
 
@@ -313,6 +315,314 @@ tool** at Michael's request rather than as Phase 2C enforcement. **10b's enforce
 or merging duplicates — stays in Phase 2C** and is still its own §4 decision. Running this report is
 what will tell him whether enforcement is even needed.
 
+## THE FIELD WORK — Michael's three sheets, 2026-09-02 evening
+
+He supplied the layouts for **both** surfaces on the same evening. They share a field set, so the
+work splits by KIND, not by screen: the data first, then each layout.
+
+**Run order: 2B.21 → then 2B.17 and 2B.22 in either order.** Both layouts render `address` and `zip`,
+so neither can run until those fields exist and are backup-covered.
+
+### HOW THE P5 / P9 OVERRIDES ARE TAKEN — Michael's instruction, 2026-09-02
+
+He does not pre-approve these. **The session ASKS, and he answers with the change in front of him.**
+
+⚠️ **ASK IT AS PART OF THE BOOT QUESTION BLOCK, NEVER MID-RUN.** In both sessions the contract
+departure IS the work — 2B.17 *is* the field-list change, 2B.22 *is* the modal redesign — so it is
+knowable in the first minute and belongs with everything else the session asks up front. A session
+that reaches task 1, stops, and waits has converted an unattended run into a stalled one.
+
+**The exact question, both sessions:** name the contract, quote the line it departs from, say what
+the departure is in one sentence, and ask for a **this-session override**. Do not ask him to amend
+the contract; that is a separate act and it is not his to do mid-session.
+
+⛔ **AND THE HALF THAT IS EASY TO DROP: AN OVERRIDE LEAVES THE CONTRACT TEXT WRONG.** Once 2B.17
+ships, P5's enumeration no longer matches the code; once 2B.22 ships, P9's "untouched" is false.
+**A frozen contract that contradicts the code is worse than no contract** — BUILD_NOTES' curation
+rule: one grep disproves it, the whole note is discarded, and the true half goes with it. So every
+override taken here is **owed as an amendment at 2B.10**, which already runs a DECLARATIONS audit.
+**A session that takes an override MUST record it in its own AIContext handoff under a heading
+2B.10 will find.**
+
+### ⛔⛔ THE §4 FINDING THAT CAME OUT OF SCOPING THIS — READ FIRST
+
+**THE FOUR CONFERENCE FIELDS ARE WRITABLE FROM BOTH SURFACES AND ARE IN NEITHER CSV.** Proved with
+the shipped exporter against a record holding all four values: 15 header columns, **zero** conference
+columns, and the CSV did not contain `"AV Summit 2026"` or `"Nashville"`. Not in
+`exportProspectsCSV()`, not in `exportZIPBackup()`'s prospect block, therefore not readable by
+`restoreProspectsFromCSV()`.
+
+**So every conference value is destroyed by an export → wipe → restore round trip, silently.** This
+is a live DIRECTIVES §4 Backup coverage violation and it PREDATES this work. ⚠️ **2B.10's phase close
+runs exactly that drill on real data.** It has never lost anything only because **0 records currently
+hold conference values** — which is also why no previous drill caught it. **A drill against data that
+does not exist is a test that cannot fail.**
+
+---
+
+## Session 2B.21 — Prospect field coverage: address, zip, and the conference repair
+
+- **Compartment:** the prospect record's persisted field set + the prospect CSV export/restore.
+- **Depends on:** nothing. **Runs before 2B.17 and 2B.22.**
+- **Size: M** · His time: ~5 min · **Confidence: High** — the work is enumerable and the drill is
+  the proof.
+- ⚠️ **ZIP FIRST. NON-NEGOTIABLE** — the Done-when calls `wipeAllData()`.
+
+### Tasks
+
+1. **Two new persisted fields on the prospect: `address` and `zip`.** ⚠️ `address` exists today on
+   COMPANIES only (`comp-address`); there has never been a prospect address. Neither field exists in
+   any form.
+2. **`ensureStateDefaults()` migrations for all six** — `address`, `zip`, and the four `conference*`
+   keys, which have never had one either. ⛔ **The seed and the migration must write the SAME SHAPE**
+   — BUILD_NOTES' 2B.13 lesson: `if (x === undefined)` is permanently defeated by a `""` seed, and
+   both lines read as correct in isolation.
+3. **Six new columns in BOTH prospect CSV writers** — `exportProspectsCSV()` **and**
+   `exportZIPBackup()`'s prospect block. They are two separate literal header arrays holding the same
+   15 values. **Editing one and not the other is the defect this session exists to fix, repeated.**
+4. **`restoreProspectsFromCSV()` reads all six.** Restore functions trim; that is right for these.
+5. **The CSV import maps them where the sheet has them** — Apollo carries address/city/state/zip
+   columns. Follow the existing `lookup([...])` idiom.
+
+### Done when
+
+- Type a value into **all six** fields on one contact → **export → `wipeAllData()` → restore** →
+  paste all six back, character-identical. **This is the whole session.**
+- The two header arrays are compared and pasted side by side, proving they match.
+- An older backup (without the six columns) still restores, leaving the six as `""` not `undefined`.
+- `check_ids.py` baseline · console clean · `node --check` clean.
+
+- **Backup coverage:** ⚠️ **This session IS the backup coverage.** State it per §4 in the summary.
+
+---
+
+## Session 2B.17 — Identity block redesign  ✅ UNBLOCKED 2026-09-02
+
+- **Compartment:** prospect detail view · **Depends on:** 2B.13 (done) and **2B.21**.
+- ⛔ **WAS blocked on Michael's layout. THE LAYOUT NOW EXISTS** — his third sheet. Confidence rises
+  from Low to Medium: the unknown that made it Low is gone.
+- **Size: L** · His time: ~10 min
+
+### The layout, verbatim from the sheet
+
+```
+First Name     Last Name     Seniority        (THREE-UP)
+Job Title
+Company
+Email Address
+Phone Number
+LinkedIn URL
+Address
+City           State         Zip              (THREE-UP)
+Metro
+Associated Tags
+─────
+Conference Name         Conference City / Venue    (paired)
+Conference Start Date   Conference End Date        (paired)
+Notes
+```
+
+- **"Metro" IS `location`, RELABELLED — NOT A NEW FIELD.** `PROSPECTS_COLUMNS` already ships
+  `{ key: "metro", label: "Metro" }` reading `p.location`, with a comment saying the field name and
+  the label have never matched on that table. **This sheet makes the detail view AGREE with the
+  directory**, which is a consistency gain, not a rename. ⛔ The stored key stays `location`.
+- **Seniority is HERE but NOT in the Add Prospect modal** (2B.22 drops it). Deliberate: this is the
+  surface for correcting a guess, and `deriveSeniority(title)` supplies the value at create time.
+- **The conference block sits BELOW, full width, in two paired rows** — not "off to the side" as the
+  original 2B.17 text said. **The sheet wins.** Still visible, still never hidden.
+
+### Tasks
+
+1. Reorder `PROSPECT_DETAIL_FIELDS` — **the only enumeration** — plus the matching `.form-group`
+   order, and add `address` / `zip` rows. ⚠️ **This departs from frozen contract P5**, which freezes
+   that enumeration. **ASK AT BOOT, NOT MID-RUN** — see the standing note below.
+2. Two THREE-UP rows. The grid is two-column today; a three-up needs one rule, scoped.
+3. `location`'s label becomes **Metro**. Key unchanged.
+4. **Notes taller, plus a pop-out expander** (carried from the original scope; not visible on the
+   sheet — confirm he still wants it).
+5. **LinkedIn renders as a link**, `target="_blank"` via `ensureUrlProtocol()`.
+6. ⚠️ **Company URL as a read-only derived display is NOT on his sheet.** Original task 4. **Ask
+   before building or dropping it** — it was review Finding 11.
+
+---
+
+## Session 2B.22 — Add Prospect modal: field order, and Save and Open Contact
+
+- **Compartment:** `#modal-prospect` only · ⛔ **CONFLICTS WITH FROZEN CONTRACT P9.**
+- **Depends on:** **2B.21**, and Michael waiving P9.
+- **Size: S** · His time: ~5 min · **Confidence: High** once the fields exist.
+
+### ⛔ THE P9 CONFLICT
+
+P9 says *"`#modal-prospect` is untouched and remains the create path."* Written to stop the
+detail-view work absorbing or deleting the modal, not to freeze its layout — but the text says
+untouched, and **a session does not reinterpret a frozen contract on its own.**
+**ASK AT BOOT, NOT MID-RUN** — see the standing note below.
+
+### The layout, verbatim from the sheet
+
+```
+First Name     Last Name         (paired)
+Job Title
+Company                          (+ 🔍 Look Up, ✏️ Edit Profile, #pros-company-match)
+Address
+City   State   Zip               (THREE-UP)
+Email Address                    (+ #pros-dup-warning)
+Phone Number
+LinkedIn URL
+─────  Conference Name / Conference City / Venue / Start | End
+─────  Associated Tags / Notes
+─────  [ Save and Open Contact ]
+```
+
+- **Seniority is DROPPED here.** `deriveSeniority(title)` fills it on save so the value still exists
+  with no input. It remains editable in the detail view.
+- **No Metro/`location` input in this modal.** ⚠️ Then `saveProspect()` must NOT write `location: ""`
+  on the edit branch — it assigns every field unconditionally today, so a blind removal **wipes the
+  geography of every record it touches.** His working database keeps geography ONLY in `location`.
+  **Remove the markup AND the write; never write the field at all.**
+- ⚠️ **Company sits ABOVE Email**, so the natural tab order has him typing the name first. 2B.18's
+  matcher fills a **blank** box, so the silent auto-fill fires less and the conflict notice more —
+  consistent with his stated habit (*"Most of the time I will type a company name"*). **It does NOT
+  reintroduce 2B.18's ordering defect**, which was the detail view, where every control commits on
+  change. Nothing here is written until Save.
+
+### Tasks
+
+1. Reorder the `.form-group`s. Markup only — **every id stays exactly as it is.**
+2. Remove Seniority's markup and its three reads (11972 / 12000 / 12122). ⚠️ **Twelve unguarded
+   `getElementById(...).value` reads point at the fields being touched**; a missed one throws
+   `Cannot read properties of null` and the modal stops opening — the `theme-toggle` failure shape.
+3. `deriveSeniority(title)` fills `seniority` on save.
+4. **Save and Open Contact** replaces Save Contact: `saveProspect()`, then `openProspectDetail()`.
+   ⚠️ `saveProspect()` returns nothing today and has **two refusal branches** (P6's duplicate-email
+   guard, 2B.18's company-conflict guard). It must report whether it saved, and the modal must **not
+   navigate on a refusal.** That is the only non-cosmetic code in this session.
+
+### Done when
+
+- The order matches. Screenshot, both themes.
+- **Open an existing contact carrying `location`, save unchanged, paste `location` before and after.
+  Identical.** The check that matters.
+- Email at a known company still auto-links; the notice still renders.
+- A duplicate email → **Save still refused AND the detail view does NOT open.** Paste both.
+- `check_ids.py` at baseline · console clean.
+
+- **Needs his eyes:** whether Save and Open Contact fully replaces Save Contact or sits beside it
+  (**unanswered — the sheet shows ONE button, so replace is the assumed default**).
+- **Risk and fallback:** if the refusal-aware save entangles, **ship the reorder alone.**
+
+---
+
+## SUPERSEDED — original 2B.21 scope
+
+> Replaced 2026-09-02 by the three sessions above, after Michael's second and third sheets added Address, Zip and the identity-block layout. Kept only so the earlier reference resolves.
+
+### Session 2B.21 (original) — Add Prospect modal: field order, and Save and Open Contact
+
+- **Compartment:** `#modal-prospect` only · ⛔ **CONFLICTS WITH FROZEN CONTRACT P9 — see below.**
+- **Depends on:** Michael waiving P9. Nothing else.
+- **Source:** Michael, 2026-09-02, two spreadsheet screenshots (the second places Company).
+- **Size: M** · His time: ~5 min · **Confidence: Medium** — the layout is trivial; the field
+  REMOVALS are not, and that is where the whole risk sits.
+
+### ⛔ THE P9 CONFLICT — RESOLVE BEFORE STARTING
+
+P9 says: *"`#modal-prospect` is untouched and remains the create path."* That was written to stop the
+detail-view work from absorbing or deleting the modal, not to freeze its layout forever — but the
+text says "untouched" and **a session does not reinterpret a frozen contract on its own.** Michael
+waives it in a sentence, or this session does not run.
+
+### The layout he asked for, verbatim from the sheet
+
+```
+First Name        Last Name        (paired)
+Job Title
+Company                            (+ 🔍 Look Up, ✏️ Edit Profile, #pros-company-match)
+Email Address                      (+ #pros-dup-warning)
+Phone Number
+LinkedIn URL
+─────
+Conference Name
+Conference City / Venue
+Start Date        End Date         (paired)
+─────
+Associated Tags
+Notes
+─────
+[ Save and Open Contact ]
+```
+
+Same labels, same `.form-group` idiom, three visual groups from the blank rows he left. Phone and
+LinkedIn become **full-width singles** (they are paired today); Job Title moves up and goes
+full-width.
+
+⚠️ **COMPANY SITS ABOVE EMAIL AND THAT CHANGES WHICH 2B.18 BRANCH FIRES MOST.** The matcher fills a
+**blank** Company box on Email blur; with Company above Email the natural tab order has him typing
+the name first, so the silent auto-fill fires less and the conflict notice fires more. That is
+consistent with his own stated habit — *"Most of the time I will type a company name"* — so it is
+the right order for him. **It does NOT reintroduce 2B.18's ordering defect:** that bug was the
+DETAIL VIEW, where every control commits on change. In this modal nothing is minted until Save.
+
+### ⚠️⚠️ THE REAL RISK: FOUR FIELDS COME OUT, AND TWELVE UNGUARDED READS POINT AT THEM
+
+His sheet drops **Seniority, City, State and Location.** Each is read three times with a bare
+`document.getElementById(...).value` — `openProspectModal()`'s edit branch (11972–11976),
+its create branch (12000–12004), and `saveProspect()` (12122–12126). **Deleting the markup without
+editing all twelve throws `Cannot read properties of null` and the modal stops opening at all** —
+the same failure shape BUILD_NOTES records for `theme-toggle`.
+
+⛔ **AND THE DATA-LOSS PATH, WHICH IS WORSE THAN THE CRASH.** `#modal-prospect` is the EDIT path too,
+and `saveProspect()` assigns every field unconditionally on the edit branch. So:
+
+- remove the markup, leave the write → **crash**;
+- remove the markup, write `""` → **every edit silently wipes that contact's geography**, including
+  the geography imported from Apollo that 2B.11's filter reads;
+- remove the markup **and** remove the write → existing values survive untouched. ✅ **This is the
+  only correct option.**
+
+**The accepted cost of the correct option:** an imported contact's City / State / Location become
+invisible and uneditable by hand. He keeps them in the data and in the filters, but can no longer
+fix a bad one from this form. **Say this to him plainly before building; it is a real trade, not a
+detail.** Seniority is cheaper — `deriveSeniority(title)` already exists and can fill it from Job
+Title on save, so nothing is lost.
+
+### Tasks
+
+1. Reorder the `.form-group`s in `#modal-prospect` to the block above. **Markup only** — every id
+   stays exactly as it is.
+2. Remove Seniority / City / State / Location from the markup **and** from all twelve reads. Do not
+   write those fields on the edit branch at all.
+3. `deriveSeniority(title)` fills `seniority` on save, so the field keeps a real value with no input.
+4. **Save and Open Contact** replaces Save Contact: `saveProspect()`, then
+   `openProspectDetail(newId, { view: "prospects" })`. ⚠️ `saveProspect()` currently returns nothing
+   and has **refusal branches** (the P6 duplicate-email guard and 2B.18's company-conflict guard) —
+   it must report whether it actually saved, and the modal must NOT navigate on a refusal. **That is
+   the one non-cosmetic code change in this session.**
+5. Bump `CACHE_NAME`.
+
+### Done when
+
+- Every field in the block above appears in that order. Screenshot, both themes.
+- **Open an EXISTING imported contact that has city/state/location, save it unchanged, and paste
+  those three values before and after. They must be identical.** This is the check that matters.
+- Add a contact with an email at a known company → still auto-links; the notice still renders.
+- A duplicate email → **Save is still refused AND the detail view does NOT open.** Paste both.
+- `check_ids.py` at its baseline of two — removing four ids must not move it.
+- Console clean · `node --check` clean.
+
+- **Backup coverage:** no new field, no new store. `seniority` / `city` / `state` / `location` remain
+  exported and restored exactly as today; this session changes which of them a FORM can write.
+  **State it per §4.**
+- **Needs his eyes:** that losing hand-editing of City / State / Location is acceptable, and whether
+  Save and Open Contact fully replaces Save Contact or sits beside it (**unanswered as of
+  2026-09-02 — the sheet shows ONE button, so replace is the literal reading and the assumed
+  default**).
+- **Risk and fallback:** if the refusal-aware save proves entangled, **ship the reorder alone** — it
+  is independently the thing he asked for, and the button becomes its own S session.
+
+---
+
 ## Session 2B.14 — Include semantics: OR within a picker, AND across pickers
 
 - **Compartment:** ProspectHub + Advanced Query modal · ⚠️ **MediaHub and CampaignHub are outside 2B
@@ -394,7 +704,11 @@ what will tell him whether enforcement is even needed.
 
 ---
 
-## Session 2B.17 — Identity block redesign
+## SUPERSEDED — original 2B.17 scope
+
+> ⛔ Replaced 2026-09-02 by the 2B.17 entry above, when Michael supplied the layout. Its BLOCKED status and Low confidence no longer hold. Kept only so earlier references resolve; **build from the entry above.**
+
+### Session 2B.17 (original) — Identity block redesign
 
 - **Compartment:** prospect detail view · ⛔ **BLOCKED — needs Michael's layout design first.**
 - **Depends on:** Michael, **and 2B.13.**

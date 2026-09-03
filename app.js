@@ -1450,6 +1450,36 @@ function ensureStateDefaults() {
     if (!p.seniority) {
       p.seniority = deriveSeniority(p.title);
     }
+    /* ====================================================================
+       SESSION 2B.21 — THE SIX FIELDS, AND WHY FOUR OF THEM ARE HERE LATE.
+       --------------------------------------------------------------------
+       `address` and `zip` are NEW persisted prospect fields (2B.21 task 1).
+       `address` previously existed on COMPANIES only (`comp-address`); there
+       has never been a prospect address, and there has never been a prospect
+       zip in any form.
+
+       ⛔ THE FOUR conference* KEYS ARE NOT NEW — THEY HAVE BEEN WRITABLE
+       FROM TWO SURFACES SINCE PHASE 1 AND HAVE NEVER HAD A MIGRATION OR A
+       CSV COLUMN. That is the DIRECTIVES §4 Backup coverage violation this
+       session exists to close: every conference value was destroyed, in
+       silence, by an export -> wipe -> restore round trip. It had never been
+       caught because 0 records held conference values, and a drill against
+       data that does not exist is a test that cannot fail.
+
+       ⚠️ THE SEED AND THIS MIGRATION MUST WRITE THE SAME SHAPE — the 2B.13
+       lesson (review Finding 10a). `if (x === undefined)` is permanently
+       defeated by a seed that writes something else, and both lines read as
+       correct in isolation. saveProspect()'s create literal writes "" for
+       address and zip, and this writes "". They agree on purpose. There is
+       nothing to back-fill these two FROM, so a "" seed opts a new record
+       out of nothing.
+       ==================================================================== */
+    if (p.address === undefined) p.address = "";
+    if (p.zip === undefined) p.zip = "";
+    if (p.conferenceName === undefined) p.conferenceName = "";
+    if (p.conferenceVenue === undefined) p.conferenceVenue = "";
+    if (p.conferenceStart === undefined) p.conferenceStart = "";
+    if (p.conferenceEnd === undefined) p.conferenceEnd = "";
   });
 
   // Lossless migration: rename m.tags → m.media_tags on each media item
@@ -2065,10 +2095,35 @@ function downloadCSVFile(name, csvContent) {
   downloadBlob(name, blob);
 }
 
+/* ==========================================================================
+   SESSION 2B.21 — THERE ARE FIVE LITERAL PROSPECT HEADER ARRAYS IN THIS FILE,
+   NOT TWO, AND EDITING SOME OF THEM IS THE DEFECT THIS SESSION EXISTS TO FIX.
+   --------------------------------------------------------------------------
+   Grep `"Company ID"` to find every one. They are:
+
+     1. exportProspectsCSV()          — 21 cols, backup           ← here
+     2. exportFilteredContactsCSV()   — 21 cols, ProspectHub export
+     3. exportAudienceContactsCSV()   — 22 cols (+ "Company")
+     4. exportZIPBackup()'s prospect block — 21 cols, backup
+     5. exportAqRecordsCSV()          — 16 cols, ⛔ DEFERRED, DO NOT TOUCH
+
+   1, 2 and 4 hold BYTE-IDENTICAL header and row expressions. 3 is the same
+   set plus a resolved "Company" name column. **5 IS THE AUDIENCE QUERY
+   ENGINE AND IS DELIBERATELY BEHIND** — both query surfaces are deferred, the
+   same way the geography matcher's third copy is (see BUILD_NOTES). It is one
+   column set out of step ON PURPOSE. Do not "reconcile" it; it closes when
+   the Engine is un-deferred.
+
+   ⚠️ ONLY 1 AND 4 ARE READ BACK BY restoreProspectsFromCSV(). 2 and 3 are
+   convenience exports — they carry the six new columns so a file a user
+   exports, edits and re-imports does not silently lose address, zip and the
+   four conference values, which is the same class of loss this session is
+   closing on the backup path.
+   ========================================================================== */
 function exportProspectsCSV() {
-  const csv = convertToCSV(state.prospects, 
-    ["ID", "First Name", "Last Name", "Email", "Phone", "Title", "LinkedIn", "Company ID", "Location", "City", "State", "Seniority", "Notes", "Tags", "History"],
-    p => [p.id, p.firstName, p.lastName, p.email, p.phone || "", p.title || "", p.linkedin || "", p.companyId, p.location || "", p.city || "", p.state || "", p.seniority || "", p.notes || "", (p.tags || []).join(";"), p.history ? JSON.stringify(p.history) : ""]
+  const csv = convertToCSV(state.prospects,
+    ["ID", "First Name", "Last Name", "Email", "Phone", "Title", "LinkedIn", "Company ID", "Address", "Location", "City", "State", "Zip", "Seniority", "Conference Name", "Conference Venue", "Conference Start", "Conference End", "Notes", "Tags", "History"],
+    p => [p.id, p.firstName, p.lastName, p.email, p.phone || "", p.title || "", p.linkedin || "", p.companyId, p.address || "", p.location || "", p.city || "", p.state || "", p.zip || "", p.seniority || "", p.conferenceName || "", p.conferenceVenue || "", p.conferenceStart || "", p.conferenceEnd || "", p.notes || "", (p.tags || []).join(";"), p.history ? JSON.stringify(p.history) : ""]
   );
   saveBackupFile(`vantage_data_backup_prospects_${getBackupTimestamp()}.csv`, csv);
 }
@@ -2203,8 +2258,8 @@ function exportFilteredContactsCSV() {
     return;
   }
   const csv = convertToCSV(list,
-    ["ID", "First Name", "Last Name", "Email", "Phone", "Title", "LinkedIn", "Company ID", "Location", "City", "State", "Seniority", "Notes", "Tags", "History"],
-    p => [p.id, p.firstName, p.lastName, p.email, p.phone || "", p.title || "", p.linkedin || "", p.companyId, p.location || "", p.city || "", p.state || "", p.seniority || "", p.notes || "", (p.tags || []).join(";"), p.history ? JSON.stringify(p.history) : ""]
+    ["ID", "First Name", "Last Name", "Email", "Phone", "Title", "LinkedIn", "Company ID", "Address", "Location", "City", "State", "Zip", "Seniority", "Conference Name", "Conference Venue", "Conference Start", "Conference End", "Notes", "Tags", "History"],
+    p => [p.id, p.firstName, p.lastName, p.email, p.phone || "", p.title || "", p.linkedin || "", p.companyId, p.address || "", p.location || "", p.city || "", p.state || "", p.zip || "", p.seniority || "", p.conferenceName || "", p.conferenceVenue || "", p.conferenceStart || "", p.conferenceEnd || "", p.notes || "", (p.tags || []).join(";"), p.history ? JSON.stringify(p.history) : ""]
   );
   downloadCSVFile(`vantage_contacts_export_${getBackupTimestamp()}.csv`, csv);
 }
@@ -2221,8 +2276,8 @@ function exportAudienceContactsCSV(audienceId) {
     return;
   }
   const csv = convertToCSV(list,
-    ["ID", "First Name", "Last Name", "Email", "Phone", "Title", "LinkedIn", "Company ID", "Company", "Location", "City", "State", "Seniority", "Notes", "Tags", "History"],
-    p => [p.id, p.firstName, p.lastName, p.email, p.phone || "", p.title || "", p.linkedin || "", p.companyId, getCompanyName(p.companyId) || "", p.location || "", p.city || "", p.state || "", p.seniority || "", p.notes || "", (p.tags || []).join(";"), p.history ? JSON.stringify(p.history) : ""]
+    ["ID", "First Name", "Last Name", "Email", "Phone", "Title", "LinkedIn", "Company ID", "Company", "Address", "Location", "City", "State", "Zip", "Seniority", "Conference Name", "Conference Venue", "Conference Start", "Conference End", "Notes", "Tags", "History"],
+    p => [p.id, p.firstName, p.lastName, p.email, p.phone || "", p.title || "", p.linkedin || "", p.companyId, getCompanyName(p.companyId) || "", p.address || "", p.location || "", p.city || "", p.state || "", p.zip || "", p.seniority || "", p.conferenceName || "", p.conferenceVenue || "", p.conferenceStart || "", p.conferenceEnd || "", p.notes || "", (p.tags || []).join(";"), p.history ? JSON.stringify(p.history) : ""]
   );
   const safeName = aud.name.replace(/[^a-z0-9]+/gi, "_").toLowerCase().replace(/^_+|_+$/g, "");
   downloadCSVFile(`vantage_audience_${safeName || "list"}_${getBackupTimestamp()}.csv`, csv);
@@ -2319,8 +2374,8 @@ async function exportZIPBackup() {
   const zip = new JSZip();
   
   const prospectsCSV = convertToCSV(state.prospects, 
-    ["ID", "First Name", "Last Name", "Email", "Phone", "Title", "LinkedIn", "Company ID", "Location", "City", "State", "Seniority", "Notes", "Tags", "History"],
-    p => [p.id, p.firstName, p.lastName, p.email, p.phone || "", p.title || "", p.linkedin || "", p.companyId, p.location || "", p.city || "", p.state || "", p.seniority || "", p.notes || "", (p.tags || []).join(";"), p.history ? JSON.stringify(p.history) : ""]
+    ["ID", "First Name", "Last Name", "Email", "Phone", "Title", "LinkedIn", "Company ID", "Address", "Location", "City", "State", "Zip", "Seniority", "Conference Name", "Conference Venue", "Conference Start", "Conference End", "Notes", "Tags", "History"],
+    p => [p.id, p.firstName, p.lastName, p.email, p.phone || "", p.title || "", p.linkedin || "", p.companyId, p.address || "", p.location || "", p.city || "", p.state || "", p.zip || "", p.seniority || "", p.conferenceName || "", p.conferenceVenue || "", p.conferenceStart || "", p.conferenceEnd || "", p.notes || "", (p.tags || []).join(";"), p.history ? JSON.stringify(p.history) : ""]
   );
   
   const mediaCSV = convertToCSV(state.media,
@@ -2518,10 +2573,24 @@ function restoreProspectsFromCSV(text, fileName = "") {
       title: lookup(["title", "job title"]),
       linkedin: lookup(["linkedin", "personlinkedinurl", "linkedinurl"]),
       companyId: companyIdVal,
+      /* SESSION 2B.21. Six reads, matching the six new columns in the two
+         backup writers. ⚠️ THIS FUNCTION MAPS BY HEADER NAME, NOT BY INDEX —
+         lookup() normalises both sides to [a-z0-9] and returns "" when the
+         column is absent. That is what makes these additive: a backup taken
+         before 2B.21 has none of these headers and every one of the six comes
+         back "" rather than undefined, with no version check anywhere.
+         Restore functions trim, and trimming is right for all six — they are
+         short controlled values, not free-text bodies. */
+      address: lookup(["address", "street address", "mailing address"]),
       location: lookup(["location", "companylocation"]),
       city: lookup(["city", "companycity"]),
       state: lookup(["state", "region", "companystate"]),
+      zip: lookup(["zip", "zip code", "postal code", "postal", "post code"]),
       seniority: lookup(["seniority", "senioritylevel"]),
+      conferenceName: lookup(["conference name", "conference"]),
+      conferenceVenue: lookup(["conference venue", "conference city / venue", "conference city"]),
+      conferenceStart: lookup(["conference start", "conference start date"]),
+      conferenceEnd: lookup(["conference end", "conference end date"]),
       notes: lookup(["notes", "contactnotes"]),
       tags,
       history
@@ -12236,6 +12305,16 @@ function saveProspect() {
       city: city,
       state: stateVal,
       location: loc,
+      /* SESSION 2B.21. Seeded "" so a brand-new record has the SAME SHAPE the
+         ensureStateDefaults() migration writes — see the long note there. There
+         is no #modal-prospect control for either field yet (2B.22 adds them),
+         so these are deliberately literals and not reads off the DOM. ⛔ Do not
+         "tidy" them away as redundant: without them a record created between
+         two reloads carries `undefined`, which is the exact shape the house
+         convention exists to prevent. Contract P9's markup is untouched — this
+         is the create function, not the modal. */
+      address: "",
+      zip: "",
       notes: notesVal,
       conferenceName: conferenceNameVal,
       conferenceStart: conferenceStartVal,
@@ -13542,6 +13621,29 @@ function importCSVContacts(e) {
         const location = lookup(["location", "metro", "company location"]);
         const linkedin = lookup(["person linkedin url", "linkedin url", "linkedin", "personlinkedinurl"]);
 
+        /* SESSION 2B.21 / task 5. The six fields, mapped where the sheet has
+           them, in the same lookup() idiom as everything above.
+
+           ⛔ "company address" IS DELIBERATELY NOT IN THE address KEY LIST.
+           The city line one row up DOES fall back to "company city", and that
+           looks like the precedent — it is not one to copy here. A company
+           street address written onto a person is a wrong answer that reads as
+           a right one on every surface that shows it, where a blank field is
+           an honest one (DIRECTIVES Ladder rung 2). City is a coarse enough
+           value that the company's is usually the person's; a street address
+           is not.
+
+           ⚠️ The conference keys accept both the short header these exports
+           now write ("Conference Start") and the long form Michael's sheet
+           uses ("Conference Start Date"), because a round trip through this
+           importer must read what exportProspectsCSV() wrote. */
+        const address = lookup(["address", "street address", "mailing address", "contact address", "person address"]);
+        const zip = lookup(["zip", "zip code", "postal code", "postal", "post code"]);
+        const conferenceName = lookup(["conference name", "conference"]);
+        const conferenceVenue = lookup(["conference venue", "conference city / venue", "conference city"]);
+        const conferenceStart = lookup(["conference start", "conference start date"]);
+        const conferenceEnd = lookup(["conference end", "conference end date"]);
+
         return {
           id: row.id || email.toLowerCase() || `pros-${Date.now()}-${idx}`,
           firstName,
@@ -13551,9 +13653,15 @@ function importCSVContacts(e) {
           title,
           seniority,
           companyId: domainVal,
+          address,
           city,
           state: stateVal,
+          zip,
           location: location || [city, stateVal].filter(Boolean).join(", "),
+          conferenceName,
+          conferenceVenue,
+          conferenceStart,
+          conferenceEnd,
           linkedin,
           tags,
           history,

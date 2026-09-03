@@ -1,0 +1,31 @@
+2B.21: prospect address and zip, and backup coverage for the four conference fields
+
+Adds address and zip as persisted prospect fields with ensureStateDefaults
+migrations, and gives those two plus the four conference* fields CSV columns in
+four prospect writers.
+
+The conference fields were writable from two surfaces and present in no CSV, so
+every conference value was destroyed silently by an export -> wipe -> restore
+round trip. That is a live DIRECTIVES section 4 backup coverage violation and it
+predates this work; no previous drill caught it because 0 records held conference
+values, and a drill against data that does not exist is a test that cannot fail.
+
+restoreProspectsFromCSV() and the CSV contact import read all six. The import
+deliberately does not fall back to a "company address" column, and deliberately
+does not write notes: an outside sheet's note is provenance and belongs on the
+timeline, not in the field Michael writes in.
+
+exportAqRecordsCSV() is deliberately left behind at 16 columns because both query
+surfaces are deferred, the same way the geography matcher's third copy is.
+
+Verified by a real export -> wipeAllData() -> restore round trip: all six fields
+character-identical, an older six-column-less backup still restores leaving them
+"" rather than undefined, and pricing the six keys directly proved the only
+change to the user's data is those keys (28,735 - 412 = 28,323, the pre-session
+reading exactly).
+
+Takes a this-session override on frozen contract P9, granted at boot; 2B.10 owes
+the amendment. No markup and no CSS changed. CACHE_NAME v121 -> v122.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01U6NE3NytXKMAeLTFdQcvTi
