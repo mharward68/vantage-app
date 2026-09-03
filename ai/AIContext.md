@@ -1,133 +1,101 @@
-# AI Context — PHASE 2B BOUNDARY
+# AI Context — PHASE 3 / OUTREACH LAUNCH
 
-**Updated:** 2026-09-03 15:51 (America/New_York).
+**Updated:** 2026-09-03 17:32 (America/New_York).
 
-**Last run:** Phase 2B / **Session 2B.10 — PHASE CLOSE.** Compartment: QA + documents. **⛔ PARTIAL: the document half is complete and written back; the DRILL AND THE SNAPSHOT RE-VERIFY DID NOT RUN.** They are gated on Michael and he did not come back during the session. **Nothing in `app.js`, `index.html`, `style.css` or `sw.js` was opened for edit; no record was written; `CACHE_NAME` stays at v126.**
+**Last run:** Phase 3 / **Session 3.1 — Task outreach fields, settings, and their backup coverage.** Compartment: **DATA**. ✅ **COMPLETE.** Every Done-when check ran with real pasted output; nothing was deferred.
 
-**State:** `app.js` **17,346** · `index.html` **3,796** · `style.css` **4,926** · `CACHE_NAME` **v126** — all four unchanged, all four re-measured against the real files. Git **UNCOMMITTED and now THREE sessions deep** (2B.14, 2B.15 and this session's documents) against `50253cc`. ⛔ Git is always Michael-runs-it — BUILD_NOTES § *Git, from a session with no shell*.
+**State:** `app.js` **17,510** (was 17,346; **+164, and about two thirds of that is comment**) · `index.html` **3,796** · `style.css` **4,926** — the last two untouched. `CACHE_NAME` **v127** (one bump; the two-bump budget was not needed). **Git: UNKNOWN.** No shell reached this repo this session and no push or ref read happened in it — per the rule 2B.10 wrote after four handoffs restated an unverifiable SHA, **this line says UNKNOWN rather than a number.** `app.js` and `sw.js` are modified on disk and uncommitted, on top of whatever 2B.10 left.
 
-**Estimate vs actual:** sized **M / ~20 min / High**. **It ran M for the half that ran.** Michael's time: **~2 minutes** — one boot question block of two, answered in one pass, then silence. **The 20 minutes was budgeted almost entirely for the drill and the amendment approvals, and neither happened**, so this actual is not a calibration data point for a phase close; the next close should still budget 20.
-
-**One-glance version tell:** unchanged from 2B.15 — ProspectHub Row 3 is a **button reading "🏷️ Filter by Tag…"**. If you can type into it you are on v125.
+**One-glance version tell:** paste `TASKS_CSV_HEADERS.length` in the console. **18** is v127. **13** means you are on the cached v126 document — reload once more.
 
 ---
 
-## ⛔ THE FIRST THING THIS SESSION FOUND, AND IT IS WHY THE BOOT TOOK A DETOUR
+## ⛔⛔ THE FIRST THING THIS SESSION FOUND, AND EVERY LATER SESSION INHERITS IT
 
-**Michael asked for Session 2B.19. 2B.19 shipped on 2026-09-02, with a second repair pass (2B.19b) on top of it.** Three planning documents still said it was NEXT — `AIContext.md`'s Next step, the review-response plan's session-order block, and the run sheet's Step 2R table. The code settled it in one grep (`normaliseDomain`, `saveNewCompany`, `companyModalMode`, `#comp-domain`, `#btn-add-company` all present). **Every session in Phase 2B had in fact run.** All three documents are now corrected, and the lesson is filed in BUILD_NOTES under its own heading.
+**THE WORKING SET IS GONE. MICHAEL'S CHROME NOW BOOTS THE PRODUCTION IMPORT.** Read from live `localStorage` at boot: **651 prospects · 1,090 companies · 33 media · 3 campaigns · 4 audience lists · 0 tasks · 1,561,677 bytes.** `BUILD_NOTES.md` said the 4-prospect / 5-company sandbox was what loads; that note is **corrected in place**, not appended to. Three things follow immediately, and 3.2 pays for all three:
 
-**The real run order was not numeric:** 2B.11 → 2B.12 → 2B.16 → 2B.13 → **2B.19** → 2B.18 → 2B.20 → 2B.21 → 2B.17 → 2B.22 → 2B.14 → 2B.15 → 2B.10.
+1. **There are ZERO tasks.** TaskHub is empty and the task editor has nothing to open. **Any task-shaped check must create a task first** — 3.1 did, through the shipped `saveTaskFromEditor()` path, and deleted it by full rollback at the end.
+2. **A wipe drill now destroys 651 real prospects.** The ZIP is not a formality.
+3. **A round trip takes ~15 seconds**, not the instant the sandbox took. Poll on `state.prospects.length`, and do not read the wait as a hang.
 
 ---
 
-## What was done — documents only
+## What was done
 
-| Piece | What happened |
+| Piece | Where |
 | --- | --- |
-| **Estimate calibration** | All 21 archived handoffs read. Table below. |
-| **`BUILD_NOTES.md` curated** | **12,286 characters of stale text CUT** across five passages, three new findings added. On disk **294,586 → 295,059 bytes (+473 net)** — the file is the same size and materially more true, which is the point. |
-| **`DECISIONS.md`** | **Three new entries** (AQ deferred-not-reversed; email unique-not-key; how a frozen contract is amended mid-phase) **plus the DECLARATIONS proposals, recorded and NOT applied.** |
-| **`phase-2b-prospect-detail-view.md`** | **New § Frozen-contract amendments** — the record P8/P5/P9 never got. |
-| **`phase-2b-review-response-plan.md`** | Session order marked done; a banner on why three documents went stale. |
-| **`phase-2b-RUNSHEET.md`** | Marked spent, with the actual run order. **Due for deletion — a remote session cannot delete files here.** |
+| **Q3 — two settings** | `state.taskSettings.workGmailAddress` (`""`) and `.emailBcc` seeded in `ensureStateDefaults()` beside `dateMode`, guarded `=== undefined` so a deliberate blank stays blank. **`wipeAllData()` NOT edited** — it already replaces `taskSettings` whole. |
+| **Q1 — five task fields** | `channel` / `msgKind` / `msgTo` / `msgSubject` / `msgBody`, flat. Defaults loop in `ensureStateDefaults()`; also written at creation in `saveTaskFromEditor()`, so a task made after boot reads `""` not `undefined`. |
+| **CSV export** | Five headers **appended at the end** of `TASKS_CSV_HEADERS` (13 → **18**) and five values to `taskCSVRow()`. |
+| **CSV restore** | Five `pick()` reads in `restoreTasksFromCSV()`. `channel` / `msgKind` / `msgTo` trim; **`msgSubject` and `msgBody` do not** — free text, like Notes. |
+| **Settings backup** | Two rows, `Outreach Work Gmail` and `Outreach Bcc`, beside C4's `Task Date Mode`, with a `sawX`-guarded restore leg. |
+| **`sw.js`** | v126 → **v127**. |
 
-### What was cut from BUILD_NOTES, and why each one had to go
+**Beyond the plan, deliberately, and it is the one thing a reviewer should look at:** `channel` and `msgKind` are **coerced to their Q2 enum on restore**, following the `status` line directly above them. An unrecognised value degrades to `""` (= not an outreach task, inert). Reason: 3.3 and 3.4 feed both fields into URL builders, and a hand-edited cell reading `javascript:alert(1)` reaching `msgKind` is what this closes. Ladder rung 1 over rung 3. Proved with a two-row CSV.
 
-Every cut was a line that **contradicted another line in the same file** — this file's own named failure mode.
+## Verification — all of it ran
 
-1. **The MAP's line-count history (−7,240 chars).** Thirteen nested *"previously 2B.N read X/Y/Z"* clauses in one 7,000-character paragraph, growing by one every session. Replaced by the three current numbers plus the two durable observations it was actually carrying. **A note saying "do not start it again" is now in its place.**
-2. **`#companies-datalist` is dead markup (−823).** The Fossils section said, in as many words, *"delete any note that calls it dead markup."* **That note was still sitting 325 lines above it.**
-3. **"THERE IS NO WAY TO CREATE A COMPANY IN VANTAGE" + "the modal has fourteen inputs and NO domain field" (−670).** Both false since 2B.19, which is described as built 200 lines earlier.
-4. **The four paragraphs describing ProspectHub's removed tag-filter widget (−2,355).** They sat under a banner saying they described a control that no longer exists. Rewritten as one accurate note.
-5. **The superseded original `taskSettings` finding (−1,198).** It described the defect in the present tense one line beneath the note closing it.
-6. **Stale carried figures:** `vantageprm-cache-v104` → **v126**; *"`app.js` ~14,660 lines"* → **17,346**; the MAP's 2A.6 counts sitting four lines from 2B.15's; *"case (3) is still live until 2B.20"* when 2B.20 had run; the import's slug path, closed by 2B.20 forty-five lines below.
+- `state.taskSettings` → `{dateMode:"business", emailBcc:"michaelh@youravdept.com", workGmailAddress:""}`.
+- Five fields set on a real task → reload → **character-identical**, per field.
+- `TASKS_CSV_HEADERS.length` **18**; `taskCSVRow(t)` 18 values, first 13 at their original indexes.
+- **ZIP round trip on the production database, and it CAN fail.** Own ZIP taken first by wrapping `saveBackupFile` to **call through** — `wroteToFolder: true`, **1,211,512 bytes**, real file in `..\backups-production\` as `vantage_data_backup_9-3-26_1730.zip`. Then export → `wipeAllData()` → **651/1,090 → 0/0, both new keys ABSENT, `dateMode` back to `"business"`, probe task gone** → restore → **651 · 1,090 · 33 · 3 · 4 · 1 task, all five fields and all three settings character-identical, 0 orphans.**
+- Pre-Phase-3 **13-column** tasks CSV restored with **no error**, all five fields `""`.
+- `msgBody` probe carried `\n\n`, an embedded `"`, `\r\n`, `&`, `$`, a comma and trailing spaces — **154 characters in, 154 out.**
+- Clean console (five ordinary boot logs, zero warnings, zero errors). `check_ids.py` **at baseline** — `{'restore-backup-input', 'export-backup-btn'}` before and after, byte-identical result. All six views render. State survives reload.
+- **Full rollback verified:** database written back to the pre-session string, **1,561,677 bytes**, 651 · 1,090 · **0 tasks**, no probe records, no stray `__` keys.
 
----
+## Estimate vs actual
 
-## ⛔⛔ THE BIGGEST FINDING OF THE CLOSE — ANSWERED, SCOPED, NOT BUILT
-
-**`wipeAllData()` clears TEN stores. The app has TWENTY-SIX. Sixteen survive the wipe:** `media_tags` · `prospect_tags` · `campaign_tags` · `company_tags` · `reachoutTypes` · `mediaTypes` · `platforms` · `campaignPhases` · `developmentPhases` · `customSortOrder` · `domainHosts` · `domainRegistrars` · `emailProviders` · and the three `*DefaultUrls` maps. All sixteen ARE exported and ARE restored, so **backup coverage was never the gap — the gap is that the drill cannot fail.**
-
-✅ **MICHAEL ANSWERED IT, 2026-09-03:** *"Everything a user inputs as data needs to wipe and be backup. That would include all tags."* **That is the standard now.** `DECISIONS.md` carries the ruling and a full scope.
-
-⛔⛔ **AND IT IS NOT SIXTEEN `= []` LINES. THIRTEEN OF THE SIXTEEN CANNOT EXPRESS "EMPTY" AT ALL.** Every `ensureStateDefaults()` guard reads `if (!state.X || state.X.length === 0) state.X = [seed…]`. **`[]` is truthy, so the `length === 0` half fires** — on the next boot and on every restore. `state.media_tags = []` in the wipe yields **`["Frontend", "React", "Fintech", "Developer", "General"]`**: the fictional sandbox seeds, shown to a user who was just told his database was completely wiped. **Worse than doing nothing.**
-
-⚠️ **THE SAME GUARD IS A LIVE DEFECT TODAY, WITH NOTHING TO DO WITH THE WIPE.** Every managed-list row has a ✕ (`deleteSettingOption()`) and nothing stops deleting the last entry. **Delete all four `company_tags`, reload, and four invented ones are back**; a genuine backup holding an empty list gets fictional values injected on restore. **Thirty seconds to reproduce from the Settings modal.** The guard fix and the wipe lines are **ONE session, not two**.
-
-✅ **AND HIS FOLLOW-UP CONCERN IS ANSWERED: NOTHING A USER INPUTS SITS OUTSIDE BACKUP/RESTORE.** Audited across all 39 persisted keys — **user data not exported: NONE. Exported but not restored: NONE.** All nine `restore*FromCSV()` functions exist and are called; `restoreSettingsFromCSV()` reads back all eighteen things `generateSettingsCSV()` writes. **Attachments round-trip too** — `exportZIPBackup()` writes a `files/` folder of blobs and `processRestoreFile()` reads it back, which is the one that could have made a full wipe catastrophic. Outside backup/restore: twelve view-state keys, `snapshotHealth` (machine state, excluded by DECLARATIONS), orphaned blobs, and **the IndexedDB `handles` store — which must STAY out of the wipe**, because `showDirectoryPicker()` cannot be driven by an agent and dropping the grant breaks every future automated drill. ⚠️ **This audit is STATIC — it proves the paths are wired, not that they work. The drill proves that, and today it reaches ten stores of twenty-six.**
-
-**⛔ NOT BUILT HERE, and the reason is the compartment:** this close is QA + documents. Adding lines to a destructive control is a DATA change and a DIRECTIVES §4 destructive-data change; it needs its own session, its own ZIP and its own rollback plan. **The one open question in the scope is the split** — the tags, `customSortOrder` and the `*DefaultUrls` maps should end up genuinely empty; `reachoutTypes` / `mediaTypes` / `platforms` / `campaignPhases` / `developmentPhases` are vocabulary the app needs to function and almost certainly mean *back to factory seeds*; **`domainHosts` / `domainRegistrars` / `emailProviders` are the unclear middle and are Michael's call.**
-
----
-
-## ⛔⛔ SECOND RULING, AND IT FOUND A LIVE RECOVERABILITY HOLE
-
-**Michael, same conversation:** *"I don't want to restore fictional data."* **Standing rule: `ensureStateDefaults()` may seed a GENUINE FIRST RUN and must inject nothing into a restore, a wipe, or an ordinary boot.** It cannot currently tell those apart.
-
-⛔ **`loadDatabase()`'s catch branch reseeds from `prm_data.json`, and `fetchFreshSeed()` ends in `saveState()`.** One corrupt or truncated `localStorage` write therefore replaces the database with **four fictional people (Jane Smith, Alex Rivera, Sarah Chen, Marcus Vance, 555 numbers)** and **overwrites the unparseable original**, announced by one `console.error`. **Partial writes are not hypothetical here.** Fix is two parts: the catch branch must not reseed, and the bad string must be parked under a second `localStorage` key first — it is usually recoverable by hand and is destroyed today. **Gate C, failing silently.** Filed in BUILD_NOTES under its own heading, with the boot-console tell.
-
-⚠️ **AND THE SEEDS ARE THREE DIFFERENT KINDS OF THING.** The four tag lists have **zero** code references and are pure demo content. **`reachoutTypes` and the two phase lists are the app's own enum** — `"Task Completed"` 16 refs, `"Added to Vantage"` 13, `"Email"` 12, `"Launch"` 8, `"Archive"` 6, and `NON_REACHOUT_TYPES` is a `const` naming three. **Deleting those as "fictional" breaks reachout counting, MediaHub's status filter and CampaignHub's phases in one edit.** `mediaTypes` / `platforms` / `emailProviders` / `domainRegistrars` / `domainHosts` are the cosmetic middle and are Michael's call. **This merges into the wipe session — same functions, same `length === 0` guard, same ZIP. One session, M.**
-
----
-
-## Estimate calibration — Phase 2B, and the three-phase pattern
-
-| | Planned | Forecast (+35%) | **Actual** |
-| --- | :---: | :---: | :---: |
-| Sessions | 10 | 13–14 | **22** |
-| Michael's attention | ~97 min | ~125 min | **~71 min** |
-| `CACHE_NAME` bumps | ~20 | — | **31** (v95 → v126) |
-
-- **The session count overran by 120% and the attention estimate came in 43% UNDER. Both numbers moved, in opposite directions, for the third phase running.** Phase 1: 8 planned / 11 actual, 105 predicted / 88 actual. Phase 2A: 6 / 6, 60 / 32. Phase 2B: 10 / 22, 97 / 71. **`DECISIONS.md` 2026-08-30 already called session count the unstable number; this phase is the proof at scale.**
-- **The +35% contingency is not big enough and never was.** It was set against a review producing 3–4 sessions. **The 2B.6 review produced 7, and then Michael's own field work on 2026-09-02 produced 5 more** (2B.19, 2B.18, 2B.20, 2B.21, 2B.22) — those five are not review overrun at all, they are **new scope arriving from real use of what shipped mid-phase**, and no contingency percentage models that. **For Phases 3 and 4: keep sizing sessions as planned, keep cutting the attention figure by a third, and stop quoting a session count as a forecast. Quote a range and name the review point as the thing that decides it.**
-- **Sizes were right 19 times out of 21.** Both misses were UNDER and neither was the code: **2B.9** (M code, L session — verification against a freezing renderer) and **2B.22** (sized S, ran M — the modal's own height was a fifth task nobody had scoped). **2B.19's size was right and its CONFIDENCE was wrong** — High, should have been Medium; every check in its Done-when touched the Domain field and the defect lived in the path that does not.
-- **The one factor that dominates everything: the automation browser.** 2B.4 cost ~20 minutes of Michael's time with the Chrome extension down; 2B.5, the very next session, cost ~2 with it up. **Worth roughly 10× and it outweighs every other sizing input in this phase.**
-- **The bump budget finally held.** 31 bumps over the 21 sessions that shipped code is **1.5 per session — the first phase to come in under the two-per-session budget**, and it ran 55% over the ~20 the plan budgeted only because it ran twice as many sessions. **Per session the estimate was right.** Keep the budget; keep refusing to record a one-bump win before review.
-
----
-
-## ⛔ EXACT NEXT STEP
-
-**Finish 2B.10. It is one conversation and it needs you present for the first two minutes.**
-
-1. **Michael:** commit (three sessions outstanding against `50253cc`), take a **manual ZIP** via Data Management → Export Backup, and **close every Vantage window**.
-2. ⚠️ **THE PLAN'S "confirmed green snapshot" GATE IS UNSATISFIABLE AS WRITTEN AND MUST NOT BE WAITED ON.** The chip is a known display defect — it read "Protected" at 15:34 and "Not protected" at 16:25 on 2026-09-02 with nothing changed, and at the red reading the writer returned `wroteToFolder: true` in the same second. **The real gate is `saveBackupFile`'s `wroteToFolder`,** read by wrapping it and running the real `exportZIPBackup()`. BUILD_NOTES § Data records this and says the gate should be restated; the run sheet now carries the restatement.
-3. **Then run:** export → `wipeAllData()` → restore, on real data, counts pasted. **Report it as proving TEN stores, not twenty-six** (see above). Stub `window.alert` / `window.prompt` / `window.confirm` first — `wipeAllData()` raises a `prompt()` that must be answered **`"YES"`** exactly, and an unstubbed dialog freezes the automated browser. `wipeIndexedDB()` clears only the `files` store, **not `handles`**, so the backup-folder grant survives the wipe and the drill can read its own ZIP back with no file picker.
-4. **Then re-verify a snapshot restore** — Tier 1 is the sole protection through Phase 3, so it is re-proved at every close.
-5. **Then Phase 3.** ⛔ **DO NOT RUN PROMPT 3.** Phase 3 is Sequencing and its scope (`claude/sequence-feature-scope.md`, in the Claude project) is **SUPERSEDED** and carries a banner saying so. **It needs a fresh intake — Prompt 1 — not a plan written off it.** Prompt 5's scripted closing line is wrong here and the run sheet says so explicitly.
-
-**Backup filename to use at the close:** `vantage_2B_phase_close_2026-09-03.zip`, stored in `..\backups-production\` — **outside the project folder**, per DECLARATIONS.
-
----
+Sized **M / ~8 min / High**. **It ran M and the confidence was right** — no surprises in the CSV layer, exactly as the plan predicted for 3.1. **Michael's time: ~4 minutes** (one boot question block of two, answered in one pass; one screenshot to read). **One `CACHE_NAME` bump against a budget of two.** The plan's ~8 min was close; the phase's standing "cut the attention figure by a third" correction held again.
 
 ## Assumptions logged this session
 
-1. **The session ran as 2B.10 rather than 2B.19, on Michael's explicit choice** after being shown the code proving 2B.19 had shipped. Nothing was re-run.
-2. **The document half was completed and written back before the gated half was attempted**, deliberately — the drill could be refused or deferred, and losing the calibration and the curation with it would have been the expensive outcome.
-3. **`DECLARATIONS.md` was NOT edited.** Five amendments are proposed in `DECISIONS.md` and none is in force. This follows the 2A.6 precedent exactly.
-4. **The run sheet was marked spent rather than deleted.** The plan says delete it at the close; a remote session cannot delete files on this machine (BUILD_NOTES § Git). **Michael deletes it.**
-5. **BUILD_NOTES was curated by removing contradictions, not by shortening.** The file's own curation rule says the expensive failure is a note that contradicts another note, not length — so five contradiction pairs went and three new findings arrived, leaving the file the same size and more true.
+1. **The Bcc is `michaelh@youravdept.com`, seeded from a single module-scope constant `OUTREACH_BCC_DEFAULT`.** Scope §9.7 settled the value and said the check is on screen, not a fourth retyping — so 3.1 rendered it from live state in an overlay and **Michael read it**. 3.1 builds no Settings UI, so the overlay stands in for §9.7's "Settings field"; **3.3 must still show it in the real control.**
+2. **The enum coercion above was added without asking.** Reversible in one line; recorded here and in `BUILD_NOTES.md` because it is a deviation from the written task list, not a silent one.
+3. **The probe task was created through the shipped `saveTaskFromEditor()` path**, not pushed as a literal — which is also what proved the five fields are written at creation.
+4. **Cleanup was a full rollback of the database string, not a delete of the probe task.** Exact, and provable by byte count.
+5. **Phase 2B is still not formally closed** — its drill and snapshot re-verify have still not run. 3.1 ran anyway on Michael's explicit instruction. ⚠️ **3.1's drill covered the same ground on a much larger database and passed, which weakens the case for re-running 2B.10's, but does NOT close 2B** — the snapshot re-verify is a different check and has still not happened.
 
 ## Backup coverage — DIRECTIVES §4
 
-**NO NEW STORE, NO NEW FIELD, NO NEW KEY, NO MIGRATION, NO RECORD WRITTEN, NO CODE FILE OPENED FOR EDIT.** This session changed six markdown files in `ai/` and nothing else. **The finding above about `wipeAllData()` is reported, not acted on.**
+**NO NEW TOP-LEVEL STORE. NO NEW CSV FILE. NO NEW `wipeAllData()` LINE.** Two new keys on the existing `state.taskSettings` store — **covered**, by two rows in `prm_settings.csv`, exported and restored, and cleared by the wipe (proved: both keys absent post-wipe). Five new fields on the existing `state.tasks` store — **covered**, five columns in `prm_tasks.csv`, exported and restored, cleared with the task. **A destructive operation ran against real data and the rollback point was taken first and verified.**
 
 ## Open items
 
-- **⛔ THE DRILL AND THE SNAPSHOT RE-VERIFY HAVE NOT RUN.** Phase 2B is not formally closed until they do. Everything else the close owed is done.
-- **✅ THE SIXTEEN-STORE WIPE QUESTION IS ANSWERED** and scoped in `DECISIONS.md` — **a Phase 2C DATA session, sized M, ⚠️ ZIP first.** It carries a live restore defect with it (the `length === 0` guard) and one open question for Michael (the three-way split).
-- **⚠️ GIT IS THREE SESSIONS DEEP** against `50253cc` — 2B.14, 2B.15 and this session's six documents.
-- **Still owed by Michael:** the five **DECLARATIONS amendments** proposed in `DECISIONS.md`; **`LA` = Louisiana or Los Angeles**; **Finding 10d's meaning** in one word; three carried cosmetics from 2B.4, raised three times now — **leaving them is a valid answer, and saying so closes them.**
-- **⚠️ Two amendments proposed at the 2A.6 close on 2026-08-31 are STILL not applied** — the one-word hub display names and the in-app-navigation principle. **This is the second close to carry them**, and the navigation one forecloses hash routing permanently on a Gate A argument that lives only in `DECISIONS.md`, which is not what a session reads at boot.
-- **✅ THE `7-7-26` / `7-7-28` CORRECTION IS DONE** — three prints fixed (one in the review-response plan, two in `phase-2b-REVIEW-FINDINGS.md`). **The run sheet was named as a third carrier and never held it.**
-- **The snapshot chip display defect** — unowned; belongs to whoever next opens `renderSnapshotHealthChip()` / `computeSnapshotState()`.
-- **The intermittent zero-byte-snapshot warning** — did not fire at 2B.15's boot after appearing for three sessions. Intermittent, not resolved.
-- **Phase backlog, carried:** ProspectHub OR-s tags while Advanced Query AND-s them (**a scoping gap, not a defect** — needs a decision); the `p.notes` shape default; a `p.location` shape default; the company-edit uniqueness guard; ZIP restore reports 1 orphaned task on a round trip; the §4 back-fill of existing `"domain.com"` and slug rows; the missing `<link rel="icon">`.
-- **Phase 2C, deferred and needing its own intake:** Finding 9 (task reachout type); Findings 10b + 15 (company uniqueness, host-only, collision report **before** enforcement); Finding 10d; Finding 12 (reachout modal overflow); MediaHub/CampaignHub tag semantics; **the Audience Query Engine** — its tag choosers and its joined-string matcher, which produces silent false positives across tag boundaries. **Correctness, not tidy-up.**
-- **Carried, unchanged:** `#btn-see-all-contacts` does not exist (it is `btn-show-all-contacts`). Both `forceShowAll*` true blanks the directory. CampaignHub identifies itself twice. MediaHub's tag rail off the right edge. `state.columnLayouts.taskhub.widths` carries `firstName: 0` and `lastName: 0`. `parseCSVRow()` `""` gap. **The repo is PUBLIC.** DIRECTIVES §0 compliance undecided. Stale `..\backups\`. `schema_update.sql` still deletable.
+- ✅ **ANSWERED BY MICHAEL, 2026-09-03 17:45, AND IT IS A FROZEN-CONTRACT PROBLEM, NOT A SCOPE REDUCTION.** His words: ***"Google Workspace Bcc rule is in place. Vantage does not Bcc emails."*** The admin rule blind-copies every outbound message automatically, including replies sent from Gmail with Vantage nowhere in sight. **So the Bcc is redundant at the URL layer — and he has ruled that Vantage must not emit one at all.**
+
+  ✅ **RESOLVED THE SAME HOUR. MICHAEL AUTHORISED THE FROZEN-CONTRACT AMENDMENT: REMOVE `emailBcc` OUTRIGHT.** It is written up as **amendment A1** in `ai/phases/phase-3-outreach-launch.md` § *Frozen-contract amendments*, with the reasoning, the rejected alternatives and the reversal condition in `ai/DECISIONS.md` (2026-09-03). **Q3** loses the key, its seed, its `OUTREACH_BCC_DEFAULT` constant, its CSV row and its restore leg; **Q4**'s `gmailComposeUrl()` loses the `&bcc=` term entirely — not made conditional, deleted; **Q5**'s `thread` toast reads *"Body copied."* **`workGmailAddress` is untouched.** The contracts above Q8 are left as originally written and now carry a banner pointing at the amendments section, per the 2B P5/P8/P9 convention.
+
+  ⛔ **IT COSTS A REPAIR PASS ON A SESSION THAT SHIPPED HOURS EARLIER: SESSION 3.1b, SIZED S, ADDED TO THE PLAN AND THE SESSION ORDER. IT MUST RUN BEFORE 3.3** — 3.3 is the session that would otherwise build the parameter. Its Done-when includes the one check that is easy to skip: **a 3.1-era settings CSV still carrying an `Outreach Bcc` row must restore cleanly, with the row inert rather than fatal.**
+
+  **Why removal beat leaving the key unread:** a seeded, exported, restored setting that no code path consumes reads as unfinished wiring, and the next session to grep `emailBcc` reconnects it. Removing it is cheaper than the comment that would have to stop that.
+- ✅ **SCOPE §9.7 IS CLOSED.** Michael read the seeded value on screen and confirmed **`michaelh@youravdept.com`** is correct. **Do not re-raise the spelling.** ⚠️ Note the irony to carry: the address is now confirmed correct *and* may be about to become unused.
+- **⛔ MICHAEL'S OWN CALL, 2026-09-03: "shouldn't we close 2B first?" — HE IS RIGHT, AND 3.2 SHOULD WAIT.** See the next-step block below.
+- **3.3 also needs the work Gmail address** to type into Settings. `workGmailAddress` is `""` today, which correctly disables every email button.
+- **The snapshot chip display defect fired again** — read **"Not protected"** in the same second `saveBackupFile` returned `wroteToFolder: true` on a 1.18 MB write. Still unowned.
+- **Phase 2B: the drill and the snapshot re-verify.** See Assumption 5.
+- **Still owed by Michael, carried:** the five **DECLARATIONS amendments** proposed in `DECISIONS.md`, and the two from the 2A.6 close still not applied (one-word hub names; the in-app-navigation principle) — **third close carrying them**. `LA` = Louisiana or Los Angeles. Finding 10d's meaning. Three cosmetics from 2B.4 — **leaving them is a valid answer and saying so closes them.**
+- **Phase 2C, scoped not built:** the sixteen-store `wipeAllData()` gap and the `ensureStateDefaults()` `length === 0` reseed defect — **one session, M, ZIP first.** One open question: the three-way split for `domainHosts` / `domainRegistrars` / `emailProviders`.
+- **`DECLARATIONS.md` Stack line counts are stale again** — it says `app.js` ~13,270 / 13,272. Real: **17,510**. Propose at the 3.5 close; do not edit it mid-phase.
+- **Phase backlog, carried:** ProspectHub OR-s tags while Advanced Query AND-s them; `p.notes` and `p.location` shape defaults; company-edit uniqueness guard; ZIP restore's 1 orphaned task on a sandbox round trip; the §4 back-fill of existing `"domain.com"` rows; the missing `<link rel="icon">`. **The repo is PUBLIC.** DIRECTIVES §0 compliance undecided. Stale `..\backups\`.
 
 ## Files changed
 
-**Code:** none. **Documents:** `ai/BUILD_NOTES.md`, `ai/DECISIONS.md`, `ai/AIContext.md`, `ai/archive/2026-09-03_1551_AIContext.md` (new), `ai/phases/phase-2b-prospect-detail-view.md`, `ai/phases/phase-2b-review-response-plan.md`, `ai/phases/phase-2b-RUNSHEET.md`.
+**Code:** `app.js`, `sw.js`. **Documents:** `ai/AIContext.md`, `ai/archive/2026-09-03_1732_AIContext.md` (new), `ai/BUILD_NOTES.md`.
 
-**Carry forward:** the `🧱 HUB SHELL` block stays LAST in `style.css`. `#canvas-body` is never edited. `state` is not `window.state`. `state.selectedProspectId` and `detailProspectId` are two cursors. **No routing, ever.** `switchView()` calls `saveState()` — **do not navigate inside a byte-comparison window, and do not open the app at all while Michael's window is up.** Inject the transition kill-switch after every reload and every theme toggle. The theme button is **`#theme-toggle-btn`**; put the theme back the way you found it. `resize_window` does not work on this machine. **Measure the screenshot↔CSS scale every session — it is a property of the window, not the machine.** `setAdvancedQueryTarget()` takes `"prospect"` / `"company"` — **SINGULAR**. **Both query surfaces stay DEFERRED.** A bare domain string returned from the browser comes back `[BLOCKED: JWT token]` — **return `domain.split(".")`**. **A new top-level function name is the cheapest honest version probe there is** — and it is also how you check whether a session has already run.
+## ⛔ EXACT NEXT STEP — **FINISH 2B.10 FIRST. NOT 3.2.**
+
+**Michael called this himself at 3.1's close and the plan agrees with him**: `phase-3-outreach-launch.md` lists 3.1's dependency as "Phase 2B closed," and it was not. 3.1 ran on his explicit instruction and is sound, but **the phase should not accumulate a second session on an open dependency.**
+
+**What 2B.10 still owes, and only one of the two is real work:**
+
+1. **The export → wipe → restore drill. ⛔ MICHAEL'S CALL, 2026-09-03: RUN IT IN FULL — the close gets its OWN drill on the record, not a citation of 3.1's.** He was offered the shorter version and declined it. **So: ⚠️ ZIP first, then a real export → `wipeAllData()` → restore with counts pasted, and report it as proving TEN stores of twenty-six, not all of them.** That framing is 2B.10's actual finding and the drill does not change it. **What 3.1 already established, so the close does not rediscover it:** the drill now runs against **651 prospects / 1,090 companies** and takes **~15 seconds**, not the instant the sandbox took — poll on `state.prospects.length`; stub `prompt`/`alert`/`confirm` first (`wipeAllData()` needs `"YES"` exactly); `wipeIndexedDB()` leaves the `handles` store alone so the backup-folder grant survives and the drill can read its own ZIP back with no file picker.
+2. ⛔ **The snapshot restore re-verify: GENUINELY NOT DONE, AND IT IS THE ONE THING NO SESSION HAS COVERED.** Tier 1 is the sole recovery protection through Phase 3, DIRECTIVES §0 says it is re-proved at every close, and none has been since. ⚠️ Its gate is `saveBackupFile`'s `wroteToFolder`, **not the sidebar chip** — 3.1 saw the chip read "Not protected" in the same second a 1,211,512-byte write returned `wroteToFolder: true`.
+
+Also owed at that close: **the run sheet deletion** (`ai/phases/phase-2b-RUNSHEET.md`, marked spent — **a remote session cannot delete files here; Michael deletes it**), and **the DECLARATIONS amendments**, now carrying from two closes.
+
+**Then Session 3.1b (S, amendment A1), then Session 3.2 — the outreach block (UI, M, ~8 min).** 3.1b may also be folded into the 2B.10 conversation if it has room; it is a DATA change of four deletions and its own `CACHE_NAME` bump. **It must not slip past 3.3.** Q7: Channel and Kind selects, To / Subject / Body, auto-fill from the linked prospect into an empty field only, live counters against Q6's ceilings, and the read-side render in the task inspector. **No buttons; nothing opens anything yet.** It touches `app.js`, `index.html`, `style.css`, `sw.js`.
+
+**Before it starts, know this:** the database has **0 tasks**, so 3.2's Done-when — five controls, auto-fill on a linked prospect, an orphan task, counters at 299/300/301 — **needs tasks created first**, and one of them must be an orphan. Create them, and roll back the database string at the end the way 3.1 did.
+
+**Carry forward:** the `🧱 HUB SHELL` block stays LAST in `style.css`. `#canvas-body` is never edited. `state` is not `window.state` (but top-level functions ARE on `window` — that is what makes the `saveBackupFile` wrapper work). **No routing, ever** — Q8, and this feature puts real addresses one step from a URL. `switchView()` calls `saveState()`. **Do not open the app while Michael's window is up.** Stub `prompt`/`alert`/`confirm` before anything destructive. **Name result keys blandly** — the extension's content filter blocked a plain boolean this session because its key contained the word "Session". `devicePixelRatio` was **1** and `innerWidth` **1920** at 3.1 — re-measure, it is a property of the window.

@@ -2,13 +2,23 @@
 
 *Vantage — a Prospecting Relationship Manager*
 
-> ## ⏸ BLOCKED ON PHASE 2B. Do not start this phase until 2B has closed.
+> ## ⏸ BLOCKED ON ONE THING ONLY — 2B.10's DRILL. Updated 2026-09-03.
 >
-> *Written 2026-09-02, after the outreach-launch scope was approved.*
+> *Written 2026-09-02. **Revised at the Phase 2B close**, because the banner it
+> replaced said "nine sessions stand between today and Session 3.1" and that has
+> not been true since 2026-09-03.*
 >
-> **Nine sessions stand between today and Session 3.1** — 2B.11 through 2B.17,
-> then 2B.10, which always runs last. `ai/AIContext.md` is the Session 2B.9
-> handoff and `CACHE_NAME` is v107.
+> **All twenty-two Phase 2B sessions have run** — 2B.11, 2B.12, 2B.16, 2B.13,
+> 2B.19 (+2B.19b), 2B.18, 2B.20, 2B.21, 2B.17, 2B.22, 2B.14, 2B.15, and 2B.10's
+> document half. `CACHE_NAME` is **v126**, not v107. Everything is committed and
+> pushed at **`ec2bd1a`**.
+>
+> ⛔ **WHAT REMAINS: 2B.10's export → wipe → restore drill and its snapshot
+> re-verify.** Both need Michael to take a manual ZIP and close every Vantage
+> window; neither has run. **Phase 2B is not closed until they do, and 3.1 must
+> not start before that** — 3.1's own Done-when calls `wipeAllData()` against
+> real data, and doing that on a phase whose restore path has never been proved
+> is the wrong order.
 >
 > **Numbered 3, not renumbered.** Hosting stays Phase 4, and its pre-flight
 > already exists at `ai/spec/phase-4-firebase-preflight.md`.
@@ -189,21 +199,33 @@ For every session after the first, change **only** the first line.
 | :---: | :---: | --- | :---: | :---: |
 | ☐ | **3.1** | Task outreach fields, settings, and their backup coverage ⚠️ ZIP first | M | ~8 min |
 | ☐ | **3.2** | The outreach block — manual entry, auto-fill, counters | M | ~8 min |
-| ☐ | **3.3** | Email launch — URL builders, buttons, and every guard | M | ~10 min |
+| ☐ | **3.3** | Email launch — the `compose` URL, two `thread` copy buttons, and every guard **(SMALLER after 2026-09-03: no `thread` URL builder, no Bcc workaround)** | M | ~8 min |
 | ☐ | **3.4** | LinkedIn launch — slug, three kinds, explicit copy controls ← **review here** | M | ~10 min |
-| ☐ | **3.5** | **Phase close** — drill, curation, declarations audit ⚠️ ZIP + green snapshot first | M | ~20 min |
+| ☐ | **3.5** | **Phase close** — drill, curation, declarations audit ⚠️ ZIP + proved snapshot write (`wroteToFolder: true`, not the chip — a known display defect) first | M | ~20 min |
 
 **3.1 → 3.4 is strictly sequential.** Each builds on the previous session's
 surface. None of them removes anything.
 
-## Before these start — four things only Michael can give
+## Before these start — ✅ ALL FOUR ANSWERED 2026-09-03
 
-| # | Decision | Gates |
-| :---: | --- | --- |
-| 1 | **The work Gmail address**, entered in Settings | 3.3 — nothing email launches without it |
-| 2 | **Is the work LinkedIn account free or Premium?** Free caps *noted* invitations at ~5/month, after which only blank invitations send. If free, the `connect` kind should be **cut from 3.4, not built** | 3.4 |
-| 3 | **Confirm `michaelh@youravdept.com`** as the seeded Bcc default | 3.1 |
-| 4 | **Is `youravdept.com` on Google Workspace with admin access?** An outbound journaling rule would solve the Bcc gap properly and make 3.3's copy-control workaround unnecessary | 3.3 — can start without it |
+*The four gating questions this sheet was written around are closed. Kept with
+their answers rather than deleted, because two of them CHANGED WHAT GETS BUILT.*
+
+| # | Question | Answer, 2026-09-03 | Effect |
+| :---: | --- | --- | --- |
+| 1 | The work Gmail address, entered in Settings | **Still owed — it is a value Michael types into Settings, not a decision.** | 3.3. Blank disables email buttons with a message. |
+| 2 | LinkedIn free or Premium? | **Premium, with Sales Navigator.** | ✅ `connect` is **BUILT**, not cut. The "may be cut mid-session" risk is retired. |
+| 3 | Confirm the seeded Bcc default | **`michaelh@youravdept.com`** — local part confirmed. ⚠️ Three typings produced three spellings, so **3.1's Done-when renders it on screen for one eyeball check** instead of asking a fourth time. | 3.1 |
+| 4 | Google Workspace with admin access? | **Yes, and the outbound compliance rule is SET.** | ⚠️ **SCOPE CUT: 3.3 drops §7.6's Bcc workaround entirely** — no rendered Bcc line, no separate copy control, no "remember Bcc" toast. The `compose` Bcc stays. |
+
+### ⚠️ AND FOUR MORE DECISIONS LANDED THE SAME DAY — 3.3 GOT SMALLER, NOT BIGGER
+
+| Decision | Effect on the sessions |
+| --- | --- |
+| **Only `/in/` LinkedIn profile URLs are saved.** Sales Navigator is how he FINDS people, not what he SAVES. | §7.4's regex is correct as written. ⛔ **Do not add Sales Navigator URL handling** — a `sales/lead/` value is a data error to fix, not a format to support. **Run the §9.4 probe once during 2B.10's drill** as a health check on the 651. |
+| **Email `thread` is TWO COPY BUTTONS — address and message.** | ⛔ **§7.3's `#search/` builder is CUT. A `thread` task opens NO URL at all.** Both values (`msgTo`, `msgBody`) already exist in §5.1, so this needs **no new fields and no URL builder**. |
+| **Vantage reads no mail.** The earlier "pull the previous thread into the task" request is **withdrawn**, and the Gmail restricted-scope cliff with it. | Nothing to build. **Do not resurrect it as an unbuilt idea.** |
+| **Gmail is ASSUMED open on the work account.** | ⛔ The "otherwise pop up a reminder" half **cannot be built** — a page cannot see across origins to a Gmail tab or its signed-in account. **A static hint line replaces it.** |
 
 ## Traps that make a half-fix look finished
 
@@ -236,12 +258,33 @@ Each of these **passes a spot-check while still broken.**
   290-character connection note overflows once `[Company]` resolves to
   "Northwestern Mutual Financial Network." Both moments, or neither is real.
 
+### Added 2026-09-03, from the decisions above
+
+- **⚠️ 3.3 — A CLIPBOARD WRITE THAT SILENTLY FAILS LOOKS EXACTLY LIKE ONE THAT
+  WORKED, and this phase now leans on the clipboard where it used to lean on a
+  URL.** `navigator.clipboard.writeText()` needs a **secure context and a real
+  user gesture**, returns a promise that can reject with nothing in the console,
+  and behaves differently on `localhost` than on a hosted origin — which will
+  matter at Phase 4. **Every copy button needs a visible success state and a
+  fallback, and the Done-when must exercise them on the real machine, not in the
+  console.** The risk did not disappear when the popup-blocker path was cut; it
+  moved.
+- **⚠️ 3.2 — THERE IS ONE CLIPBOARD, SO THE TWO BUTTONS ARE A SEQUENCE, NOT A
+  PAIR.** The second copy overwrites the first: `Copy address` → paste → open the
+  thread → `Copy message` → paste. **Do not lay them out as two equivalent
+  options side by side** — that shape invites clicking both, and losing the
+  address is silent and reads as the first button not working.
+- **⛔ 3.3 — THERE IS NO PASTE BUTTON AND THERE CANNOT BE ONE.** A page cannot
+  put text into another origin's input. Michael's own phrasing was *"a button
+  that is a copy and paste of the message"*; a session reading that line alone
+  could try to build a paste. **Vantage's job ends at the clipboard.**
+
 ## Backup points for this step
 
 | When | What |
 | --- | --- |
 | Before **3.1** | Manual ZIP — its Done-when calls `wipeAllData()` against real data |
-| Before **3.5** | Manual ZIP **and** a confirmed green snapshot. Non-negotiable. |
+| Before **3.5** | Manual ZIP **and** a proved snapshot write. Non-negotiable. ⚠️ **NOT "a confirmed green chip" — the chip is a known display defect** (it read Protected and Not protected an hour apart with nothing changed). **The real gate is `saveBackupFile`'s `wroteToFolder: true`.** |
 
 ---
 
@@ -496,7 +539,7 @@ Close Phase 3.
 | --- | --- |
 | Before **3.1** | Manual ZIP export, stored outside the project folder |
 | Before any session touching the **task record shape** | The plan flags these — take a ZIP |
-| Before **3.5** | Manual ZIP **and** a confirmed green snapshot. Non-negotiable. |
+| Before **3.5** | Manual ZIP **and** a proved snapshot write. Non-negotiable. ⚠️ **NOT "a confirmed green chip" — the chip is a known display defect** (it read Protected and Not protected an hour apart with nothing changed). **The real gate is `saveBackupFile`'s `wroteToFolder: true`.** |
 | At **phase close** | Full ZIP, stored outside the project folder |
 
 Backups live in `C:\01_AppDevelopment\02_Vantage-Master-Folder\backups-production\`; automatic snapshots are in its `snapshots\` subfolder. The stale sibling `..\backups\` is not in use.

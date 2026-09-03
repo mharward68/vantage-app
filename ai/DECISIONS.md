@@ -579,3 +579,30 @@ Same functions, same guard, same ZIP. **The `length === 0` guard is the shared r
 
 **Rejected — treating this as cosmetic.** It reached the top of the list because a corrupt write currently swaps a 651-prospect database for four fictional people and overwrites the evidence.
 
+
+---
+
+## 2026-09-03 — Vantage does not Bcc. The Workspace journaling rule replaces it, and frozen contracts Q3, Q4 and Q5 are amended to say so
+
+**Michael, at the close of Session 3.1:** *"Google Workspace Bcc rule is in place. Vantage does not Bcc emails."*
+
+**Chose:** Vantage emits no Bcc. The Google Workspace outbound content-compliance rule blind-copies every message sent from the work account, so the logging the Bcc existed to provide already happens — **and happens in more cases than Vantage could ever cover**, including replies typed straight into Gmail with Vantage nowhere in sight. **The app must not do a worse version of something the mail system already does completely.**
+
+**What is amended, and each of the three was frozen:**
+
+- **Q3** — `state.taskSettings.emailBcc` is removed: the seed in `ensureStateDefaults()`, the `OUTREACH_BCC_DEFAULT` constant, the `["Outreach Bcc", …]` row in `generateSettingsCSV()` and its `restoreSettingsFromCSV()` leg. **`workGmailAddress` is NOT affected** — it targets the right inbox and is unrelated.
+- **Q4** — `gmailComposeUrl()` loses the `(bcc ? \`&bcc=…\` : \`\`)` term entirely. It is not made conditional on a blank setting; the parameter does not exist.
+- **Q5** — email `thread` no longer toasts *"Body copied — remember Bcc."* The copy-on-open behaviour itself stands; only the Bcc half of the message goes.
+- **Phase-plan Open Risk 6** (*"the Bcc does not reach follow-ups or LinkedIn"*) is **retired, not mitigated.** It was the risk this rule removes.
+
+**Because:** a setting nothing reads is not neutral. It is an invitation — the next session that greps `emailBcc`, finds a seeded, exported, restored key that no code path consumes, reads it as an unfinished wiring job and reconnects it. **Removing it is cheaper than the comment that would have to stop that**, and this file plus the phase plan's amendments section carry the reasoning if the question ever reopens.
+
+**Rejected — leaving the key in place and simply not reading it.** The zero-rework option, and the one that ships the trap above. Also rejected because Session 3.1 gave the key genuine backup coverage: leaving it means a CSV row and a restore leg maintained forever for a value with no consumer.
+
+**Rejected — keeping the Bcc as a deliberate second copy.** Belt and braces has a real cost here: every staged email lands in the archive twice, and a recipient who reads headers sees a Bcc that the journaling rule does not expose. Michael trusts the rule; the second copy buys noise.
+
+**What would reverse this:** the Workspace rule being turned off, narrowed, or found not to cover a channel that matters — or Vantage one day sending from an account outside that Workspace. **Any of those is a scope question, not a session's call**, and the reversal is small: one seed line, one CSV row, one restore leg, one URL term.
+
+⚠️ **THE AMENDMENT COSTS A FOLLOW-UP TO A SESSION THAT HAS ALREADY SHIPPED. IT IS OWED AS SESSION 3.1b** — Session 3.1 built the Q3 half in good faith hours before this ruling, so the removal is real code plus a `CACHE_NAME` bump, not a documentation edit. Sized **S**. Following the 2B.19 / 2B.19b precedent for a repair pass on a shipped session, and it must run **before 3.3**, which is the session that would otherwise build `&bcc=`.
+
+⚠️ **AND THE SPELLING QUESTION THAT DOMINATED THE SCOPE IS NOW MOOT — RECORD THAT PLAINLY SO NOBODY RE-OPENS IT.** Scope §9.7 spent a full section, three typings and an on-screen verification settling `michaelh@youravdept.com`; Michael confirmed it correct at 3.1's close, and it was retired as a value the same hour. **The section stays as the record of how a silent-failure value should be settled** — render it from live state and have the human read it, rather than asking a fourth time — which is the durable half and is worth more than the address was.

@@ -1254,6 +1254,25 @@ function deriveSeniority(title) {
   return "Individual Contributor";
 }
 
+/* PHASE 3 / Q3 (Session 3.1). THE OUTREACH BCC LOGGING ADDRESS, WRITTEN ONCE.
+
+   ⛔ ONE LITERAL, ONE PLACE, DELIBERATELY. Scope §9.7 exists because this
+   address was typed three times by hand and produced three different spellings
+   — michaelh@, michalh@ and @youavdept — and a wrong Bcc does not throw, does
+   not warn and appears in no Done-when: it bounces silently or delivers to a
+   stranger, and surfaces weeks later as a hole in the sent-mail archive. The
+   local part `michaelh` matches this document set and the Workspace admin
+   account of scope §9.2; the domain `youravdept.com` is corroborated
+   throughout the repo (BUILD_NOTES records it being kept OFF the free-email
+   blocklist because it is a real company). DO NOT re-key this string anywhere
+   else — a second copy is how the two eventually stop matching. Session 3.3's
+   Settings field reads state.taskSettings.emailBcc, never this constant.
+
+   It is a SEED, not a constant the app reads at click time: Q3 says emailBcc is
+   read from state at click time so that changing it applies immediately to
+   tasks that already exist. */
+const OUTREACH_BCC_DEFAULT = "michaelh@youravdept.com";
+
 function ensureStateDefaults() {
   // Snapshot health describes this machine's filesystem, not the user's data.
   // It is never carried in a backup, so a restored state arrives without it and
@@ -1274,6 +1293,33 @@ function ensureStateDefaults() {
   if (state.taskSettings.dateMode !== "business" && state.taskSettings.dateMode !== "all") {
     state.taskSettings.dateMode = "business";
   }
+  /* PHASE 3 / Q3 (Session 3.1). THE TWO OUTREACH SETTINGS JOIN taskSettings
+     RATHER THAN STARTING A SIBLING STORE — the instruction written in the C15
+     block immediately below, applied to its second consumer: a new persisted
+     setting joins an existing record, and promoting these to an object of
+     their own later is "a rename with a defaults migration, not a new store."
+
+     wipeAllData() THEREFORE NEEDS NO NEW LINE. It already replaces
+     state.taskSettings wholesale with { dateMode: "business" } (see the 2B.7
+     comment there), so both keys go with it and this path reseeds them on the
+     next load. That is the entire reason Q3 puts them here.
+
+     ⛔ TESTED WITH === undefined, NOT WITH FALSINESS, AND THAT IS THE POINT:
+     "" IS A MEANINGFUL VALUE FOR BOTH. A blank workGmailAddress disables every
+     email button and names Settings (Q3) — it must never silently fall back to
+     /u/0/ — and a blank emailBcc omits the &bcc= parameter entirely. A
+     truthiness guard would make "deliberately blank" inexpressible and would
+     re-seed the address on every boot and every restore, which is the
+     length === 0 defect recorded in BUILD_NOTES for the managed lists, pointed
+     at a scalar. Related and deliberately avoided: the 2B.13 rule that a seed
+     must write the shape its migration tests for — here nothing writes "" as a
+     seed, so a blank is always the user's own.
+
+     Backup coverage is two rows in prm_settings.csv (generateSettingsCSV /
+     restoreSettingsFromCSV), following the C4 Task Date Mode precedent. No new
+     file, no new store. */
+  if (state.taskSettings.workGmailAddress === undefined) state.taskSettings.workGmailAddress = "";
+  if (state.taskSettings.emailBcc === undefined) state.taskSettings.emailBcc = OUTREACH_BCC_DEFAULT;
   /* Phase 1 / C15 (Session 1.10). The app's ONE persisted-UI-layout record,
      keyed by table id so a second table adopts it without a second
      implementation. Only "taskhub" is populated in Phase 1.
@@ -1323,6 +1369,30 @@ function ensureStateDefaults() {
     if (t.createdAt === undefined) t.createdAt = "";
     if (t.source === undefined) t.source = "manual";
     if (t.sourceRef === undefined) t.sourceRef = null;
+    /* PHASE 3 / Q1 (Session 3.1). The five outreach fields. FLAT, not a nested
+       object (Assumption 4) — the backup layer is CSV and five columns diff
+       readably where one JSON blob does not.
+
+       channel === "" MEANS "NOT AN OUTREACH TASK". It is the default for a
+       manually created task and the migrated value for every task that
+       predates this feature, and it is what hides the whole block and every
+       button in 3.2/3.3/3.4. Absent-key tolerant on read, so a task object
+       arriving from a pre-Phase-3 backup is repaired here rather than rejected.
+
+       ⛔ source / sourceRef ARE NOT REPURPOSED (Assumption 5) and neither is
+       notes (Assumption 7). They record where a task CAME FROM; channel records
+       what the task IS. A sequence-written task will set both. Conflating them
+       makes "did a sequence make this?" unanswerable.
+
+       All five hold LITERAL, resolved text — a task never stores an unresolved
+       merge token, whether a sequence wrote the value or Michael typed it.
+       msgSubject NEVER stores "Re:"; that prefix is display-only, added by the
+       renderer for msgKind === "thread" (Q1). */
+    if (t.channel === undefined) t.channel = "";
+    if (t.msgKind === undefined) t.msgKind = "";
+    if (t.msgTo === undefined) t.msgTo = "";
+    if (t.msgSubject === undefined) t.msgSubject = "";
+    if (t.msgBody === undefined) t.msgBody = "";
   });
   // Migrate: ensure all audience lists have a status field
   state.audienceLists.forEach(al => {
@@ -2181,9 +2251,16 @@ function exportAudienceListsCSV() {
 // Phase 1 / C3. First Name, Last Name and Company are EXPORT-ONLY columns —
 // they exist so a human can read the file. They are never stored on the task
 // record and restoreTasksFromCSV() ignores all three, keying on Prospect ID.
+// PHASE 3 / Q1 + Q8 (Session 3.1). The five outreach columns are APPENDED at
+// the END, and that is not cosmetic: restoreTasksFromCSV() reads by header NAME
+// through pick(), so position is irrelevant to the machine — but a human
+// reading a diff, or a pre-Phase-3 13-column file, reads by position. Appending
+// keeps every existing column at the index it has always had.
+// NO NEW CSV FILE joins the ZIP bundle for this feature (Q8).
 const TASKS_CSV_HEADERS = [
   "Task ID", "Prospect ID", "First Name", "Last Name", "Company", "Task Title", "Notes",
-  "Due Date", "Status", "Completed Date", "Created At", "Source", "Source Ref"
+  "Due Date", "Status", "Completed Date", "Created At", "Source", "Source Ref",
+  "Channel", "Message Kind", "Message To", "Message Subject", "Message Body"
 ];
 
 function taskCSVRow(t) {
@@ -2201,7 +2278,17 @@ function taskCSVRow(t) {
     t.completedDate || "",
     t.createdAt || "",
     t.source || "manual",
-    t.sourceRef || ""
+    t.sourceRef || "",
+    // Phase 3 / Q1 (Session 3.1). Five values in header order. msgBody may hold
+    // newlines, commas and quotes; convertToCSV() quotes every field
+    // unconditionally and parseCSV() tracks quote state across newlines, so it
+    // round-trips exactly — verified in Session 1.3 and re-verified here. Do
+    // NOT add newline-stripping to "protect" the CSV; it does not need it.
+    t.channel || "",
+    t.msgKind || "",
+    t.msgTo || "",
+    t.msgSubject || "",
+    t.msgBody || ""
   ];
 }
 
@@ -2362,6 +2449,16 @@ function generateSettingsCSV() {
   // Custom Sort Order rather than in a file of its own. This is what gives
   // state.taskSettings its DIRECTIVES §4 backup coverage.
   rows.push(["Task Date Mode", (state.taskSettings && state.taskSettings.dateMode) || "business"]);
+  /* PHASE 3 / Q3 (Session 3.1). state.taskSettings' two outreach keys ride here
+     as two more scalar rows, exactly as C4's Task Date Mode does. This IS their
+     entire DIRECTIVES §4 backup coverage — no new file, and they inherit every
+     restore path prm_settings.csv already reaches.
+
+     `|| ""` is safe here in a way it would NOT be in the defaults path: a blank
+     is written as a blank and read back as a blank, so a deliberately-cleared
+     Bcc survives the round trip rather than being re-seeded. */
+  rows.push(["Outreach Work Gmail", (state.taskSettings && state.taskSettings.workGmailAddress) || ""]);
+  rows.push(["Outreach Bcc", (state.taskSettings && state.taskSettings.emailBcc) || ""]);
   // Phase 1 / C17. state.columnLayouts' ENTIRE DIRECTIVES §4 coverage is this
   // one row, following the Custom Sort Order precedent. The payload is JSON
   // and therefore full of `"` characters — the round trip depends on
@@ -2864,6 +2961,13 @@ function restoreSettingsFromCSV(text) {
   let sawDomainHostDefaultUrls = false;
   let sawTaskDateMode = false;
   let taskDateMode = "business";
+  // Phase 3 / Q3 (Session 3.1). Same sawX guard shape as every sibling: a
+  // settings CSV that predates these rows leaves the live values untouched, and
+  // ensureStateDefaults() — which always runs after a restore — seeds them.
+  let sawWorkGmailAddress = false;
+  let workGmailAddress = "";
+  let sawEmailBcc = false;
+  let emailBcc = "";
   let sawColumnLayouts = false;
   let columnLayouts = null;
 
@@ -2945,6 +3049,15 @@ function restoreSettingsFromCSV(text) {
       // Phase 1 / C4.
       sawTaskDateMode = true;
       taskDateMode = val.toLowerCase() === "all" ? "all" : "business";
+    } else if (typeLower === "outreach work gmail") {
+      // Phase 3 / Q3. `val` is already trimmed by the reader above, which is
+      // right for an address. An empty cell restores an empty value — blank is
+      // meaningful (it disables every email button), not "unset".
+      sawWorkGmailAddress = true;
+      workGmailAddress = val;
+    } else if (typeLower === "outreach bcc") {
+      sawEmailBcc = true;
+      emailBcc = val;
     } else if (typeLower === "column layouts") {
       // Phase 1 / C17. A malformed cell must not take the whole settings
       // restore down with it — a corrupt column width is cosmetic, and losing
@@ -2980,6 +3093,16 @@ function restoreSettingsFromCSV(text) {
   if (sawTaskDateMode) {
     if (!state.taskSettings || typeof state.taskSettings !== "object") state.taskSettings = {};
     state.taskSettings.dateMode = taskDateMode;
+  }
+  // Phase 3 / Q3 (Session 3.1). Guarded the same way — a settings CSV with no
+  // outreach rows leaves whatever is live alone.
+  if (sawWorkGmailAddress) {
+    if (!state.taskSettings || typeof state.taskSettings !== "object") state.taskSettings = {};
+    state.taskSettings.workGmailAddress = workGmailAddress;
+  }
+  if (sawEmailBcc) {
+    if (!state.taskSettings || typeof state.taskSettings !== "object") state.taskSettings = {};
+    state.taskSettings.emailBcc = emailBcc;
   }
   // C17. Restored wholesale like every sibling list. Unknown keys inside it
   // and keys missing from it are handled at READ time by the C15 migration
@@ -3017,6 +3140,29 @@ function restoreTasksFromCSV(text) {
     const status = pick("Status", "status").trim().toLowerCase() === "completed" ? "completed" : "open";
     const completedDate = pick("Completed Date", "completeddate").trim();
     const sourceRef = pick("Source Ref", "sourceref").trim();
+    /* PHASE 3 / Q1 (Session 3.1). The five outreach fields, read by header NAME
+       so a pre-Phase-3 13-column file simply yields "" for all five and
+       restores clean — that is the migration tolerance, and it is why these are
+       pick() calls with an "" default rather than positional reads.
+
+       ⛔ WHAT IS TRIMMED AND WHAT IS NOT IS A DECISION, NOT AN OVERSIGHT.
+       BUILD_NOTES: trimming is right for ids and enums and WRONG for free text,
+       where leading and trailing whitespace is content — which is why the value
+       loop above deliberately does not trim, and why Notes is left alone. So:
+       channel and msgKind are enums and msgTo is an address that must not carry
+       stray whitespace into a mailto/URL parameter — all three trim.
+       msgSubject and msgBody are free text and are LEFT EXACTLY AS STORED.
+
+       channel and msgKind are also COERCED to their Q2 enum, following the
+       `status` line above, which does the same thing. An unknown value in a
+       corrupt or hand-edited cell would otherwise reach a URL builder in 3.3
+       and 3.4 — DIRECTIVES ladder rung 1 (stability) over rung 3 (simplicity).
+       An unrecognised value degrades to "", which means "not an outreach task"
+       and is inert, never something that opens the wrong thing. */
+    const rawChannel = pick("Channel", "channel").trim().toLowerCase();
+    const channel = (rawChannel === "email" || rawChannel === "linkedin") ? rawChannel : "";
+    const rawKind = pick("Message Kind", "messagekind", "msgKind", "msgkind").trim().toLowerCase();
+    const msgKind = ["compose", "thread", "connect", "inmail", "message"].includes(rawKind) ? rawKind : "";
     if (!prospectId || !state.prospects.some(p => p.id === prospectId)) orphans++;
     state.tasks.push({
       id: pick("Task ID", "taskid", "ID", "id").trim() || `task-${Date.now()}-${i}`,
@@ -3028,7 +3174,13 @@ function restoreTasksFromCSV(text) {
       completedDate: completedDate || null,
       createdAt: pick("Created At", "createdat").trim(),
       source: pick("Source", "source").trim() || "manual",
-      sourceRef: sourceRef || null
+      sourceRef: sourceRef || null,
+      channel: channel,
+      msgKind: msgKind,
+      msgTo: pick("Message To", "messageto", "msgTo", "msgto").trim(),
+      // Free text — NOT trimmed, exactly like notes above.
+      msgSubject: pick("Message Subject", "messagesubject", "msgSubject", "msgsubject"),
+      msgBody: pick("Message Body", "messagebody", "msgBody", "msgbody")
     });
   }
   return { total: state.tasks.length, orphans: orphans };
@@ -4968,7 +5120,19 @@ function saveTaskFromEditor() {
       completedDate: status === "completed" ? todayLocalDateStr() : null,
       createdAt: todayLocalDateStr(),
       source: "manual",
-      sourceRef: null
+      sourceRef: null,
+      /* Phase 3 / Q1 (Session 3.1). Written at CREATION as well as in the
+         defaults path, so a task created after boot reads "" rather than
+         undefined without waiting for the next ensureStateDefaults(). The seed
+         and the migration write the SAME shape — that is the 2B.13 rule (a ""
+         seed against an === undefined migration is not a defect here because
+         "" is the intended terminal value, not a repairable one).
+         3.2 is what gives these a UI; this session writes no control. */
+      channel: "",
+      msgKind: "",
+      msgTo: "",
+      msgSubject: "",
+      msgBody: ""
     });
   }
 

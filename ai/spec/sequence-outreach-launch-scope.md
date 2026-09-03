@@ -323,8 +323,33 @@ whichever `/u/N/` that account occupies. Preferred over `/u/0/`, which reflects
 sign-in order and renumbers silently when accounts are added or removed — a
 wrong-inbox bug that surfaces months later as "the button stopped working."
 
-Separately worth considering: a dedicated Chrome profile signed into only the
-work account makes `/u/0/` unambiguous forever.
+⚠️ **STILL REQUIRED AFTER 2026-09-03, AND FOR `compose` ONLY.** Michael's
+instruction is to *"assume gmail is open and on the correct account."* **Keep
+the explicit address anyway** — it costs one parameter, it is what makes the
+assumption safe rather than merely likely, and the failure it prevents is
+silent and delayed. §7.3 no longer builds a URL at all, so this now applies to
+exactly one kind.
+
+⛔ **AND THE "IF NOT, FIRE A QUICK POPUP" HALF CANNOT BE BUILT. THIS IS A
+BROWSER BOUNDARY, NOT A SCOPE DECISION.** A page on `localhost:5000` **cannot
+detect whether a `mail.google.com` tab is open, nor which Google account is
+signed into it.** Cross-origin, no API, no workaround — and every technique that
+looks like it might work (probing the URL, reading a frame, timing a fetch) is
+either blocked or produces an answer that is wrong often enough to be worse than
+none. **A popup conditional on Gmail being closed is not implementable.**
+
+**What IS available, and it is the honest version of the same intent:**
+
+1. **A static line in the outreach block** — *"Assumes Gmail is open on
+   `<workGmailAddress>`"* — always shown, costs nothing, needs no detection.
+   **Recommended.**
+2. **Nothing.** `compose` opens Gmail itself, so it works whether or not Gmail
+   was already open; and after §7.3, `thread` opens nothing at all. **The
+   assumption is about Michael's habit, not about anything the app does** —
+   which is why the conditional dissolved rather than being descoped.
+
+**Separately worth considering:** a dedicated Chrome profile signed into only
+the work account makes `/u/0/` unambiguous forever.
 
 ### 7.2 Email — `compose`
 
@@ -348,17 +373,52 @@ The Bcc is read from Settings at click time, not snapshotted onto the task, so
 changing it applies immediately to tasks already generated — the behavior you
 want from a logging address.
 
-### 7.3 Email — `thread`
+### 7.3 Email — `thread` · ⛔ THE SEARCH LINK IS REPLACED. NO URL IS BUILT.
 
-```js
-const q = `to:${task.msgTo} OR from:${task.msgTo}`;
-const url =
-  `https://mail.google.com/mail/u/${encodeURIComponent(settings.workGmailAddress)}/` +
-  `#search/${encodeURIComponent(q)}`;
+**Michael, 2026-09-03: *"I believe the search link was to search email address
+in my gmail so, replace."*** The `#search/` deep link, its `to:X OR from:X`
+query and the `/u/<address>/` targeting for this kind are all **cut**. A
+`thread` task opens nothing.
+
+```
+Copy address  ->  clipboard = task.msgTo      // he searches Gmail himself
+Copy message  ->  clipboard = task.msgBody    // he pastes into Reply All
 ```
 
-Search is by contact address only, not by subject — it never breaks when a
-thread gets retitled in Gmail.
+**Both are plain `navigator.clipboard.writeText()` calls on fields §5.1 already
+defines.** There is no URL builder, no account targeting and no popup blocker in
+this path at all — which removes one of the two failure modes the phase plan
+named for Session 3.3.
+
+⚠️ **THE BUTTONS ARE NOT A UI CHOICE — THEY ARE REQUIRED BY THE BROWSER.** A
+clipboard write needs a **real user gesture**; a page cannot put something on
+the clipboard on its own, on load, or when a task is opened. **So "the app
+copies and Michael pastes" is exactly two buttons, and "just have it already on
+the clipboard" is not an option that exists.** Recorded because it looks like a
+convenience that was skipped rather than a constraint.
+
+⚠️ **THERE IS ONE CLIPBOARD, SO THE TWO BUTTONS ARE A SEQUENCE, NOT A PAIR —
+AND 3.2's LAYOUT SHOULD SAY SO.** The second copy overwrites the first, so the
+real order is `Copy address` → paste → open the thread → `Copy message` → paste.
+**Michael cannot stage both and paste them one after the other.** Present them
+in that order, top to bottom or left to right, and do not render them as two
+equivalent options side by side — that shape invites clicking both and losing
+the first. **The failure is silent** (the address is simply gone from the
+clipboard) and it looks like the first button did not work.
+
+⛔ **THERE IS NO PASTE BUTTON, AND THERE CANNOT BE ONE. CONFIRMED BY MICHAEL
+2026-09-03: *"You copy and then I will go to the message and hit ctrl V."***
+Recorded because his earlier phrasing was *"a button that is a copy and paste of
+the message"*, and a session reading that line alone could try to build a paste.
+**A page cannot put text into another origin's input** — same boundary as the
+Gmail-detection note in §7.1, arrived at from the other direction. **Vantage's
+job ends at the clipboard; the paste is Ctrl+V in Gmail and is his.**
+
+**What replaced what, so nobody restores the old builder as a missing feature:**
+the search link was *one* click that landed him in a searched Gmail; the copy
+button is *one* click that lets him search a Gmail he already has open. **His
+workflow starts inside Gmail, so the link was solving a problem he does not
+have.**
 
 ### 7.4 LinkedIn — slug derivation
 
@@ -447,21 +507,82 @@ P5. Session 2B.7 built `prospectByEmail()` on it and made it unique. **No
 prospect-model work is needed**; only the `[Email]` merge token has to be added
 to the existing list, and that belongs to the producer half.
 
-**9.2 Is `youravdept.com` on Google Workspace with admin access?** If yes,
-§7.6's journaling rule solves the Bcc gap properly.
+**9.2 RESOLVED 2026-09-03 — YES, Google Workspace, and `michaelh@youravdept.com`
+is admin.** So §7.6's proper fix is available: an **outbound content-compliance
+rule blind-copying all outbound mail** to the logging address. ⚠️ **THIS IS A
+SCOPE REDUCTION FOR SESSION 3.3, NOT A NOTE.** The rule covers every reply
+automatically — including ones sent from Gmail with Vantage nowhere in sight —
+which reduces the in-app Bcc to a convenience and makes §7.6's workaround
+(the rendered Bcc line, its own copy control, and the "Body copied — remember
+Bcc" toast on email `thread`) **unnecessary rather than merely redundant.**
+
+✅ **CLOSED 2026-09-03 — Michael: *"Gotcha. Taken care of. Disregard."*** The
+compliance rule is handled outside Vantage. **SESSION 3.3 DROPS §7.6's
+WORKAROUND ENTIRELY** — no rendered Bcc line on email `thread`, no separate Bcc
+copy control, no "Body copied — remember Bcc" toast. That is a real scope
+reduction, not a deferral.
+
+⚠️ **WHAT IS KEPT, AND SAY SO IF THIS READING IS WRONG: the `compose` Bcc stays.**
+Decision §10.7 still holds and it costs one URL parameter (`&bcc=`), so the
+in-app Bcc remains as belt-and-braces on the one path that can carry it. **What
+was dropped is the WORKAROUND for the paths that cannot** — which is the only
+part the compliance rule makes redundant.
 
 **9.3 Does `?recipient=<slug>` still open the composer?** One manual test before
 it goes in BUILD_NOTES as settled. It is undocumented and unversioned.
 
-**9.4 Is the work LinkedIn account free or Premium?** Free caps noted
-invitations at ~5/month, which would make `connect` steps unusable at sequence
-volume. Answer before building `connect`.
+**9.4 RESOLVED 2026-09-03 — Premium, with Sales Navigator.** The ~5/month free
+invitation cap does not apply, so **`connect` stays a first-class kind and 3.4
+builds it.** The risk register's "may be cut mid-session on the account-tier
+answer" is retired.
 
-**9.5 Should email `thread` stop auto-copying, for consistency?** LinkedIn
-steps copy only on an explicit click; email `thread` copies implicitly. Two
-behaviors for the same gesture is a small papercut. Recommend aligning on
-explicit, but it reverses an earlier decision so it is raised rather than
-assumed.
+✅ **AND THE SECOND URL SPACE IS A NON-ISSUE — Michael, 2026-09-03: *"I only
+want LinkedIn URLs saved."*** The `linkedin` field holds **public profile URLs
+(`/in/<slug>`)**; Sales Navigator is how he FINDS people, not what he SAVES.
+**§7.4's regex is correct as written, `connect` is built, and no second branch
+is needed.** ⛔ **Do not add Sales Navigator URL handling** — it would be
+building for data the field is not supposed to contain.
+
+**THE CONSEQUENCE IS A DATA-HYGIENE RULE RATHER THAN A CODE BRANCH**, and it is
+worth stating because it changes what §7.4's failure MEANS: a `linkedin` value
+that yields no slug is now **a data error to fix, not a format to support.**
+The disabled button and its message are the right behaviour and double as the
+signal. **Still worth running the probe below ONCE** — not to decide the design,
+but to confirm the data matches the intent. If a meaningful number of the 651
+hold `sales/lead` URLs or anything else, that is cleanup he would want to know
+about, and the 2B.10 drill session is already going to be in the app.
+
+*The original finding, kept because it is the reason the probe exists:*
+
+⚠️ **SALES NAVIGATOR IS A SECOND URL SPACE AND §7.4's SLUG REGEX DOES NOT MATCH IT.** Sales Navigator identifies people as
+`linkedin.com/sales/lead/<opaque-id>`, not `linkedin.com/in/<slug>`. The
+matcher is `/linkedin\.com\/in\/([^/?#]+)/i` — a lead URL yields **no slug**,
+which disables every LinkedIn button on that prospect with a message. **That is
+the designed failure and it is safe; the question is how OFTEN it fires**, and
+that depends entirely on where Michael copied his `linkedin` values from.
+
+**Answerable in one console line against the production database, and the
+2B.10 drill session is already going to be in the app:**
+
+```js
+const v = state.prospects.map(p => p.linkedin || "");
+({ total: v.length, blank: v.filter(x => !x).length,
+   inSlug: v.filter(x => /linkedin\.com\/in\//i.test(x)).length,
+   salesLead: v.filter(x => /linkedin\.com\/sales\//i.test(x)).length,
+   other: v.filter(x => x && !/linkedin\.com\/(in|sales)\//i.test(x)).length })
+```
+
+**Read the result as DATA HEALTH, not as a design input** (see the resolution
+above): `inSlug` should be essentially all of the non-blank values. Anything in
+`salesLead` or `other` is a record to fix by hand, not a format to support.
+
+**9.5 RESOLVED 2026-09-03 — Michael: *"Thread is for email only."*** The
+question's premise was wrong: there is no shared gesture to align, because
+`thread` is not a LinkedIn concept at all. **Email `thread` keeps its implicit
+copy; LinkedIn keeps its explicit copy controls; the earlier decision stands
+un-reversed.** ⛔ **Do not re-raise this as a consistency papercut** — two
+channels behaving differently is not an inconsistency when the behaviour
+belongs to only one of them.
 
 **9.6 RESOLVED 2026-09-02 — the task CSV path is known.** `TASKS_CSV_HEADERS`
 (`app.js` 1904) holds 13 columns; `taskCSVRow()` (1909) writes them;
@@ -497,6 +618,59 @@ that object as of 2B.7, so the coverage is inherited whole.
 12. **The task side works standalone.** Outreach fields are typeable by hand on
     any task, so one-off outreach is supported and the consumer half is
     testable before the sequence half exists.
+
+### Added 2026-09-03
+
+13. **The Bcc default is `michaelh@youravdept.com`** — local part confirmed by
+    Michael 2026-09-03. Seeded by Session 3.1. See §9.7 for why the spelling
+    gets one on-screen check rather than a fourth question.
+14. **The Workspace content-compliance rule is SET.** §7.6's workaround is cut
+    from 3.3; the `compose` Bcc stays.
+15. **LinkedIn is Premium with Sales Navigator, and only `/in/` profile URLs
+    are saved.** `connect` is built; §7.4 is correct as written; Sales
+    Navigator URLs are a data error, not a supported format.
+16. **Email `thread` is TWO COPY BUTTONS — address and message — and Vantage
+    reads no mail.** The thread-content-in-the-task request is **withdrawn**,
+    and the Gmail read scope with it. `compose` keeps its prefilled composer.
+17. **The search link is REPLACED, not supplemented** (2026-09-03). §7.3 builds
+    no URL and a `thread` task opens nothing. **Two buttons, not three.**
+18. **Gmail is ASSUMED open on the work account.** ⛔ The "otherwise pop up a
+    reminder" half **cannot be built** — a page cannot see across origins to a
+    Gmail tab or its signed-in account. **A static hint line replaces it;**
+    see §7.1.
+
+---
+
+## 9.7 ⛔ THE BCC ADDRESS SPELLING — ONE CHARACTER, AND IT FAILS SILENTLY
+
+Raised 2026-09-03 at the Phase 2B close. **This document, §10.7 and Session
+3.1's input line all say `michaelh@youravdept.com`. Confirming it on
+2026-09-03, Michael wrote `michalh@youravdept.com`** — no `e`. One of the two
+is wrong and this scope cannot tell which.
+
+**Why it is worth a question rather than a guess:** the Bcc is the logging
+address for every piece of outreach the app stages. A wrong address does not
+throw, does not warn, and does not appear in any Done-when — **it either
+bounces silently or delivers someone else's mail to a stranger**, and the
+symptom is "my sent-mail archive has a hole in it" discovered weeks later.
+`michaelh@` also matches the admin account named in §9.2, which is weak
+evidence for it and not proof.
+
+**RESOLVED 2026-09-03, and the resolution is worth recording because a THIRD
+spelling appeared while settling it.** Michael confirmed *"michaelh@youavdept is
+correct"* — local part **`michaelh`** (matching this document), domain written
+**`youavdept`**, missing the `r`. **The value taken is
+`michaelh@youravdept.com`**: `youravdept.com` is his own company domain and
+appears throughout the repo, including `BUILD_NOTES.md`'s note that it is
+deliberately kept OFF the free-email blocklist because it is a real company he
+wants matched. Three typings produced three spellings, so the local part is
+confirmed and the domain is settled by corroboration rather than by the typing.
+
+⛔ **THE CHECK IS ON SCREEN, NOT ANOTHER QUESTION.** Asking a fourth time buys
+nothing — the failure is in transcription, and re-typing is the thing that keeps
+failing. **Session 3.1's Done-when must render the seeded value in the Settings
+field and have Michael eyeball it once**, which tests the string that actually
+shipped rather than the string he retyped.
 
 ---
 
@@ -579,3 +753,71 @@ second way to fill the same fields.
 - Attachments.
 - Any email provider other than Gmail.
 - Mobile. These URLs do not reliably open a compose window in mobile Safari.
+
+---
+
+## 9.8 ✅ EMAIL FOLLOW-UPS: TWO COPY BUTTONS. RESOLVED 2026-09-03, AND IT COSTS LESS THAN WHAT IT REPLACES
+
+**Michael's design, 2026-09-03:** *"a button that simply copies the email
+address and I will handle the rest of the email search and open the appropriate
+message and hit reply all. Then another button on the task that is a copy and
+paste of the message. I will then review and edit the message and send."*
+
+⛔ **THIS DROPS THE THREAD-CONTENT-IN-THE-TASK REQUEST ENTIRELY, AND WITH IT THE
+GMAIL SCOPE CLIFF.** Vantage reads no mail, needs no restricted scope, and buys
+no annual third-party security assessment. **Recorded explicitly because it was
+asked for one message earlier** — the earlier request is withdrawn, not deferred,
+and a later session should not resurrect it as an unbuilt idea.
+
+### What it is
+
+On an email **`thread`** task, two buttons, both plain clipboard writes:
+
+| Button | Copies | He then does |
+| --- | --- | --- |
+| **Copy address** | `task.msgTo` | searches Gmail himself, opens the right message, Reply All |
+| **Copy message** | `task.msgBody` | pastes into the reply, reviews, edits, sends |
+
+### ⚠️ IT NEEDS NO NEW FIELDS AND NO URL BUILDER — IT IS A SCOPE REDUCTION
+
+**Both values already exist in §5.1.** `msgTo` and `msgBody` are two of the five
+fields 3.1 lands. **So the entire email follow-up path becomes two clipboard
+writes against fields that are already there** — no `#search/` deep link to
+construct, no `/u/<address>/` account targeting to get right for this kind, and
+nothing new in the data model.
+
+**And it makes email look like LinkedIn**, which is where §9.5 was groping and
+could not get to: decision §10.8 already says *"LinkedIn buttons open only.
+Subject and body get separate, explicitly labelled copy controls."* **Email
+`thread` now works the same way — arrived at from workflow rather than from
+consistency, which is why the consistency framing of §9.5 got nowhere.**
+
+### ✅ THE OPEN QUESTION IS CLOSED — REPLACE. TWO BUTTONS, NOT THREE.
+
+**Michael, 2026-09-03: *"I believe the search link was to search email address
+in my gmail so, replace."*** §7.3's builder is **cut**, not kept beside the copy
+button. **The reason it was worth asking rather than inferring is the reason the
+answer is right:** the search link was one click that landed him in a *searched*
+Gmail, and his workflow starts inside a Gmail that is *already open* — so it was
+solving a problem he does not have, and keeping it would have been a button that
+looks useful and is never the one he reaches for.
+
+### ⚠️ THE RISK MOVES RATHER THAN DISAPPEARING
+
+This trades a **popup-blocker** risk for a **clipboard** risk, and the phase plan
+already names both as 3.3's runner-up danger: *"the popup-blocker and clipboard
+guards are the kind that pass every console check and fail on the user's
+machine."* **`navigator.clipboard.writeText()` requires a secure context and a
+real user gesture**, returns a promise that can reject silently, and on
+`localhost` behaves differently from a hosted origin — which matters at Phase 4.
+**Every copy button needs a visible success state and a fallback, and 3.3's
+Done-when must exercise them on the real machine rather than in the console.**
+A copy that silently fails looks exactly like a copy that worked.
+
+### What is unchanged
+
+**Email `compose` (the first touch) keeps §7.2's prefilled composer** — one
+click, `to` / `su` / `body` / `bcc` all staged, no reading involved, nothing
+about it touched by this decision. **The two-button design is the `thread`
+answer, not an email-wide replacement.** Confirm if that reading is wrong.
+

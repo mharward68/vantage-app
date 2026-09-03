@@ -85,6 +85,14 @@ Every one is reversible.
 
 ## Frozen contracts — written literally; later sessions treat as read-only
 
+> ## ⛔ THREE OF THESE WERE AMENDED ON 2026-09-03. READ § Frozen-contract amendments BELOW BEFORE BUILDING Q3, Q4 OR Q5.
+>
+> **Q3, Q4 and Q5 still say Vantage emits a Bcc. It does not.** The contracts
+> below are left as originally written — that is this project's convention, and
+> the amendment record is the mechanism — but **a session that builds Q4's
+> `&bcc=` term because it read this section and not the amendments has shipped
+> the wrong thing.** The amendments section is immediately after Q8.
+
 ### Q1 — The task's five outreach fields
 
 ```js
@@ -231,6 +239,29 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 
 ---
 
+## Frozen-contract amendments
+
+*A frozen contract is not modified mid-phase by a session. It is amended by Michael, in writing, with the reasoning in `DECISIONS.md` and the record here. This section is the one place a later session learns that a contract above no longer describes what gets built. Following the 2B P5 / P8 / P9 precedent.*
+
+### A1 — 2026-09-03 · **Q3, Q4, Q5: Vantage emits no Bcc.** Authorised by Michael at the close of Session 3.1.
+
+**His words:** *"Google Workspace Bcc rule is in place. Vantage does not Bcc emails."* The Workspace outbound content-compliance rule blind-copies every message sent from the work account — including replies typed straight into Gmail — so the logging the Bcc existed to provide already happens, and happens in cases Vantage could never reach. Full reasoning, rejected alternatives and the reversal condition: `ai/DECISIONS.md`, 2026-09-03.
+
+| Contract | As frozen | **As amended** |
+| --- | --- | --- |
+| **Q3** | `state.taskSettings.emailBcc = "michaelh@youravdept.com"`, seeded, exported as `["Outreach Bcc", …]`, restored, read at click time | **The key does not exist.** No seed, no `OUTREACH_BCC_DEFAULT`, no settings row, no restore leg. ⚠️ **`workGmailAddress` is untouched** — it targets the right inbox and has nothing to do with this. |
+| **Q4** | `gmailComposeUrl()` appends `(bcc ? \`&bcc=${encodeURIComponent(bcc)}\` : \`\`)` | **The term is deleted.** Not made conditional on a blank setting — **the parameter does not exist.** Everything else in Q4 stands, `tf=cm` included. |
+| **Q5** | email `thread` copies the body and toasts *"Body copied — remember Bcc."* | **Copy-on-open stands; the toast reads "Body copied."** Only the Bcc half of the message goes. |
+
+**Consequences a later session must not re-derive:**
+
+- **Open Risk 6 is RETIRED, not mitigated.** It was the risk this rule removes.
+- **Scope §7.6 and §9.2's "scope reduction for 3.3" is now this amendment.** Do not re-open it as an unanswered question — it is answered.
+- **Scope §9.7 (the Bcc spelling) is MOOT.** Michael confirmed `michaelh@youravdept.com` correct on screen at 3.1's close and the value was retired the same hour. **The section stays as the record of how to settle a silent-failure value** — render it from live state and have the human read it — which is the part worth keeping.
+- ⛔ **IT COSTS A REPAIR PASS ON A SHIPPED SESSION. SEE SESSION 3.1b BELOW.**
+
+---
+
 ## Sessions
 
 ### Session 3.1 — Task outreach fields, settings, and their backup coverage
@@ -258,6 +289,29 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 - **Needs my eyes:** nothing rendered this session.
 - **Risk and fallback:** low. The one real risk is the CSV round trip on a body holding quotes and newlines; `convertToCSV` quotes unconditionally and `parseCSV` tracks quote state, verified in Session 1.3 against a note with embedded quotes. If it ever fails, base64 the cell — **do not add a file** (the C17 instruction at `app.js` 2090).
 - **⚠️ Backup point: manual ZIP before this session.** Its Done-when calls `wipeAllData()` against real data.
+
+### Session 3.1b — Remove the Bcc (amendment A1)
+
+- **Compartment:** DATA · **Depends on:** 3.1 (shipped 2026-09-03) · **Added 2026-09-03**, after Michael authorised amendment A1 hours after 3.1 shipped the Q3 half in good faith.
+- **Goal:** amendment A1 is true in the code. `state.taskSettings.emailBcc` does not exist; nothing exports it, nothing restores it, nothing seeds it.
+- **Size: S** · My time: ~2 min · **Confidence: High**
+- **Sized S and it genuinely is one** — it deletes four small things 3.1 added and touches no logic. It is filed as its own session rather than folded into 3.2 because it is a **DATA** change with a settings-CSV leg, and 3.2 is UI; and because a removal that rides along inside a feature session is the kind that gets half-done.
+- **Files:** modified `app.js`, `sw.js`
+- **Tasks:**
+  1. Delete the `OUTREACH_BCC_DEFAULT` constant above `ensureStateDefaults()` and the `emailBcc` seed line beside `workGmailAddress`.
+  2. Delete the `["Outreach Bcc", …]` row from `generateSettingsCSV()`, and the `"outreach bcc"` branch, its two `let` declarations and its apply block from `restoreSettingsFromCSV()`.
+  3. **Leave `workGmailAddress` entirely alone** — seed, row, branch and apply block all stand.
+  4. **Delete the key from any live record**, so a database that already carries it (Michael's does, from 3.1) does not keep a dead field forever: `delete state.taskSettings.emailBcc` in `ensureStateDefaults()`. ⚠️ **This is the one line in the session that needs thought** — it is a field removal on a live store, so state the rollback in the summary. It is not a DIRECTIVES §4 destructive change (no user-entered content is destroyed; the value is a seeded default nobody has edited), **but say so explicitly rather than leaving it unremarked.**
+  5. Bump `CACHE_NAME`.
+- **Inputs needed from me:** none. A1 is already authorised.
+- **Done when:**
+  - Console: paste `state.taskSettings` showing **`emailBcc` absent** and `workGmailAddress` present, after a reload.
+  - Console: paste `typeof OUTREACH_BCC_DEFAULT` as `"undefined"`.
+  - Console: paste `generateSettingsCSV()` filtered to `/Outreach/`, showing **only the Work Gmail row**.
+  - Console: restore a **3.1-era settings CSV that still contains an `Outreach Bcc` row** and paste `state.taskSettings` showing the row ignored, no error, and `workGmailAddress` still restored. **The old row must be inert, not fatal.**
+  - Clean console; `check_ids.py` at baseline; existing views render; state survives reload.
+- **Needs my eyes:** nothing rendered.
+- **Risk and fallback:** low. The one thing to get right is that an older backup carrying the retired row restores cleanly — a `sawX` branch that no longer exists simply falls through the `else if` chain, which is the existing behaviour for any unknown Option Type, but **prove it rather than assume it.**
 
 ### Session 3.2 — The outreach block: manual entry, auto-fill, counters
 
@@ -359,7 +413,10 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 ## Session order
 
 ```
-3.1  Task fields + settings   (DATA, M)  — after Phase 2B closes.  BLOCKED until then.  ⚠️ ZIP first
+3.1  Task fields + settings   (DATA, M)  — ✅ SHIPPED 2026-09-03.  Ran with 2B still open, on
+                                            Michael's explicit instruction.  Its ZIP was taken
+                                            in-session, wroteToFolder: true, 1,211,512 bytes.
+3.1b Remove the Bcc           (DATA, S)  — after 3.1, BEFORE 3.3.  Amendment A1.  Added 2026-09-03
 3.2  Outreach block           (UI,   M)  — after 3.1
 3.3  Email launch             (UI,   M)  — after 3.2
 3.4  LinkedIn launch          (UI,   M)  — after 3.3          ← the review point
@@ -408,7 +465,7 @@ Backups live in `..\backups-production\`; automatic snapshots in its `snapshots\
 
 5. **The guards that matter fail invisibly.** A popup blocker, a clipboard permission denial, and an over-long URL all produce a button that looks like it worked. Q5's synchronous-`window.open` rule and 3.3's deliberate popup-blocker check exist for this, and they are the parts of those sessions most likely to be skipped under time pressure. **Do not skip them.**
 
-6. **The Bcc does not reach follow-ups or LinkedIn.** Only email `compose` carries it in the URL; everything else is a composer Michael opens by hand. Mitigated by the visible, copyable Bcc line — but the real fix is a Workspace outbound journaling rule, which is outside the app entirely (scope §7.6, §9.2). Worth resolving before 3.3 so the workaround can be dropped rather than built.
+6. ~~**The Bcc does not reach follow-ups or LinkedIn.**~~ ✅ **RETIRED 2026-09-03 — the real fix landed, outside the app, exactly as this risk said it would.** The Workspace outbound rule is in place and Vantage emits no Bcc at all; see **amendment A1** and `DECISIONS.md`. **The workaround was dropped rather than built, which is the outcome this entry asked for** — worth keeping visible, because a risk retired by something happening outside the codebase is the kind that otherwise gets re-litigated by the next session to read the scope.
 
 7. **Live contact addresses reach a second surface.** DIRECTIVES §0 compliance is still `NOT DECIDED`. This phase does not change what data is held, but it puts real email addresses and profile URLs into `window.open` targets and onto the clipboard. P9's no-routing rule is what keeps them out of the address bar and browser history, and it must not be relaxed for convenience.
 
