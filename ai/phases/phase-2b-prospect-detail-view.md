@@ -269,6 +269,21 @@ ProspectHub's tag filter is the **shared pop-out chooser `#modal-choose-tags`**,
 
 ---
 
+## Frozen-contract amendments — the record, written at the phase close (Session 2B.10, 2026-09-03)
+
+⛔ **THREE OF THE NINE FROZEN CONTRACTS WERE AMENDED DURING THIS PHASE. ALL THREE WERE AUTHORISED BY MICHAEL; NONE DRIFTED.** This section exists because the amendments were applied in the sessions that needed them and recorded only in that session's handoff — so the contracts above read as if they had always said this, and a later reader could not tell an approved revision from a session quietly editing a frozen document. **Every future amendment gets a row here in the same session that makes it.**
+
+| Contract | Session | What changed | Authority |
+| --- | --- | --- | --- |
+| **P8** — the tag chooser | **2B.15**, 2026-09-03 | The whole contract was rewritten: ProspectHub's tag filter moved off the Advanced Query inline picker (built to the original P8 at 2B.9) and onto the shared pop-out `#modal-choose-tags`. **The original text is preserved in the block quote under P8** — that is the pattern to copy. | **Michael, approved at the top of 2B.15**, from review Finding 6. The first frozen contract this project has formally revised. |
+| **P5** — the identity block | **2B.17**, 2026-09-03 | `PROSPECT_DETAIL_FIELDS` no longer matches P5's field table. The redesign added `address` / `zip` / the four `conference*` fields and regrouped the block into two columns with two three-up rows and a conference `<fieldset>`. **P5's single-field-writer rule (`commitProspectField()`, `data-pd-key`, delegated listener) is UNCHANGED and is the half that was actually frozen.** | **Michael's own layout sheet, 2026-09-02.** The design he supplied is what the contract now describes. |
+| **P9** — what does not change | **2B.21**, 2026-09-03 | *"No new persisted field. No `ensureStateDefaults()` entry. No CSV column. No migration."* — **all four broken, deliberately.** 2B.21 added `address`, `zip` and four `conference*` fields with defaults and CSV columns across five header arrays. | **Michael's field work, 2026-09-02 evening.** P9 was written before that intake existed; it described a phase that was not going to touch data, and the phase changed. |
+| **P9** — what does not change | **2B.22**, 2026-09-03 | *"`#modal-prospect` is untouched and remains the create path."* — **untouched no longer.** Field order changed, four controls removed, `saveProspectAndOpen()` added, and a scoped `#modal-prospect .modal-card { max-height: calc(100vh - 24px); overflow-y: auto }` layout override. **"Remains the create path" still holds** — that is the clause with the reasoning behind it. | **The P9 waiver Michael granted at the top of 2B.22.** |
+
+⚠️ **THE PATTERN WORTH KEEPING, AND IT IS ABOUT WORDING RATHER THAN PROCESS.** P8 was revised cheaply because its own text named what was frozen (*"the id is the contract, the widget is not"*) and what was merely current. **P9 was broken twice because it froze a list of things that would not happen** — and a contract phrased as a prediction about the phase's scope expires the moment the scope changes, which for a phase with a review point in the middle of it is close to certain. **Freeze the invariant, not the forecast.** Every clause of P9 that survived intact is an invariant (no prospect id in a URL, `CSS.escape` on id selectors, the Audience view's inline grid override); every clause that broke was a forecast.
+
+---
+
 ## Sessions
 
 ### Session 2B.1 — Navigation substrate: `detailProspectId`, the origin record, the empty panel

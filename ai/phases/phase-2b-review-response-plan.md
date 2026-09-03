@@ -23,20 +23,29 @@ sessions sized honestly; spending it on a convenient catch-all is how phases sto
 ## Session order
 
 ```
-2B.11  Filter column       (UI,   M)  — geography + widths        ✅ UNBLOCKED
-2B.12  Resize cursor       (UI,   S)  — cursor + drag guard       ✅ UNBLOCKED
-2B.13  Company dup guard   (DATA, M)  — website seed + datalist   ⚠️ EXCEPTION NEEDED
-2B.14  Include semantics   (UI,   M)  — OR within a picker        ⚠️ EXCEPTION NEEDED
+2B.11  Filter column       (UI,   M)  — geography + widths        ✅ DONE 2026-09-02
+2B.12  Resize cursor       (UI,   S)  — cursor + drag guard       ✅ DONE 2026-09-02
+2B.13  Company dup guard   (DATA, M)  — website seed + datalist   ✅ DONE 2026-09-02
+2B.14  Include semantics   (UI,   M)  — OR within a picker        ✅ DONE 2026-09-03
 2B.15  Tag filter pop-out  (UI,   M)  — after 2B.14               ✅ DONE 2026-09-03
 2B.16  Company tab         (UI,   S)  — collapse + tab reorder    ✅ DONE 2026-09-02
-2B.19  Add Company          (DATA, M)  — the front door + normaliser ✅ NEXT, unblocked
-2B.18  Email → company      (DATA, M)  — domain match + arrow        ✅ after 2B.19
+2B.19  Add Company          (DATA, M)  — the front door + normaliser ✅ DONE 2026-09-02 (+ 2B.19b repair)
+2B.18  Email → company      (DATA, M)  — domain match + arrow        ✅ DONE 2026-09-02
 2B.20  Import identity      (DATA, M)  — repair on import + report   ✅ DONE 2026-09-02
-2B.21  Prospect fields      (DATA, M)  — address, zip, conference CSV ⚠️ ZIP first
-2B.17  ID block redesign   (UI,   L)  — after 2B.13 and 2B.21     ✅ UNBLOCKED 2026-09-02
-2B.22  Add Prospect layout (UI,   S)  — after 2B.21               ⚠️ P9 WAIVER NEEDED
-2B.10  Close               (QA,   M)  — LAST. Always last.        ⚠️ ZIP + green snapshot
+2B.21  Prospect fields      (DATA, M)  — address, zip, conference CSV ✅ DONE 2026-09-03
+2B.17  ID block redesign   (UI,   L)  — after 2B.13 and 2B.21     ✅ DONE 2026-09-03
+2B.22  Add Prospect layout (UI,   S)  — after 2B.21               ✅ DONE 2026-09-03 (ran M, not S)
+2B.10  Close               (QA,   M)  — LAST. Always last.        ✅ DONE 2026-09-03
 ```
+
+⛔ **PHASE 2B IS CLOSED, 2026-09-03. EVERY SESSION ABOVE HAS RUN.** The narrative below is
+how the order was decided at the time and is kept for that reason; **the ✅ marks are the
+authority on what happened.** ⚠️ **Three documents — this one, the run sheet and
+`ai/AIContext.md` — carried "2B.19 is NEXT" for a full day after 2B.19 shipped**, because
+2B.19's own close updated the handoff and not the two plans. **A session booted against
+that pointer and had to disprove it from the code before it could start.** The durable
+lesson is filed in `BUILD_NOTES.md`: *a session that ships out of numeric order must update
+the plan that names the order, not only the handoff.*
 
 **RUN ORDER CHANGED 2026-09-02, AFTER 2B.13 SHIPPED.** 2B.13 and 2B.16 are done. **2B.19 and 2B.18 were both added
 the same afternoon from Michael's own use of what 2B.13 shipped** and run NEXT, ahead of 2B.14 —
@@ -635,7 +644,7 @@ Title on save, so nothing is lost.
 - **Tasks:** change include from `.every()` to `.some()` at every site in the Finding 5 table.
   **Exclude stays `.some()` — it is already correct and must not be touched.**
 - **Done when:**
-  - **Michael's own acceptance test, pasted:** `7-7-28 Auto-eight` + `Tumbler Audience`, both
+  - **Michael's own acceptance test, pasted:** `7-7-26 Auto-eight` + `Tumbler Audience`, both
     included → **11 results, Michael Harward appearing once.**
   - A **Title** picker with two terms broadens — proving the *second* function was changed.
   - Cross-picker still narrows: two tags **plus** a title term returns fewer than the tags alone.

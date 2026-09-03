@@ -399,3 +399,183 @@ The codebase is months old, not years. There is no decade of edge cases to lose.
 **Rejected — leaving this unstated.** It was a spoken preference for a day, and a spoken preference is not something a future session can read. The whole reason `DECLARATIONS.md` exists is that "Michael mentioned it once" does not survive a context rotation.
 
 **Cost accepted, honestly:** refresh always lands on the Dashboard, and the back button leaves the app. Both are correct for a single-operator tool that runs as an installed PWA, where there is no address bar visible anyway. **If Vantage is ever commercialised this decision should be revisited under the rebuild** — a multi-tenant product with shareable views has different requirements and a different id scheme, which is exactly the kind of question the 2026-08-30 commercial-path entry hands to a fresh planning conversation.
+
+---
+
+## 2026-09-03 — Advanced Query narrowing: deferred, not reversed
+
+*Owed by `ai/spec/prospect-detail-view-scope.md` §9.1 since intake. Written at the Phase 2B close.*
+
+**Chose:** the 2026-08-28 ruling *"One editing surface for prospects"* **stands unchanged**. Its Advanced Query half — folding the AQ results drawer (`renderAqInspectorDrawer()`, the `aq-insp-*` ids) into that one surface — is **DEFERRED at Michael's direction**, pending better working knowledge of both query surfaces. Deferred is not reversed: the drawer is not a second sanctioned editing surface, it is an unconverted one.
+
+**The accepted cost, stated plainly so nobody re-discovers it as a defect:** the drawer **falls further behind every phase**. It already shows no Tasks subsection (Phase 1 wrote that into the ProspectHub inspector only, logged as that phase plan's Assumption 2), and Phase 2B removed the ProspectHub inspector rather than syncing it — so the drawer is now the sole survivor of a pair, carrying the older of the two behaviours. `exportAqRecordsCSV()` is a second instance: 16 columns where the other four prospect CSV writers are 21 or 22. `runCampaignQuery()` is a third: it does not compare tags at all, it joins them to a string and substring-matches, so `["Meeting","Planner"]` is returned by a query for `meeting planner` though no such tag exists. **All three divergences are ACCEPTED, not pending.**
+
+**`ai/spec/prospect-detail-view-scope.md` §2.1 holds the analysis. The later phase reads it rather than re-deriving it** — that is the whole reason this entry exists, because the cheapest way to lose a deferral is to leave no record that the thinking was already done.
+
+**Rejected — closing the gap by porting subsections across.** Writing Phase 1's Tasks subsection into a surface that a later phase converts wholesale is work with a known expiry date, which is the reasoning Phase 1 already accepted. **Rejected — calling the divergence a bug.** It has been reported as one twice; both times the answer was this entry, and both times it cost a diagnosis pass.
+
+**Rejected — un-deferring it inside Phase 2B.** The standing instruction through the whole phase was that both query surfaces stay DEFERRED, and twelve sessions honoured it. Un-deferring is a scope decision, and when it happens the tag semantics fix is a **correctness** fix rather than a tidy-up.
+
+---
+
+## 2026-09-03 — Email is unique, not the key
+
+*Owed by `ai/spec/prospect-detail-view-scope.md` §9.2 since intake. Written at the Phase 2B close.*
+
+**Chose:** a prospect's email is **enforced unique** and is **not** the record's identity. `id` remains the identity. Contract P6, shipped at Session 2B.7: **one resolver, `prospectByEmail()`, and three callers.**
+
+**What intake found, and it is the reason this needed a ruling rather than an assumption.** The database holds **mixed id schemes**: sandbox records carry `pros-<epoch>` ids, and **production `prospectId` values are email addresses** — verified against real data 2026-08-30. So the app already had records whose id *was* their email, sitting beside records whose id was not, and both round-trip through CSV correctly. **Any reasoning that starts "ids look like `pros-…`" is wrong against production data.**
+
+**The guard, and where it deliberately does not run.** `prospectByEmail()` normalises through `normalizedEmail()` (trim, lowercase) and backs the create/edit refusal in `#modal-prospect` and the detail view. **The CSV import does NOT call it**, for two reasons a later session will otherwise try to "fix": a scan of `state.prospects` cannot see two duplicate rows colliding *inside the same file*, and calling it per row is O(rows × prospects). The import keeps `mergeImportedRecords()`'s running `Set` and **skips and reports** — the count, and from 2B.7 the recoverable original rows. **What the two paths share is `normalizedEmail()`**, so they cannot drift into different definitions of "the same email" — which is the part that would actually hurt: a duplicate the import merges but the modal refuses, or the reverse.
+
+**This UPHOLDS the Phase 4 pre-flight's recommendation against email-as-id rather than overturning it.** Uniqueness gives the practical benefit — no two people on one address — without making a mutable, personally-identifying string the primary key. Email changes; ids must not. And `ai/spec/phase-4-firebase-preflight.md` flags the consequence for Firestore document ids, which is where email-as-id would become expensive to undo.
+
+**Rejected — making email the primary key.** It is mutable, it is personal data in a document path (Gate A), and the 2026-08-31 in-app-navigation ruling already forecloses the one thing it would have bought.
+
+**Rejected — leaving email unguarded.** Two records for one person is the failure this whole phase's company work is a second instance of; the resolver is nine lines.
+
+---
+
+## 2026-09-03 — How a frozen contract is amended mid-phase
+
+*Raised by Session 2B.15, which revised the first one, and by the Phase 2B close, which found two more that had been broken without a record.*
+
+**Chose:** a frozen contract may be amended mid-phase, **only by Michael, only in advance of the session that needs it**, and the amendment is written into **three** places in that same session: the contract itself (revised text, with the original preserved in a block quote beneath it), the phase plan's **frozen-contract amendments table**, and the session's handoff. Three places because each answers a different question — *what does it say now*, *was this authorised or did it drift*, and *what happened that day*.
+
+**Why the table, specifically.** P8 was revised correctly and recorded only in 2B.15's handoff. Two weeks later the contract reads as though it had always said this, and **nothing distinguishes an approved revision from a session quietly editing a frozen document** — which is precisely the thing "frozen" exists to make visible. The close found P5 and P9 had also been amended, twice, with no record at all.
+
+**The wording rule that came out of it, and it is the durable half: freeze the invariant, not the forecast.** P8 was cheap to revise because its own text said what was frozen (*"the id is the contract, the widget is not"*). **P9 was broken twice because it froze a list of things that would not happen during the phase** — no new field, no CSV column, `#modal-prospect` untouched — and a contract phrased as a prediction about scope expires the moment the scope changes. For a phase with a review point in the middle, that is close to certain. Every clause of P9 that survived is an invariant; every clause that broke was a forecast.
+
+**Rejected — forbidding mid-phase amendment.** It would have blocked 2B.15, 2B.17, 2B.21 and 2B.22, all four of which were Michael's own decisions, and the alternative is a session building to a contract everyone in the room knows is wrong.
+
+**Rejected — letting a session amend on its own judgement.** The escalation is one message and the failure mode is silent.
+
+---
+
+## 2026-09-03 — PROPOSED amendments to `DECLARATIONS.md`, not applied
+
+⛔ **NONE OF THESE ARE IN FORCE.** The Phase 2B close audited `DECLARATIONS.md` and found four lines that have become **factually wrong** rather than merely improvable, plus one addition the scope has owed since intake. Following the 2A.6 precedent, they are recorded here for Michael to apply by hand. **`DECLARATIONS.md` was not edited.**
+
+1. **Stack — the line counts.** Declared *"`app.js` … ~13,270 lines (`index.html` ~3,250, `style.css` ~3,680)"*, re-measured at the 2A.6 close. Actual, `wc -l` at the 2B close: **`app.js` 17,346 · `index.html` 3,796 · `style.css` 4,926.** The declared purpose of the number is to let a session size a change, and it is now 4,000 lines light on the file every session edits.
+
+2. **Conventions — the state list is missing EIGHT stores, and the count was measured, not estimated.** DECLARATIONS names 18 top-level stores. **The app has 26.** The eight it does not name are **`emailAccounts` · `domains` · `domainHosts` · `domainRegistrars` · `emailProviders` · `domainHostDefaultUrls` · `domainRegistrarDefaultUrls` · `emailProviderDefaultUrls`** — all CampaignHub's, all top-level, all exported by `generateSettingsCSV()` or as their own CSV, and all restored. **Backup coverage is fine; the declared list is not.** A session that enumerates stores from DECLARATIONS to make its DIRECTIVES §4 statement — which is what DECLARATIONS is for — gets an answer short by eight. *(Proposed wording: add the two entity stores to the array list, and add a second sentence naming the six CampaignHub reference lists as settings stores carried by `prm_settings.csv`.)*
+
+3. **Routing — the seventh view.** *(This is scope §9.5, owed since intake.)* Declared views are `dashboard, prospects, media, campaigns, tasks, data-management`. **`prospect-detail` is a seventh `#view-<name>` panel**, shipped at 2B.1 and the phase's whole subject. ⛔ **It is a view panel and NOT a hub: no sidebar entry, no colour of its own — `body.module-prospect-detail` copies ProspectHub's four values verbatim and carries a KEEP IN SYNC comment. The "six hubs" line stays true and MUST NOT be edited to say seven.** That is the entire reason this needs wording rather than a list edit.
+
+4. **Conventions — the default-value migration rule is aspirational, and saying so is the amendment.** It reads *"Every new field gets a default-value migration in the existing state-defaults path, so records predating it read `""` rather than `undefined`."* **It is not being kept, and `pros-sarah` is the proof** — the four `conference*` keys were added later and that record carries none of them, not even empty. Nothing is broken only because every reader guards with `|| ""`. **Two shapes in one array has already cost this project time** (the 2B.7 byte-count mis-read). Either the rule earns a back-fill — a DIRECTIVES §4 change to existing data, with its own decision and rollback plan, currently unowned — or the line should say that records predating a field may be **absent** rather than empty, and that every reader must guard. **Proposing the honest wording, not the back-fill.**
+
+5. **⚠️ Still not applied from the 2A.6 close, and this is the second close to carry them.** The **one-word hub display names** and the **in-app-navigation principle** were proposed on 2026-08-31, are recorded above as full `DECISIONS.md` entries, and are **still not in `DECLARATIONS.md`**. The navigation one is the more expensive omission: it forecloses hash routing permanently on a Gate A argument (production `prospectId` values are email addresses), and a principle that lives only in `DECISIONS.md` is not what a session reads at boot.
+
+---
+
+## 2026-09-03 — Everything the user inputs as data must wipe AND back up. Tags included.
+
+**Michael, at the Phase 2B close, answering the sixteen-store finding:** *"Everything a user inputs as data needs to wipe and be backup. That would include all tags."*
+
+**Chose:** `wipeAllData()`'s coverage is defined by a **rule**, not by a list somebody maintains: **if a user can type it in, a wipe destroys it and a backup carries it.** The backup half already holds for all sixteen survivors. **The wipe half does not, and closing it is a session of its own** — see the scope below. **Not done at the close**, which was a QA-and-documents compartment; adding lines to a destructive control is a DATA change and a DIRECTIVES §4 destructive-data change, and it needs its own rollback plan.
+
+### ⛔ THE THING THAT MAKES THIS NOT SIXTEEN EASY LINES, AND IT WAS FOUND BEFORE ANYONE WROTE THEM
+
+**Thirteen of the sixteen CANNOT BE WIPED TO `[]`, because `ensureStateDefaults()` cannot tell "the user emptied this" from "this key is missing".** Every guard is the same shape:
+
+```js
+if (!state.media_tags || state.media_tags.length === 0) {
+  state.media_tags = ["Frontend", "React", "Fintech", "Developer", "General"];
+}
+```
+
+`[]` is truthy, so the `length === 0` half is what fires — **and it fires on the very next boot and on every restore, because `ensureStateDefaults()` always runs after both.** A wipe that sets `state.media_tags = []` therefore does not produce an empty tag list. **It produces the fictional sandbox seed list**, and the user is left looking at "Frontend, React, Fintech" after being told the database was completely wiped. **That is a worse outcome than today's**, where at least the tags standing are his own.
+
+**⚠️ AND THE SAME GUARD IS A LIVE DEFECT TODAY, INDEPENDENT OF THE WIPE.** Every managed list has a ✕ (`deleteSettingOption()`), and nothing stops a user deleting the last entry. **Delete all four `company_tags`, reload, and four invented ones are back.** The same applies through restore: a genuine backup that legitimately contains an empty list has fictional values injected into it on the way in. **Reachable in thirty seconds from the Settings modal.**
+
+### The two groups, because one rule does not fit all sixteen
+
+**⚠️ THE SPLIT IS THE DECISION THIS NEEDS FROM MICHAEL AND IT IS NOT MINE TO MAKE.** The rule as stated — *what the user inputs* — is clear at both ends and genuinely ambiguous in the middle, because these lists ship with seeds AND accept his additions, so they hold both kinds of thing in one array.
+
+- **Unambiguously his data → a wipe must leave them EMPTY:** `media_tags` · `prospect_tags` · `campaign_tags` · `company_tags` · `customSortOrder` · the three `*DefaultUrls` maps. **His answer names tags explicitly.**
+- **Vocabulary the app needs to function → a wipe to empty BREAKS IT:** `reachoutTypes` · `mediaTypes` · `platforms` · `campaignPhases` · `developmentPhases`. **An app with zero reachout types cannot log a reachout**, which is the whole product. For these, "wipe" most likely means *back to factory seeds*, which is what the code already does by accident.
+- **Genuinely unclear, and the ones to ask about:** `domainHosts` · `domainRegistrars` · `emailProviders`. Seeded vocabulary that he has probably customised.
+
+### Scope for the session that does this — Phase 2C, DATA, sized M, ⚠️ ZIP first
+
+1. **Decide the split above with Michael.** One question, three groups.
+2. **Give `ensureStateDefaults()` a way to express "deliberately empty."** The `length === 0` guard must become `=== undefined` for every list in the empty-on-wipe group — which is *also* the fix for the live restore defect above, and is the reason those two pieces of work belong in one session rather than two.
+3. **Follow the `taskSettings` precedent for the seeded group.** 2B.7 wrote the literal default into `wipeAllData()` rather than deleting the key and trusting the defaults path, and its code comment says why: *"a wipe leaves the store in the same shape a first run does."* **Copy that, do not invent a third pattern.**
+4. **Re-run the drill and report the intersection.** The point of the whole exercise is that the drill currently proves ten stores out of twenty-six; when this lands it should prove twenty-six, and **the session must state the number rather than say "restore verified."**
+5. **Rollback:** the change is additive lines in two functions and is revertible in one commit; the data risk is entirely in step 2, because loosening a defaults guard changes what every existing record reads on the next boot. **Take the ZIP first and prove a restore before and after.**
+
+**Rejected — adding sixteen `= []` lines at the close.** It was the obvious move, it would have passed every check anyone would have written, and it would have shipped fictional tag data to a user who had just been told his database was wiped. **The guard was found by reading `ensureStateDefaults()` rather than by trusting that "wipe" and "default" were independent.**
+
+**Rejected — leaving it because backup coverage already holds.** It does hold; that was never the gap. **The gap is that the drill cannot fail**, and a backup nobody has genuinely restored from is what Gate C exists to forbid.
+
+---
+
+## 2026-09-03 — Nothing a user inputs sits outside backup/restore. The coverage audit that unblocks "wipe everything".
+
+**Michael, at the Phase 2B close:** *"Basically, I want wipeAllData to wipe everything. My biggest concern with that is what is NOT in backup/restore."* **It is the right question — a store that a wipe destroys and a backup does not carry is unrecoverable, and that is a Gate C failure rather than an inconvenience.**
+
+**Answer, audited key by key across all 39 persisted keys: THERE IS NO SUCH STORE.**
+
+```
+USER DATA NOT EXPORTED       ->  NONE
+EXPORTED BUT NOT RESTORED    ->  NONE
+```
+
+**All nine `restore*FromCSV()` functions exist and all nine are called by `processRestoreFile()`** — prospects, media, campaigns, audience lists, companies, email accounts, domains, tasks, settings. **`restoreSettingsFromCSV()` reads back every one of the eighteen things `generateSettingsCSV()` writes**, each behind its own `sawX` flag, including the three `*DefaultUrls` maps, `customSortOrder`, `taskSettings` and `columnLayouts`. There is no exported-but-not-restored asymmetry anywhere.
+
+**⚠️ AND THE ATTACHMENTS ROUND-TRIP TOO, WHICH WAS THE ONE THAT COULD HAVE BEEN CATASTROPHIC.** `wipeIndexedDB()` destroys the `files` store, so if the ZIP did not carry the binaries a wipe would be permanent loss of every attachment. **It carries them:** `exportZIPBackup()` builds a `files/` folder and writes each blob into it, and `processRestoreFile()` reads that folder back through `saveFileBlob()`, reporting *"Binary Files 📎"*. **Checked in both directions, because an export-only or restore-only half is exactly the shape that hides.**
+
+### The four things genuinely outside backup/restore, and why none of them is data
+
+1. **Twelve view-state keys** — `theme`, `activeView`, `selectedProspectId`, `activeProspectFilterCompany`, four `activeMediaFilter*`, two `activeCampaignFilter*`, both `forceShowAll*`. **Not data; regenerated by using the app.** Losing them costs re-picking a filter.
+2. **`snapshotHealth`** — machine state. `DECLARATIONS.md` already excludes it from backup and restore in as many words: it describes this machine's filesystem, not user data.
+3. **Orphaned IndexedDB blobs.** `exportZIPBackup()` collects file ids from `state.media` only (`m.files`, `m.masterFiles`), so a blob no media record references is not exported. **Those are orphans by definition**, and DECLARATIONS' 2026-08-28 ruling — no files attached to prospects — means media is the only holder.
+4. **⛔ THE INDEXEDDB `handles` STORE — the backup-folder directory handle.** A `FileSystemDirectoryHandle` is not serialisable, so it **cannot** be exported, and `wipeIndexedDB()` deliberately does not clear it. **This is the one place where "wipe everything" must stay literally false**, and the reason is operational rather than about data: `showDirectoryPicker()` opens a native OS dialog that **an agent cannot drive**, so a wipe that dropped the grant would leave every future automated drill needing Michael at the keyboard. **Keep it out. Say so in the code, or a later session will "complete" the wipe and break every drill after it.**
+
+### What this changes about the scoped session
+
+**The risk was coverage and coverage is fine. The two blockers are behavioural, and both were already found:** the `length === 0` guard in `ensureStateDefaults()` makes "deliberately empty" inexpressible for thirteen lists, and wiping the vocabulary lists to empty leaves an app that cannot log a reachout. **So the session is safe, fiddly, and still sized M** — its danger was never losing data, it was shipping a wipe that silently reseeds fictional values.
+
+**⚠️ THE HONEST LIMIT OF THIS AUDIT: IT IS STATIC.** It proves the code paths exist and are wired; it does not prove they work. **The drill is what proves they work, and today the drill can only exercise ten of the twenty-six stores** — which is the whole reason the wipe gap matters. **When the wipe covers everything, the drill covers everything, and this audit stops being the evidence and becomes the prediction the drill tests.**
+
+---
+
+## 2026-09-03 — No fictional data, ever, on restore. Seed a genuine first run only.
+
+**Michael, at the Phase 2B close:** *"I don't want to restore fictional data."* **Taken as a standing rule, not a preference about one list.**
+
+**Chose:** **`ensureStateDefaults()` may seed a GENUINE FIRST RUN and must inject nothing into a restore, a wipe, or an ordinary boot.** Today it cannot tell those cases apart — it runs identically after all four — and that is the defect to fix, not the seed values themselves.
+
+### ⛔ THE HAZARD THIS RULING EXPOSED, AND IT IS LIVE TODAY WITH NOTHING TO DO WITH TAGS
+
+`loadDatabase()` reseeds whenever the database key is absent **or unparseable**:
+
+```js
+try { state = JSON.parse(cache); ensureStateDefaults(); }
+catch (e) { console.error(...); await fetchFreshSeed(); }
+```
+
+**`fetchFreshSeed()` ends in `saveState()`.** So a single corrupt or truncated `localStorage` write does three things in one boot, with one line of console.error and no dialog: **his database is replaced by `prm_data.json`'s four fictional people — Jane Smith, Alex Rivera, Sarah Chen, Marcus Vance, all on 555 numbers — and the corrupt original is OVERWRITTEN before anyone can look at it.** ⚠️ **Partial writes are not hypothetical in this app**; the zero-byte snapshot race is the same class of failure at the file layer.
+
+**Two fixes, and the second is the one that matters:** never let the catch branch reseed — an unparseable database is an incident, not a first run — and **preserve the unparseable string under a second key before doing anything else**, so the data is still there to recover. **Recoverability is Gate C, and today this path silently fails it.**
+
+### The three groups, decided by what the CODE depends on rather than by taste
+
+**⚠️ THE VOCABULARY LISTS ARE NOT SAFELY DROPPABLE, AND THIS IS THE FINDING THAT SHAPES THE WHOLE SESSION.** Grepping the literal values shows the app hardcodes them:
+
+| Group | Members | Code dependency |
+| --- | --- | --- |
+| **Fictional demo content — REMOVE, never inject** | `media_tags` (Frontend, React, Fintech, Developer, General) · `prospect_tags` (Decision Maker, Executive, Manager, Hot Lead) · `campaign_tags` (Q1 Outreach, Enterprise, SMB, Newsletter) · `company_tags` (Enterprise, SMB, Agency, Startup) · **`prm_data.json`'s four people** | **NONE.** Zero references to any of these literals anywhere in `app.js`. Pure demo content. |
+| **Structural — the app's own enum wearing a list's clothes** | `reachoutTypes`: **"Task Completed" (16 refs) · "Added to Vantage" (13) · "Entered into Vantage" (5) · "Email" (12)** · `developmentPhases`: **"Archive" (6) · "Published" (4) · "This Week" (3) · "Next Week" (3)** · `campaignPhases`: **"Development" (6) · "Launch" (8) · "Archive"** | **Hardcoded.** `NON_REACHOUT_TYPES` is a `const` naming three of them; MediaHub's status filter and CampaignHub's phase logic name the rest. **Remove them and features stop working — this is not fictional data, it is the schema.** |
+| **Cosmetic defaults — Michael's call** | `mediaTypes` (Article, Video, Newsletter) · `platforms` (YouTube, Substack, Medium, LinkedIn, Twitter, General) · `emailProviders` · `domainRegistrars` · `domainHosts` | None found. Invented but harmless, and plausibly useful on a real first run. |
+
+**So "no fictional data" resolves cleanly: group 1 goes, group 2 stays because it is not fictional, group 3 is one question.** ⛔ **A session that reads the ruling as "delete every seed" breaks reachout counting, the media status filter and campaign phases in one edit.**
+
+### This merges with the wipe session; it is not a second one
+
+Same functions, same guard, same ZIP. **The `length === 0` guard is the shared root cause:** it is why a wipe cannot express "empty" *and* why a restore reseeds a legitimately empty list. **One session, sized M, ⚠️ ZIP first:** teach `ensureStateDefaults()` the difference between first run and everything else, drop group 1, keep group 2, ask about group 3, fix the catch-branch reseed, then re-run the drill and **state how many of the twenty-six stores it now proves.**
+
+**Rejected — deleting `prm_data.json`.** It is the legitimate first-run seed and DECLARATIONS records it as tracked on purpose. **The fix is that nothing but a first run may reach it.**
+
+**Rejected — treating this as cosmetic.** It reached the top of the list because a corrupt write currently swaps a 651-prospect database for four fictional people and overwrites the evidence.
+

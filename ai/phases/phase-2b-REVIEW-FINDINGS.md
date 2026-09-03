@@ -185,7 +185,7 @@ being used inconsistently and this version cannot be misread:
 
 > **Adding a term never reduces the result count.** Multiple selections broaden; they never narrow.
 
-**Evidence — Advanced Query, two prospect tags.** `7-7-28 Auto-eight` + `Tumbler Audience`, both
+**Evidence — Advanced Query, two prospect tags.** `7-7-26 Auto-eight` + `Tumbler Audience`, both
 included → **1 result** (Michael Harward, who holds both). **Expected 11.**
 
 > **Scope note:** both terms are **prospect tags**. The test demonstrates the **tags picker only**.
@@ -219,7 +219,7 @@ as repairing a break and goes hunting for one.
 *"should hub filters offer exclude at all"* is **CLOSED: no.** Include/exclude belongs in Advanced
 Query; hub filters are include-only.
 
-**Acceptance test, Michael's own:** `7-7-28 Auto-eight` + `Tumbler Audience` both included →
+**Acceptance test, Michael's own:** `7-7-26 Auto-eight` + `Tumbler Audience` both included →
 **11 results, Michael Harward appearing once.**
 
 **Separately — the Audience Query Engine doesn't compare tags at all.** `app.js` 10929:

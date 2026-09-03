@@ -231,23 +231,23 @@ always runs last.***
 | ☑ | **2B.12** | Column resize cursor, and the mid-drag guard | S | ~5 min |
 | ☑ | **2B.13** | Company dup guard — website seed + the autocomplete | M | ~2 min actual |
 | ☑ | **2B.16** | Company tab — collapse by default, and the tab reorder | S | ~0 min actual |
-| ☐ | **2B.14** | Include semantics — OR within a picker, AND across pickers | M | ~10 min |
-| ☐ | **2B.15** | ProspectHub tag filter becomes the pop-out chooser ⚠️ needs the P8 revision | M | ~8 min |
-| ☐ | **2B.17** | Identity block redesign ⛔ needs your layout design | L | ~15 min |
+| ✅ | **2B.14** | Include semantics — OR within a picker, AND across pickers — **DONE 2026-09-03** | M | ~10 min |
+| ✅ | **2B.15** | ProspectHub tag filter becomes the pop-out chooser — **DONE 2026-09-03** under the approved P8 revision | M | ~8 min |
+| ✅ | **2B.17** | Identity block redesign — **DONE 2026-09-03**; the layout design arrived 2026-09-02 | L | ~15 min |
 
 **Step 2R — added 2026-09-02, the company-identity set**
 
 | | Session | | Size | My time |
 | :---: | :---: | --- | :---: | :---: |
-| ☐ | **2B.19** | **Add Company** — the front door, and `normaliseDomain()` ⚠️ ZIP first ← **NEXT** | M | ~8 min |
-| ☐ | **2B.18** | **Email → company** — domain matching, blocklist, arrow removal ⚠️ ZIP first | M | ~10 min |
-| ☐ | **2B.20** | **Import identity** — repair on import + duplicate-domain report ⚠️ ZIP mandatory | M | ~8 min |
+| ✅ | **2B.19** | **Add Company** — the front door, and `normaliseDomain()` — **DONE 2026-09-02, plus a 2B.19b repair pass** | M | ~8 min |
+| ✅ | **2B.18** | **Email → company** — domain matching, blocklist, arrow removal — **DONE 2026-09-02** | M | ~10 min |
+| ✅ | **2B.20** | **Import identity** — repair on import + duplicate-domain report — **DONE 2026-09-03** | M | ~8 min |
 
 **Always last**
 
 | | Session | | Size | My time |
 | :---: | :---: | --- | :---: | :---: |
-| ☐ | **2B.10** | **Phase close** — drill, curation, declarations audit, export re-prove ⚠️ ZIP + green snapshot | M | ~20 min |
+| ✅ | **2B.10** | **Phase close** — drill, curation, declarations audit, export re-prove — **DONE 2026-09-03**. ⚠️ Its gate was restated: a *confirmed green snapshot chip* is unsatisfiable (the chip is a known display defect), so the real gate is `saveBackupFile`'s `wroteToFolder: true` | M | ~20 min |
 
 **Remaining: 7 sessions. Your attention: roughly 80 minutes**, of which 20 is the
 close. Four of the seven need nothing from you and can run back to back.
@@ -263,28 +263,38 @@ produced, plus three added on 2026-09-02.*
 per-session compartment, tasks, Done-when and traps, and **every decision Michael
 made on 2026-09-02.** This sheet only says how to launch them.
 
-## Run order — updated 2026-09-02
+## Run order — FINAL, updated at the phase close 2026-09-03
+
+⛔ **THIS RUN SHEET IS SPENT. Every session in Phase 2B has run.** The block below
+is the actual order they ran in, taken from the archived handoffs, not the order
+this sheet predicted. **Michael: this file is due for deletion at the close** —
+a remote session cannot delete files on this machine, so it is left here marked
+rather than removed.
 
 ```
-DONE
-  2B.11  Filter column       geography + widths           ✅ 2026-09-01
-  2B.12  Resize cursor       cursor + drag guard          ✅ 2026-09-01
-  2B.13  Company dup guard   website seed + datalist      ✅ 2026-09-02
+ALL DONE — actual run order, 2026-09-01 to 2026-09-03
+  2B.11  Filter column       geography + widths           ✅ 2026-09-02
+  2B.12  Resize cursor       cursor + drag guard          ✅ 2026-09-02
   2B.16  Company tab         collapse + tab reorder       ✅ 2026-09-02
+  2B.13  Company dup guard   website seed + datalist      ✅ 2026-09-02
+  2B.19  Add Company         front door + normaliser      ✅ 2026-09-02  (+ a 2B.19b repair pass)
+  2B.18  Email → company     domain match + arrow         ✅ 2026-09-02
+  2B.20  Import identity     repair + duplicate report    ✅ 2026-09-03
+  2B.21  Prospect fields     address, zip, conference     ✅ 2026-09-03
+  2B.17  ID block redesign   identity block               ✅ 2026-09-03
+  2B.22  Add Prospect layout field order + Save-and-Open  ✅ 2026-09-03
+  2B.14  Include semantics   OR within a picker           ✅ 2026-09-03
+  2B.15  Tag filter pop-out  P8 revised and applied       ✅ 2026-09-03
 
-NEXT — nothing owed, run in this order
-  2B.19  Add Company         front door + normaliser      ▶ NEXT
-  2B.18  Email → company     domain match + arrow         after 2B.19
-  2B.20  Import identity     repair + duplicate report    after 2B.18
-  2B.14  Include semantics   OR within a picker           after 2B.20
-
-BLOCKED ON YOU
-  2B.15  Tag filter pop-out  after 2B.14                  ⚠️ needs the P8 revision
-  2B.17  ID block redesign   after 2B.13 (done)           ⛔ needs your layout design
-
-LAST, ALWAYS
-  2B.10  Phase close                                      ⚠️ ZIP + green snapshot
+  2B.10  Phase close                                      ✅ 2026-09-03
 ```
+
+⚠️ **THE PREDICTED ORDER IN THIS SHEET WAS WRONG IN A WAY WORTH KEEPING.** It had
+2B.19 and 2B.18 running before 2B.14; they did. It had 2B.15 blocked on the P8
+revision; it was, and the revision was granted. What it did not have is **2B.21 and
+2B.22 at all** — those came out of Michael's field work on 2026-09-02 evening, after
+this sheet was written. **A run sheet written before a review pass predicts the
+sessions that pass produces, and it will always be short.**
 
 **Why this order.** 2B.19 builds `normaliseDomain()` and the first real way to
 create a company; 2B.18 consumes both; 2B.20 applies the same rules to the bulk
