@@ -2796,12 +2796,90 @@
             <div class="task-msg-count" data-count-for="task-msg-subject"></div>
           </div>
 
-          <div class="form-group" id="task-msg-body-group">
-            <label for="task-msg-body">Message</label>
-            <textarea id="task-msg-body" rows="8"
-              placeholder="The message itself. Notes above stays your own free text."></textarea>
-            <div class="task-msg-count" data-count-for="task-msg-body"></div>
+          <!-- ── THE AUTHORING SURFACE (Phase 3 / Session 3.3c, Q7 as amended
+               by A2) ───────────────────────────────────────────────────────
+               Session 3.2's single Message box is now TWO STACKED DISCLOSURES.
+
+               ⛔ #task-msg-body-group KEEPS ITS ID AND IS STILL THE FIRST OF
+               THE TWO. Two live pieces of Session 3.2 read it by that name and
+               neither was touched: syncTaskMsgCounts() finds the counter with
+               `#task-msg-body-group .task-msg-count` (still a descendant), and
+               syncTaskOutreachBlock() re-attaches the detached Subject group
+               with `.before()` on this node, which is what keeps Subject above
+               the message. Renaming it moves the Subject group below the body
+               and silently kills one counter.
+
+               ⛔ THE OPEN/CLOSED STATE IS STORED NOWHERE. It is the `is-open`
+               class on these two wrappers, set on every open of the editor
+               from `!!task` — the .pd-company-card precedent (2B.16). No new
+               store, no settings row, no wipeAllData() line; contract Q8 is
+               untouched and this session adds no persistence at all.
+
+               Defaults, and they are DEFAULTS not restrictions — both boxes
+               are always reachable: NEW task → Edit open, Preview closed.
+               EXISTING task → the reverse, because an existing outreach task
+               is usually being read and launched, not rewritten.
+
+               ⛔ THE PREVIEW IS RENDERED BY SESSION 3.3's outreachBodyToHtml(),
+               NOT BY A SECOND RENDERER. One function feeds the preview and the
+               clipboard, which is what makes "what you see is what pastes"
+               structural instead of tested. A later session adding a private
+               renderer here has broken that by construction, and the break is
+               invisible until an email goes out wrong.
+
+               The textarea keeps `aria-label` because its <label> became the
+               disclosure button — DIRECTIVES §0's "every input labeled"
+               authoring habit, which costs nothing at the moment of writing. -->
+          <div class="form-group task-disclosure" id="task-msg-body-group">
+            <button type="button" class="task-disclosure-toggle" id="task-body-edit-toggle"
+              aria-expanded="false" aria-controls="task-body-edit-panel">Edit Task</button>
+            <div class="task-disclosure-panel" id="task-body-edit-panel">
+              <!-- ⛔ THREE FORMS, AND THE LIST IS CLOSED (A2): link, bold,
+                   italic. Font family and size are excluded BY DECISION. The
+                   user never types a `*` or a `[` — these three buttons write
+                   the syntax around whatever is selected. -->
+              <div class="task-md-toolbar" id="task-md-toolbar">
+                <button type="button" class="task-md-btn is-bold" id="task-md-bold"
+                  title="Bold the selected text">B</button>
+                <button type="button" class="task-md-btn is-italic" id="task-md-italic"
+                  title="Italicise the selected text">I</button>
+                <button type="button" class="task-md-btn" id="task-md-link"
+                  title="Turn the selected text into a link">Link</button>
+              </div>
+              <textarea id="task-msg-body" rows="8" aria-label="Message"
+                placeholder="The message itself. Notes above stays your own free text."></textarea>
+              <div class="task-msg-count" data-count-for="task-msg-body"></div>
+            </div>
           </div>
+
+          <div class="task-disclosure" id="task-msg-preview-group">
+            <button type="button" class="task-disclosure-toggle" id="task-body-preview-toggle"
+              aria-expanded="false" aria-controls="task-body-preview-panel">Preview task in HTML</button>
+            <div class="task-disclosure-panel" id="task-body-preview-panel">
+              <!-- Read-only and selectable. On the three LinkedIn kinds this
+                   shows the FLATTENED text with no markup, because flattened
+                   is what LinkedIn receives (A2) — a preview showing bold on a
+                   connection note would be lying about what gets pasted. -->
+              <div id="task-msg-preview" class="task-msg-preview"></div>
+            </div>
+          </div>
+
+          <!-- ── LAUNCH CONTROLS (Phase 3 / Session 3.3, contracts Q4-Q6) ────
+               EMPTY IN THE MARKUP ON PURPOSE. Every control in here is built
+               by renderTaskOutreachActions() with createElement, because what
+               belongs here is decided by `msgKind` and changes on every repaint:
+
+                 compose  → ONE launch button (opens Gmail composed)
+                 thread   → TWO copy buttons and NOTHING that opens (amendment
+                            A3 — gmailSearchUrl() was cut, not stubbed)
+                 linkedin → nothing yet; the three LinkedIn kinds are Session 3.4
+
+               ⛔ THE TWO THREAD BUTTONS ARE A SEQUENCE, NOT A PAIR. There is
+               one clipboard, so the second copy overwrites the first. They are
+               numbered, stacked and carry a note saying so — do NOT relay them
+               out side by side as two equivalent options, which invites
+               clicking both and loses the address silently. -->
+          <div id="task-outreach-actions" class="task-outreach-actions"></div>
         </div>
       </div>
 
@@ -3084,6 +3162,33 @@
             Used when you shift a task's due date by N days. Changing this never moves an
             existing task, and a date you pick by hand is always honored — weekend or not.
             No holiday calendar.</p>
+        </div>
+
+        <!-- Outreach account targeting (Phase 3 / Session 3.3, contract Q3 as
+             amended by A1). ONE KEY, NOT TWO — there is no Bcc field here and
+             there must not be one; the Workspace outbound rule already
+             blind-copies the work account.
+
+             This writes state.taskSettings.workGmailAddress, which Session 3.1
+             already seeds, exports as the ["Outreach Work Gmail", …] row in
+             prm_settings.csv and restores. THIS FIELD ADDS NO STORE AND NO CSV
+             ROW — it is a control over a value that already has its
+             DIRECTIVES §4 coverage.
+
+             BLANK IS A MEANINGFUL VALUE and disables every email launch button
+             with a message naming Settings. It must never fall back to /u/0/,
+             which renumbers silently when a Google account is added. -->
+        <div class="settings-config-section"
+          style="border-left: 4px solid #06b6d4; padding-left: 12px; margin-left: -12px;">
+          <h4 style="color: #06b6d4;">Outreach Work Gmail</h4>
+          <label for="setting-outreach-work-gmail" class="hidden">Work Gmail address</label>
+          <input type="text" id="setting-outreach-work-gmail" style="width: 100%;"
+            autocomplete="off" placeholder="you@yourcompany.com">
+          <p style="margin: 8px 0 0; font-size: 11px; color: var(--color-text-muted); line-height: 1.5;">
+            The account a task's <strong>Open in Gmail</strong> button composes on. Gmail takes the
+            address itself and redirects to whichever inbox it currently occupies, so this keeps
+            working when you add another Google account. Leave it blank and the email launch
+            buttons stay disabled rather than guessing an inbox.</p>
         </div>
 
       </div>

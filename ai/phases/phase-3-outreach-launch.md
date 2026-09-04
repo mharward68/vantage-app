@@ -87,6 +87,8 @@ Every one is reversible.
 
 > ## ⛔ SIX OF THE EIGHT HAVE BEEN AMENDED. READ § Frozen-contract amendments BELOW BEFORE BUILDING Q1, Q2, Q3, Q4, Q5, Q6 OR Q7.
 >
+> **A4 (2026-09-04) — Q4's `gmailBase()` IS WRONG AND RETURNS A 404 FROM REAL GMAIL.** The account goes in `?authuser=`, never in the `/mail/u/<address>/` path. **This is the first contract here amended because it was FACTUALLY WRONG rather than because a decision changed** — and it was found only by opening the URL, which is exactly what Assumption 8 exists to force. `tf=cm` and the four compose terms are unaffected.
+>
 > **A1 (2026-09-03) — Q3, Q4, Q5 still say Vantage emits a Bcc. It does not.**
 > **A2 (2026-09-04) — Q1, Q4, Q5, Q6, Q7 still describe a plain-text clipboard and one Body box. The clipboard carries HTML, bodies may hold links, and the Body box becomes two disclosures.**
 > **A3 (2026-09-03, recorded 2026-09-04) — Q2, Q4, Q5 still say `thread` opens a Gmail search. It opens NOTHING; the builder is cut.**
@@ -309,6 +311,30 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 - ⚠️ **AND THE TWO COPY BUTTONS ARE A SEQUENCE, NOT A PAIR** — there is one clipboard, so the second copy overwrites the first. `Copy address` → paste → find the thread → `Copy message` → paste. **Do not lay them out as two equivalent options side by side**; that shape invites clicking both, and losing the address is silent and reads as the first button being broken. (Already in the run sheet's traps; repeated here because this is the session that builds them.)
 - **`compose` is untouched by A3** and still opens Gmail prefilled — as amended by A1 (no Bcc) and A2 (To and Subject only when the body carries a link).
 
+### A4 — 2026-09-04 · **Q4: the account is targeted by `?authuser=`, NOT by the address in the path.** Authorised by Michael during Session 3.3, from live evidence.
+
+⛔ **Q4's `gmailBase()` RETURNS "Temporary Error (404)" FROM REAL GMAIL.** This is the first amendment in the phase forced by a contract being *wrong* rather than by a decision changing, and it was found the only way it could be — by opening the URL. Four navigations isolated it, in this order:
+
+| URL | Result |
+| --- | --- |
+| `/mail/u/<address>/?to=…&tf=cm` — Q4 as frozen, built by the shipped button | **Temporary Error (404)** |
+| the same with a **literal `@`** instead of `%40` | **Temporary Error (404)** — so it is **NOT** the `encodeURIComponent`, which was the obvious first suspect and is innocent |
+| `/mail/u/0/?to=…&su=…&body=…&tf=cm` | ✅ 200, compose, every parameter intact |
+| `/mail/?authuser=<address>&to=…&su=…&body=…&tf=cm` | ✅ 200 — Google resolves the address and **redirects to `/u/N/` carrying every parameter** |
+
+**The third line is what makes the diagnosis safe rather than a guess: `tf=cm`, `to`, `su`, `body` and `%0A` were never the problem, and none of them is touched by this amendment. Only the account segment moves.**
+
+| Contract | As frozen | **As amended** |
+| --- | --- | --- |
+| **Q4** | `` gmailBase() → `https://mail.google.com/mail/u/${encodeURIComponent(workGmailAddress)}/` `` | **`` gmailBase() → `https://mail.google.com/mail/` ``**, and `gmailComposeUrl()` gains `` `?authuser=${encodeURIComponent(gmailWorkAddress())}` `` as its **first** term. The other four terms and their order are unchanged. |
+
+**Consequences a later session must not re-derive:**
+
+- ⛔ **THIS IS NOT A LICENCE TO FALL BACK TO `/u/0/`.** Q4's reasoning is why `authuser=` was chosen over the thing that plainly works: **`/u/0/` reflects sign-in order and renumbers silently when another Google account is added**, which surfaces months later as "it started composing from the wrong address". `authuser=` names the account and lets Google resolve the index — Q4's intent exactly. Only the *place the address is written* has changed.
+- **AND IT DEGRADES BETTER, which is the second reason not to undo it.** With the named account **not signed in** to the browser, `authuser=` lands on Google's sign-in page **carrying the whole compose payload in `continue=`**, so the message still opens once signed in. The frozen path form gave a 404 dead end and the typed message was gone.
+- **`%40` is fine in the QUERY STRING.** The verified open used `authuser=…%40gmail.com` and Gmail resolved it. The encoding was only ever a problem in the path, and it was not the problem there either.
+- ⚠️ **THE WORK ACCOUNT IS NOT SIGNED IN TO THE VERIFYING BROWSER PROFILE**, so 3.3's real open was confirmed against the account that is (`/u/0/`, personal). **The mechanism is proved; "it lands in the work inbox" is not, and 3.4 or the 3.5 close owes that one confirmation** once `michaelh@youravdept.com` is signed in.
+
 ---
 
 ## Sessions
@@ -500,8 +526,8 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
                                             in-session, wroteToFolder: true, 1,211,512 bytes.
 3.1b Remove the Bcc           (DATA, S)  — after 3.1, BEFORE 3.3.  Amendment A1.  Added 2026-09-03
 3.2  Outreach block           (UI,   M)  — ✅ SHIPPED 2026-09-04.  CACHE_NAME v128.  One bump.
-3.3  Email launch + converter (UI+L, M)  — after 3.2 AND after 3.1b.  Amendment A2's risky half:
-                                            builders, buttons, guards, clipboard, converter.
+3.3  Email launch + converter (UI+L, M)  — ✅ SHIPPED 2026-09-04.  CACHE_NAME v131, TWO bumps.
+                                            Produced amendment A4 (Q4's gmailBase was a 404).
 3.3c Authoring surface        (UI,   M)  — after 3.3.  Added 2026-09-04 by splitting 3.3.
                                             Toolbar, two disclosures, live preview.  Pure UI.
 3.4  LinkedIn launch          (UI,   M)  — after 3.3c         ← the review point

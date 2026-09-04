@@ -924,6 +924,207 @@ thead.prospects-table-head th {
 }
 .task-msg-count.is-over { color: var(--color-danger); }
 
+/* --------------------------------------------------------------------------
+   ✅ TASK EDITOR — OUTREACH LAUNCH CONTROLS (Phase 3 / Session 3.3)
+
+   Filed with the block above because it is the same region of the same modal,
+   and still NOT at the end of this file — `🧱 HUB SHELL` is last and that is
+   frozen contract S5.
+
+   ⛔ THE THREAD PAIR IS A COLUMN, NOT A ROW, AND THAT IS THE WHOLE POINT.
+   There is one clipboard, so `2 · Copy message` overwrites `1 · Copy address`.
+   Laid out side by side they read as two equivalent options, which invites
+   clicking both — and losing the address is silent and reads as the first
+   button being broken. Stacked, numbered, under a note that says so. A later
+   session tidying this into a `flex-direction: row` has reintroduced the bug
+   the layout exists to prevent.
+   -------------------------------------------------------------------------- */
+.task-outreach-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 16px;
+}
+.task-outreach-actions:empty { display: none; }
+.task-outreach-btn { width: 100%; justify-content: center; }
+.task-outreach-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.task-outreach-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+/* The sequence note sits ABOVE its two buttons and is the only thing that
+   explains why they are numbered. */
+.task-outreach-hint.is-sequence {
+  padding-left: 8px;
+  border-left: 2px solid var(--color-secondary);
+}
+/* Said before the click, not only in the toast after it: this message will
+   open Gmail with To and Subject only. */
+.task-outreach-hint.is-degrade {
+  padding-left: 8px;
+  border-left: 2px solid var(--color-danger);
+  color: var(--color-text-main);
+}
+
+/* The toast. This app had no toast facility before Session 3.3 — the copy
+   paths need a visible success state, and it cannot be alert(), which blocks
+   and would fire straight after a window.open. One node, one timer.
+
+   ⛔ IT MUST DISTINGUISH "copied with link" FROM "copied — plain text": a rich
+   clipboard write that silently degrades produces a button that flashes
+   success and a paste that lands bare text, and this toast is the only place
+   that difference is visible before the email is sent. */
+.outreach-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  transform: translateX(-50%);
+  z-index: 4000;
+  max-width: 520px;
+  padding: 12px 18px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--color-border-hover);
+  background: var(--color-sidebar-bg);
+  color: var(--color-text-main);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: 0 12px 32px var(--color-shadow);
+}
+.outreach-toast.is-warn { border-color: var(--color-danger); }
+.light-theme .outreach-toast {
+  background: #ffffff;
+  color: #18181b;
+}
+
+/* --------------------------------------------------------------------------
+   ✅ TASK EDITOR — AUTHORING SURFACE (Phase 3 / Session 3.3c, Q7 as amended
+   by A2)
+
+   Filed with the two blocks above because it is the same region of the same
+   modal, and still NOT at the end of this file — `🧱 HUB SHELL` is last and
+   that is frozen contract S5.
+
+   ⛔ THE TWO DISCLOSURES ARE STACKED AND LOOK IDENTICAL TO EACH OTHER. A2 is
+   explicit that look, labels and behaviour are the same on every task and
+   every channel — only the PREVIEW'S CONTENTS differ, which is a preview doing
+   its job. Styling one of them as the "real" box and the other as a secondary
+   affordance is how the preview stops being read.
+
+   Labels are BUTTONS, not chevrons. A chevron beside a label reads as
+   decoration on this modal, which already has a chevron-free visual language.
+   -------------------------------------------------------------------------- */
+.task-disclosure { margin-bottom: 16px; }
+
+.task-disclosure-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  background: rgba(0, 0, 0, 0.15);
+  color: var(--color-text-main);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.light-theme .task-disclosure-toggle { background: rgba(0, 0, 0, 0.04); }
+.task-disclosure-toggle:hover { border-color: var(--color-border-hover); }
+.task-disclosure-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+/* The open/closed tell is a "+"/"−" written by CSS, so nothing in the markup
+   or in app.js has to keep a glyph in step with the class. */
+.task-disclosure-toggle::before {
+  content: "+";
+  display: inline-block;
+  width: 12px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--color-text-muted);
+}
+.task-disclosure.is-open > .task-disclosure-toggle::before { content: "−"; }
+.task-disclosure.is-open > .task-disclosure-toggle { border-color: var(--color-border-hover); }
+
+/* Collapsed is ABSENT from layout, not merely invisible — a hidden-but-laid-out
+   panel leaves a gap that reads as a rendering fault in a modal this tall. */
+.task-disclosure-panel { display: none; }
+.task-disclosure.is-open > .task-disclosure-panel { display: block; padding-top: 10px; }
+
+/* --- The toolbar --- Three buttons, and A2 closed the list at three. */
+.task-md-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.task-md-btn {
+  min-width: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  background: transparent;
+  color: var(--color-text-main);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.task-md-btn:hover {
+  border-color: var(--color-border-hover);
+  background: rgba(0, 0, 0, 0.15);
+}
+.light-theme .task-md-btn:hover { background: rgba(0, 0, 0, 0.04); }
+.task-md-btn:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.task-md-btn.is-bold { font-weight: 800; }
+.task-md-btn.is-italic { font-style: italic; font-weight: 600; }
+
+/* --- The preview ---
+   ⛔ ITS innerHTML IS BYTE-IDENTICAL TO THE text/html THE CLIPBOARD CARRIES,
+   so nothing in here may be styled by adding markup — only by styling the four
+   tags the converter emits: <a>, <strong>, <em>, <br>. A rule that needs a
+   wrapper class on a paragraph would break the equality this box exists for. */
+.task-msg-preview {
+  min-height: 60px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  background: rgba(0, 0, 0, 0.15);
+  color: var(--color-text-main);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: normal;
+  user-select: text;
+}
+.light-theme .task-msg-preview { background: rgba(0, 0, 0, 0.04); }
+/* LinkedIn: flattened text, and the box says so by preserving the line breaks
+   itself — there are no <br> tags in a flattened body. */
+.task-msg-preview.is-flat { white-space: pre-wrap; }
+.task-msg-preview.is-empty::before {
+  content: "Nothing to preview yet.";
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+/* A fixed hyperlink blue, deliberately NOT var(--color-primary): the preview
+   is imitating what Gmail will render, and --color-primary is the HUB's colour
+   and changes from view to view. A link that turns orange in MediaHub would
+   make this box stop answering the only question it is asked. */
+.task-msg-preview a { color: #7aa7ff; text-decoration: underline; }
+.light-theme .task-msg-preview a { color: #1a56db; }
+.task-msg-preview a:hover { text-decoration: underline; }
+
 /* ==========================================================================
    RESET & SYSTEM WRAPPERS
    ========================================================================== */

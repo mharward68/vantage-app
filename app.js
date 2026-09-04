@@ -5197,9 +5197,14 @@ function renderTaskKindOptions(channel, wanted) {
     : (CHANNEL_DEFAULT_KIND[channel] || "");
 }
 
-function syncTaskMsgCount(input, out, max) {
+/* AMENDED BY A2 (Session 3.3): the count follows the OUTPUT on LinkedIn.
+   `channel` decides which string is measured — outreachCountedLength() returns
+   the stored length for email and the FLATTENED length for LinkedIn, because
+   flattened is what LinkedIn receives and counts. Markup that never arrives
+   must not push a legal 300-character connection note past its ceiling. */
+function syncTaskMsgCount(input, out, max, channel) {
   if (!input || !out) return;
-  const n = input.value.length;
+  const n = outreachCountedLength(channel, input.value);
   out.textContent = max ? `${n}/${max}` : `${n} characters`;
   // Q6: shown, never blocked, never truncated. `>` and not `>=` — exactly at
   // the ceiling is still legal.
@@ -5213,12 +5218,23 @@ function syncTaskMsgCounts() {
   const lim = TASK_MSG_LIMITS[kind] || { subject: 0, body: 0 };
 
   const g = taskSubjectGroup();
-  if (g) syncTaskMsgCount(taskSubjectInput(), g.querySelector(".task-msg-count"), lim.subject);
+  if (g) syncTaskMsgCount(taskSubjectInput(), g.querySelector(".task-msg-count"), lim.subject, channel);
   syncTaskMsgCount(
     document.getElementById("task-msg-body"),
     document.querySelector("#task-msg-body-group .task-msg-count"),
-    lim.body
+    lim.body,
+    channel
   );
+}
+
+/* Session 3.3. The launch controls depend on values the user can type while
+   they are on screen — To decides whether a button is disabled, and the body
+   decides whether the compose URL will degrade — so they repaint on input,
+   unlike the read side above them, which depends on nothing typeable. */
+function syncTaskOutreachActions() {
+  const channel = document.getElementById("task-channel").value || "";
+  const kindSel = document.getElementById("task-msg-kind");
+  renderTaskOutreachActions(channel, channel && kindSel ? (kindSel.value || "") : "");
 }
 
 /* The read side. Contact header, and the display-only "Re:" on a thread.
@@ -5295,6 +5311,14 @@ function syncTaskOutreachBlock() {
 
   syncTaskMsgCounts();
   renderTaskOutreachReadout(channel, kind);
+  // Session 3.3. Which launch controls exist is decided by the kind, so they
+  // are rebuilt by the same one repaint as everything else in the block.
+  renderTaskOutreachActions(channel, kind);
+  /* Session 3.3c. The preview belongs to the ONE repaint too, because the
+     CHANNEL decides which of the converter's two outputs it shows — switching
+     Email → LinkedIn must turn rendered bold into flattened text on the same
+     gesture that changes what the clipboard would carry. */
+  renderTaskBodyPreview();
 }
 
 function handleTaskChannelChange() {
@@ -5336,6 +5360,12 @@ function fillTaskOutreachFromTask(task) {
   const subj = taskSubjectInput();
   if (subj) subj.value = task ? (task.msgSubject || "") : "";
   document.getElementById("task-msg-body").value = task ? (task.msgBody || "") : "";
+  /* Session 3.3c / Q7 as amended by A2. Decided here from `!!task`, exactly as
+     openTaskEditor() decides `isNew` for the Complete and Delete controls, and
+     set on EVERY open — which is what makes "stored nowhere" true rather than
+     merely unwritten: whatever the last edit left open is irrelevant, the next
+     open re-derives it. */
+  setTaskBodyDisclosureDefaults(!task);
   syncTaskOutreachBlock();
 }
 
@@ -5378,6 +5408,601 @@ function readTaskOutreachFromEditor(existing) {
     // and trailing whitespace in a message body is content.
     msgBody: document.getElementById("task-msg-body").value
   };
+}
+
+/* ==========================================================================
+   ✅ TASK EDITOR — OUTREACH LAUNCH  (Phase 3 / Session 3.3, Q4/Q5/Q6 + A1/A2/A3)
+
+   Session 3.2 built the fields and wrote nothing that opens anything. This is
+   the half that opens things, and it is the half of the phase that can fail
+   INVISIBLY — a popup blocker, a clipboard permission, an over-long URL and a
+   silently-plain clipboard write all produce a button that looks like it
+   worked. Every rule below exists because of one of those.
+
+   THE SIX THINGS A LATER SESSION MUST NOT UNDO:
+
+   (1) ⛔ window.open IS CALLED SYNCHRONOUSLY INSIDE THE CLICK HANDLER, FIRST.
+       No await before it, ever. The clipboard write is a promise and it runs
+       AFTER. Move it behind an await and every console check still passes —
+       it fails only under a popup blocker, on Michael's machine, later.
+
+   (2) ⛔ THERE IS NO &bcc= TERM (amendment A1). Not conditional on a blank
+       setting — the parameter does not exist. The Workspace outbound rule
+       journals the work account, including replies typed straight into Gmail.
+
+   (3) ⛔ THERE IS NO gmailSearchUrl() (amendment A3). A `thread` task opens
+       NOTHING: no URL, no window.open, no launch button. It gets two explicit
+       copy buttons — address, then message — and they are a SEQUENCE, because
+       there is one clipboard and the second overwrites the first. The
+       `#search/` account-redirect risk is RETIRED, not unresolved; do not go
+       and test it.
+
+   (4) ⛔ tf=cm IS THE COMPOSE PARAMETER. `view=cm&fs=1` is the stale pairing
+       copied all over the internet: `fs` does nothing any more and `view=cm`
+       was superseded. "Fixing" this back to the old form breaks it in a way
+       that still opens a compose window, just not reliably.
+
+   (5) ⛔ THE CONVERTER ALWAYS RUNS, AND IT HAS TWO OUTPUTS (amendment A2).
+       HTML for the email kinds, FLATTENED PLAIN TEXT for the three LinkedIn
+       kinds. LinkedIn never receives markup and never receives the raw stored
+       string — copying `[Tech RFP](https://…)` unconverted puts the brackets
+       into a connection note. A session that "unifies" the two copy paths for
+       tidiness ships one defect or the other.
+
+   (6) ⛔ NO ROUTING (Q8/P9). These URLs are window.open targets. A recipient
+       address never enters location.hash, the address bar or document.title.
+
+   WHAT THIS BLOCK DELIBERATELY DOES NOT DO: it does not persist anything. No
+   new store, no new CSV row, no wipeAllData() line. workGmailAddress already
+   had all three from Session 3.1; this session adds a CONTROL over it, in
+   Settings, and nothing else.
+   ========================================================================== */
+
+/* --- A2's converter -------------------------------------------------------
+
+   ⛔ THREE FORMS, AND THE LIST IS CLOSED: [text](url), **bold**, *italic*.
+   Font family and size are excluded BY DECISION, not by omission. Headings,
+   lists, blockquotes, code spans, tables and images are OUT. This is a
+   converter, not a markdown renderer, and it must not grow into one — the
+   moment it does, the Body column stops being something a human can read in a
+   CSV diff and the counters stop being able to measure what LinkedIn receives.
+
+   ONE regex with three alternatives rather than three sequential passes, and
+   that ordering is load-bearing: `**bold**` is tried before `*italic*` at each
+   position, so the italic branch can never eat half of a bold marker. Three
+   passes over a string would also have to escape HTML first, which corrupts a
+   URL containing an ampersand — the single scan escapes each PIECE instead. */
+const OUTREACH_MD_RE = /\[([^\]\n]+)\]\(([^)\s]+)\)|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*/g;
+const OUTREACH_MD_LINK_RE = /\[([^\]\n]+)\]\(([^)\s]+)\)/;
+
+function outreachEscapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/* mode "html" → the text/html clipboard flavour and (from 3.3c) the preview.
+   mode "text" → the FLATTENED plain text: the text/plain flavour, what
+   LinkedIn receives, and what the LinkedIn counters measure. */
+function outreachConvertBody(body, mode) {
+  const src = body == null ? "" : String(body);
+  const asHtml = mode === "html";
+  const plain = (chunk) => asHtml
+    ? outreachEscapeHtml(chunk).replace(/\r\n|\r|\n/g, "<br>")
+    : chunk;
+  let out = "";
+  let last = 0;
+  let m;
+  OUTREACH_MD_RE.lastIndex = 0;
+  while ((m = OUTREACH_MD_RE.exec(src)) !== null) {
+    out += plain(src.slice(last, m.index));
+    if (m[1] !== undefined) {
+      // [text](url). The URL is hidden behind the phrase in HTML and left
+      // BARE in plain text — that is A2's third fallback, and it is the whole
+      // reason a failed rich write still delivers a working link.
+      out += asHtml
+        ? `<a href="${outreachEscapeHtml(m[2])}">${outreachEscapeHtml(m[1])}</a>`
+        : `${m[1]} (${m[2]})`;
+    } else if (m[3] !== undefined) {
+      out += asHtml ? `<strong>${outreachEscapeHtml(m[3])}</strong>` : m[3];
+    } else {
+      out += asHtml ? `<em>${outreachEscapeHtml(m[4])}</em>` : m[4];
+    }
+    last = m.index + m[0].length;
+  }
+  out += plain(src.slice(last));
+  return out;
+}
+
+function outreachBodyToHtml(body) { return outreachConvertBody(body, "html"); }
+function outreachFlattenBody(body) { return outreachConvertBody(body, "text"); }
+
+// Drives A2's SECOND degrade trigger. A link cannot survive `&body=`, which is
+// plain text either way — so a body carrying one opens Gmail with To and
+// Subject only and copies the rich body instead. Not a new mechanism: it is
+// Q6's over-long-URL path gaining a second reason to fire.
+function outreachBodyHasLink(body) {
+  return OUTREACH_MD_LINK_RE.test(body == null ? "" : String(body));
+}
+function outreachBodyHasFormatting(body) {
+  OUTREACH_MD_RE.lastIndex = 0;
+  return OUTREACH_MD_RE.test(body == null ? "" : String(body));
+}
+
+/* The clipboard payload for a channel. ⛔ THIS IS THE ONE PLACE THAT DECIDES
+   WHETHER A text/html FLAVOUR EXISTS, and LinkedIn's answer is never. */
+function outreachClipboardPayload(channel, body) {
+  const text = outreachFlattenBody(body);
+  return channel === "linkedin" ? { text: text, html: null } : { text: text, html: outreachBodyToHtml(body) };
+}
+
+/* --- Q6's counters, as amended by A2 --------------------------------------
+   Email kinds count the STORED string (inert — neither compose nor thread has
+   a per-field ceiling). LinkedIn kinds count the FLATTENED output, because
+   that is what LinkedIn receives and counts: markup that never arrives must
+   not push a legal 300-character connection note over the line. */
+function outreachCountedLength(channel, value) {
+  const s = value == null ? "" : String(value);
+  return channel === "linkedin" ? outreachFlattenBody(s).length : s.length;
+}
+
+/* --- Q4's builders --------------------------------------------------------
+
+   ⛔⛔ ACCOUNT TARGETING — AMENDMENT A4 (2026-09-04, authorised by Michael
+   during Session 3.3). READ THIS BEFORE "RESTORING" Q4's VERSION.
+
+   Q4 as frozen put the address in the PATH: /mail/u/<address>/. ⛔ THAT ROUTE
+   RETURNS "Temporary Error (404)" FROM REAL GMAIL. It was tested four ways in
+   3.3 and the diagnosis is not in doubt:
+
+     /mail/u/<address>/?to=…&tf=cm            → 404   (as frozen)
+     /mail/u/<address>/  with a literal @      → 404   (so NOT the %40 encoding)
+     /mail/u/0/?to=…&su=…&body=…&tf=cm         → 200, compose, params intact
+     /mail/?authuser=<address>&to=…&tf=cm      → 200, Google resolves the
+                                                 address and redirects to
+                                                 /u/N/ with everything intact
+
+   The third line is what proves the rest of Q4 correct: tf=cm, to, su, body
+   and %0A were never the problem. ONLY the account segment was.
+
+   WHY authuser AND NOT /u/0/. Q4's reasoning stands and is the whole point:
+   /u/0/ reflects SIGN-IN ORDER and renumbers silently when another Google
+   account is added — a wrong-inbox bug that surfaces months later as "it
+   started composing from the wrong address". authuser= names the account and
+   lets Google resolve the index, which is exactly what Q4 wanted; only the
+   place the address is written has moved.
+
+   AND IT DEGRADES BETTER, which is a second reason not to undo it. With the
+   named account NOT signed in to the browser, authuser= lands on Google's
+   sign-in page CARRYING THE WHOLE COMPOSE PAYLOAD IN `continue=`, so the
+   email still opens once signed in. The frozen path form gave a 404 dead end
+   and the typed message was gone.
+
+   A blank address is NEVER silently replaced by /u/0/; the buttons disable
+   instead and say why (Q3). That has not changed. */
+function gmailWorkAddress() {
+  return (state.taskSettings && state.taskSettings.workGmailAddress) || "";
+}
+function gmailBase() {
+  return `https://mail.google.com/mail/`;
+}
+
+/* msgKind "compose". ⛔ NO &bcc= TERM (A1). ⛔ tf=cm, never view=cm&fs=1.
+   Newlines survive as %0A and render as real line breaks in the composer.
+   `omitBody` is the degrade path — Q6's over-long URL and A2's link-in-body,
+   which are the same behaviour reached two ways.
+
+   `authuser` IS FIRST because it is A4's account targeting and it is the term
+   Google consumes before the redirect; the other four ride through unchanged
+   and were verified decoding back character-identical on the far side. */
+function gmailComposeUrl(task, opts) {
+  const omitBody = !!(opts && opts.omitBody);
+  return gmailBase() +
+    `?authuser=${encodeURIComponent(gmailWorkAddress())}` +
+    `&to=${encodeURIComponent((task && task.msgTo) || "")}` +
+    `&su=${encodeURIComponent((task && task.msgSubject) || "")}` +
+    (omitBody ? `` : `&body=${encodeURIComponent((task && task.msgBody) || "")}`) +
+    `&tf=cm`;
+}
+
+/* ⛔ THERE IS NO gmailSearchUrl(). Amendment A3 CUT it — not written, not
+   stubbed. `typeof gmailSearchUrl === "undefined"` is a Done-when check. */
+
+// Q6: the assembled-URL ceiling for `compose`. ~2000 is the conservative
+// cross-browser figure; over it, degrade — never fail silently, never truncate.
+const GMAIL_URL_MAX = 2000;
+
+/* One decision, one place, so the button, the toast and the Done-when cannot
+   disagree about which URL was opened or why. */
+function gmailComposePlan(task) {
+  if (outreachBodyHasLink(task && task.msgBody)) {
+    return { url: gmailComposeUrl(task, { omitBody: true }), degraded: true, reason: "link" };
+  }
+  const full = gmailComposeUrl(task);
+  if (full.length > GMAIL_URL_MAX) {
+    return { url: gmailComposeUrl(task, { omitBody: true }), degraded: true, reason: "length" };
+  }
+  return { url: full, degraded: false, reason: "" };
+}
+
+/* --- Q5's clipboard helper ------------------------------------------------
+
+   ONE helper, four rungs, and the FIRST THING IT RETURNS IS WHICH RUNG WON —
+   because a rich write that silently degrades to plain text produces a button
+   that flashes success, a paste that lands text, and a link that is merely
+   visible rather than hidden. That reads as a styling quibble rather than a
+   failure, so the success toast is the only place the difference is visible
+   before the email goes out. It must distinguish the two.
+
+     1. navigator.clipboard.write() with a ClipboardItem carrying text/html AND
+        text/plain            → the link pastes into Gmail blue and hidden
+     2. navigator.clipboard.writeText()   → plain text, URL left bare
+     3. hidden textarea + document.execCommand("copy")  → same, older browsers
+     4. select the source field's text    → the user presses Ctrl+C themselves
+
+   Rungs 2-4 are Q5's original ladder, unchanged; rung 1 is A2's addition on
+   top of it. All of them need a live user gesture, and rungs 1-2 need a secure
+   context — localhost qualifies today, and Phase 4's hosted origin is a
+   separate question already flagged in BUILD_NOTES. */
+async function outreachCopy(payload, sourceEl) {
+  const text = (payload && payload.text) || "";
+  const html = payload ? payload.html : null;
+
+  if (html && typeof ClipboardItem !== "undefined" && navigator.clipboard && navigator.clipboard.write) {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([text], { type: "text/plain" })
+      })]);
+      return { ok: true, rich: true, how: "clipboard.write" };
+    } catch (err) {
+      console.warn("[Outreach] Rich clipboard write refused; falling back to plain text.", err);
+    }
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return { ok: true, rich: false, how: "clipboard.writeText" };
+    } catch (err) {
+      console.warn("[Outreach] clipboard.writeText refused; falling back to execCommand.", err);
+    }
+  }
+
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "readonly");
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    if (ok) return { ok: true, rich: false, how: "execCommand" };
+  } catch (err) {
+    console.warn("[Outreach] execCommand copy failed.", err);
+  }
+
+  // Last rung: put the text in front of the user, selected, and say so. Nothing
+  // silently "succeeds" here.
+  if (sourceEl && typeof sourceEl.select === "function") {
+    try { sourceEl.focus(); sourceEl.select(); } catch (err) { /* nothing left to try */ }
+  }
+  return { ok: false, rich: false, how: "select" };
+}
+
+/* --- The toast ------------------------------------------------------------
+   This app had no toast facility before this session; the copy paths need a
+   visible success state that is NOT a modal alert(), because an alert blocks
+   and this fires straight after a window.open. Deliberately minimal: one node,
+   one timer, no queue, no store. */
+let outreachToastTimer = null;
+function showOutreachToast(message, tone) {
+  const existing = document.getElementById("outreach-toast");
+  if (existing) existing.remove();
+  if (outreachToastTimer) { clearTimeout(outreachToastTimer); outreachToastTimer = null; }
+
+  const el = document.createElement("div");
+  el.id = "outreach-toast";
+  el.className = "outreach-toast" + (tone ? ` is-${tone}` : "");
+  el.setAttribute("role", "status");
+  el.textContent = message;
+  document.body.appendChild(el);
+  outreachToastTimer = setTimeout(() => {
+    const n = document.getElementById("outreach-toast");
+    if (n) n.remove();
+    outreachToastTimer = null;
+  }, 5000);
+}
+
+// The toast text for a copy result. One function so "with link" versus "plain
+// text" can never drift between the three call sites.
+function outreachCopyToast(label, res) {
+  if (!res.ok) { showOutreachToast(`${label} selected — press Ctrl+C to copy.`, "warn"); return; }
+  showOutreachToast(res.rich ? `${label} copied with link.` : `${label} copied — plain text.`);
+}
+
+/* --- The controls ---------------------------------------------------------
+
+   Built fresh on every repaint of the block, with createElement, because WHICH
+   controls exist is decided by msgKind. Listeners go on the nodes as they are
+   created, so nothing here is bound in setupEventListeners() and nothing here
+   can be left bound to a detached node. */
+
+// The task-shaped object the builders read. Taken from the EDITOR, not from
+// state, so the button launches what is on screen — including edits not yet
+// saved. Cancel still means Cancel: nothing here writes to state.
+function taskOutreachDraft() {
+  const existing = editingTaskId ? (state.tasks || []).find(t => t.id === editingTaskId) : null;
+  return readTaskOutreachFromEditor(existing);
+}
+
+function outreachActionButton(label, cls) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = `header-action-btn ${cls} task-outreach-btn`;
+  b.textContent = label;
+  return b;
+}
+function outreachHint(text, cls) {
+  const p = document.createElement("div");
+  p.className = cls || "task-outreach-hint";
+  p.textContent = text;
+  return p;
+}
+
+/* ⛔ SYNCHRONOUSLY, FIRST. Read the guards, open the window, and only then do
+   anything asynchronous. */
+function handleTaskLaunchGmail() {
+  const draft = taskOutreachDraft();
+  if (!gmailWorkAddress()) {
+    showOutreachToast("Set your work Gmail address in Settings → Outreach Work Gmail first.", "warn");
+    return;
+  }
+  if (!draft.msgTo) { showOutreachToast("Add a recipient in To first.", "warn"); return; }
+
+  const plan = gmailComposePlan(draft);
+  const win = window.open(plan.url, "vantage-gmail");   // ⛔ NO await ABOVE THIS LINE
+
+  if (!win) {
+    showOutreachToast("Gmail did not open — your browser blocked the popup for this site.", "warn");
+    return;
+  }
+  if (!plan.degraded) return;
+
+  // Q6 / A2's degrade path. The body did not travel in the URL, so it travels
+  // on the clipboard — and the toast says which, because "copied" alone hides
+  // whether the link survived.
+  const payload = outreachClipboardPayload("email", draft.msgBody);
+  outreachCopy(payload, document.getElementById("task-msg-body")).then(res => {
+    const why = plan.reason === "link" ? "Body copied" : "Body too long for the link — copied";
+    if (!res.ok) { showOutreachToast("Body selected — press Ctrl+C, then paste into Gmail.", "warn"); return; }
+    showOutreachToast(res.rich
+      ? `${why} with link — paste into Gmail.`
+      : `${why} — plain text. Paste into Gmail.`);
+  });
+}
+
+function handleTaskCopyAddress() {
+  const draft = taskOutreachDraft();
+  // An address is never rich: no html flavour, nothing to convert.
+  outreachCopy({ text: draft.msgTo, html: null }, document.getElementById("task-msg-to"))
+    .then(res => outreachCopyToast("Address", res));
+}
+
+function handleTaskCopyMessage(channel) {
+  const draft = taskOutreachDraft();
+  outreachCopy(outreachClipboardPayload(channel, draft.msgBody), document.getElementById("task-msg-body"))
+    .then(res => outreachCopyToast("Message", res));
+}
+
+function renderTaskOutreachActions(channel, kind) {
+  const box = document.getElementById("task-outreach-actions");
+  if (!box) return;
+  box.innerHTML = "";          // listeners live on the nodes being replaced
+  if (!channel) return;
+
+  const to = (document.getElementById("task-msg-to").value || "").trim();
+  const bodyEl = document.getElementById("task-msg-body");
+  const body = bodyEl ? bodyEl.value : "";
+
+  if (channel === "email" && kind === "compose") {
+    const btn = outreachActionButton("Open in Gmail", "primary-btn");
+    if (!gmailWorkAddress()) {
+      btn.disabled = true;
+      btn.title = "Set your work Gmail address in Settings → Outreach Work Gmail. Vantage never guesses an inbox.";
+    } else if (!to) {
+      btn.disabled = true;
+      btn.title = "Add a recipient in To before this can open a composed email.";
+    } else {
+      btn.title = `Opens a new compose window on ${gmailWorkAddress()}.`;
+      btn.addEventListener("click", handleTaskLaunchGmail);
+    }
+    box.appendChild(btn);
+
+    // The two reasons the body will not travel in the URL, said BEFORE the
+    // click rather than only in the toast after it.
+    if (outreachBodyHasLink(body)) {
+      box.appendChild(outreachHint(
+        "This message contains a link, so Gmail opens with To and Subject only and the body is copied — a URL cannot travel as a link inside the compose address.",
+        "task-outreach-hint is-degrade"));
+    } else if (gmailComposeUrl({ msgTo: to, msgSubject: "", msgBody: body }).length > GMAIL_URL_MAX) {
+      box.appendChild(outreachHint(
+        "This message is too long to travel in the compose link, so Gmail opens with To and Subject only and the body is copied.",
+        "task-outreach-hint is-degrade"));
+    }
+    box.appendChild(outreachHint("Assumes you are already signed in to Gmail on the work account."));
+    return;
+  }
+
+  if (channel === "email" && kind === "thread") {
+    /* ⛔ AMENDMENT A3. NOTHING OPENS. A follow-up belongs in a conversation
+       that already exists in Michael's inbox — he finds it there himself.
+       No URL is built, so there is nothing here that could carry a recipient
+       address into a browser's history. */
+    box.appendChild(outreachHint(
+      "A thread task opens nothing — find the conversation in Gmail yourself. One clipboard, two steps: the second copy replaces the first.",
+      "task-outreach-hint is-sequence"));
+
+    const one = outreachActionButton("1 · Copy address", "secondary-btn");
+    if (!to) { one.disabled = true; one.title = "Nothing to copy — To is empty."; }
+    else { one.addEventListener("click", handleTaskCopyAddress); }
+    box.appendChild(one);
+
+    const two = outreachActionButton("2 · Copy message", "secondary-btn");
+    if (!body) { two.disabled = true; two.title = "Nothing to copy — the message is empty."; }
+    else { two.addEventListener("click", () => handleTaskCopyMessage("email")); }
+    box.appendChild(two);
+    return;
+  }
+
+  // The three LinkedIn kinds are Session 3.4 — slug, destinations, and their
+  // own explicit copy controls. Nothing is rendered here rather than a dead
+  // button that looks like it should work.
+  box.appendChild(outreachHint("LinkedIn launch controls arrive in the next session."));
+}
+
+/* ==========================================================================
+   ✅ TASK EDITOR — AUTHORING SURFACE  (Phase 3 / Session 3.3c, Q7 as amended
+   by A2)
+
+   Session 3.3 shipped the converter and the clipboard and left the body
+   control as 3.2's bare textarea with the markdown typed by hand. This is the
+   surface that types it for him. It is PURE UI over mechanisms that are
+   already built and already proved — nothing in this block can produce a wrong
+   email; the worst case is a box that looks wrong.
+
+   THE FOUR THINGS A LATER SESSION MUST NOT UNDO:
+
+   (1) ⛔ THE PREVIEW IS RENDERED BY outreachBodyToHtml() AND outreachFlatten-
+       Body() — THE SAME TWO FUNCTIONS THAT BUILD THE CLIPBOARD. There is no
+       second renderer here and there must never be one. "What you see is what
+       pastes" is true by construction, not by a test that happens to pass; add
+       a private renderer and the two drift apart silently, and the first
+       symptom is an email that went out wrong.
+
+   (2) ⛔ THE OPEN/CLOSED STATE IS STORED NOWHERE. A class on a wrapper the
+       editor sets on every open, from `!!task`. No state field, no
+       localStorage, no settings row, no wipeAllData() line. Contract Q8 is
+       untouched and this session adds NO persistence at all. This follows the
+       .pd-company-card precedent (2B.16) deliberately: a collapsed box is not
+       user data.
+
+   (3) ⛔ THE PREVIEW IS FLATTENED ON LINKEDIN. outreachClipboardPayload()
+       gives the three LinkedIn kinds `{text, html: null}` — they receive no
+       markup at all (A2). A preview that rendered bold on a connection note
+       would be showing something LinkedIn will never see, which is the exact
+       lie this box exists to prevent.
+
+   (4) ⛔ THE TOOLBAR DISPATCHES A REAL `input` EVENT AFTER IT WRITES. Assigning
+       `.value` fires nothing, so without the dispatch the counter, the launch
+       controls and the preview all sit stale behind the change. Dispatching
+       keeps typing and clicking B on ONE code path rather than two.
+   ========================================================================== */
+
+function taskDisclosure(id) { return document.getElementById(id); }
+
+function setTaskDisclosure(el, open) {
+  if (!el) return;
+  el.classList.toggle("is-open", !!open);
+  const btn = el.querySelector(".task-disclosure-toggle");
+  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+/* Q7/A2's defaults, and they are defaults rather than restrictions — either
+   box can be opened or closed at any time and nothing remembers which.
+   NEW task → Edit open, Preview closed. EXISTING task → the reverse. */
+function setTaskBodyDisclosureDefaults(isNew) {
+  setTaskDisclosure(taskDisclosure("task-msg-body-group"), !!isNew);
+  setTaskDisclosure(taskDisclosure("task-msg-preview-group"), !isNew);
+}
+
+function toggleTaskDisclosure(el) {
+  if (!el) return;
+  const open = !el.classList.contains("is-open");
+  setTaskDisclosure(el, open);
+  // Opening the preview repaints it. It repaints on input anyway, visible or
+  // not, so this is belt and braces rather than the mechanism.
+  if (open && el.id === "task-msg-preview-group") renderTaskBodyPreview();
+}
+
+/* ⛔ ONE CONVERTER, TWO CALLERS. The email branch is byte-identical to
+   outreachClipboardPayload(channel, body).html, and the LinkedIn branch is
+   byte-identical to its .text — that equality is a Done-when, and it is the
+   whole reason this function is four lines instead of a renderer. */
+function renderTaskBodyPreview() {
+  const box = document.getElementById("task-msg-preview");
+  if (!box) return;
+  const bodyEl = document.getElementById("task-msg-body");
+  const body = bodyEl ? bodyEl.value : "";
+  const channel = document.getElementById("task-channel").value || "";
+
+  if (channel === "linkedin") {
+    // textContent, not innerHTML: LinkedIn receives plain text, so the preview
+    // shows plain text. Any markup here would be a promise the paste cannot keep.
+    box.textContent = outreachFlattenBody(body);
+    box.classList.add("is-flat");
+    box.classList.toggle("is-empty", box.textContent === "");
+    return;
+  }
+  box.innerHTML = outreachBodyToHtml(body);
+  box.classList.remove("is-flat");
+  box.classList.toggle("is-empty", box.innerHTML === "");
+}
+
+/* --- The toolbar ----------------------------------------------------------
+   Bold, Italic, Link. Each writes the syntax around the current selection, so
+   the user never types a `*` or a `[`. A2's list of three is CLOSED — a fourth
+   button is a scope change, not an improvement. */
+
+// Assigning .value fires no `input` event, so every repaint downstream of the
+// body — the counter, the launch controls, the preview — would sit stale.
+// Dispatching one real event keeps the toolbar and the keyboard on one path.
+function taskBodyChanged(ta) {
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function taskBodyWrapSelection(before, after, fallbackLabel) {
+  const ta = document.getElementById("task-msg-body");
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const value = ta.value;
+  const selected = value.slice(start, end);
+  const label = selected || (fallbackLabel || "");
+
+  ta.value = value.slice(0, start) + before + label + after + value.slice(end);
+  ta.focus();
+  // Leave the LABEL selected, inside the markers — so Bold on a selection
+  // keeps it selected, and Bold on an empty caret leaves the caret between the
+  // two markers ready to type.
+  ta.setSelectionRange(start + before.length, start + before.length + label.length);
+  taskBodyChanged(ta);
+}
+
+/* ⛔ THE URL IS TAKEN FROM A prompt(). The codebase already uses native
+   prompts on the destructive paths, and a bespoke modal here would be a
+   second modal inside an open modal for one string. Cancel writes nothing.
+
+   The two rejected shapes matter: OUTREACH_MD_RE's URL run is `[^)\s]+`, so a
+   URL containing a space or a closing bracket would store as text that never
+   converts — a link that looks written and pastes as literal brackets. That is
+   refused with the reason shown rather than silently mangled. */
+function taskBodyInsertLink() {
+  const ta = document.getElementById("task-msg-body");
+  if (!ta) return;
+  const url = window.prompt("Link URL (https://…)", "https://");
+  if (url === null) return;                       // Cancel writes nothing
+  const clean = String(url).trim();
+  if (!clean || clean === "https://") return;
+  if (/[\s)]/.test(clean)) {
+    showOutreachToast("A link URL cannot contain a space or a ) — Vantage would store it as text that never becomes a link.", "warn");
+    return;
+  }
+  // With nothing selected the URL becomes its own label and is left selected,
+  // so typing replaces it with the phrase the reader should see.
+  taskBodyWrapSelection("[", `](${clean})`, clean);
 }
 
 function closeTaskEditor() {
@@ -15715,6 +16340,46 @@ function setupEventListeners() {
   document.getElementById("task-msg-subject").addEventListener("input", syncTaskMsgCounts);
   document.getElementById("task-msg-body").addEventListener("input", syncTaskMsgCounts);
 
+  /* Session 3.3. Two MORE input listeners, and they repaint the LAUNCH
+     CONTROLS rather than the counters: To decides whether a button is
+     disabled, and the body decides whether the compose URL will degrade to
+     To + Subject. Both are things the user changes while looking at the
+     button, so a control that only repainted on a kind change would sit
+     disabled after the recipient was typed — which reads exactly like a
+     broken button. Still NOT routed through syncTaskOutreachBlock(): the read
+     side and the Subject group's detach have no business running on every
+     keystroke of a 3,000-character body. */
+  document.getElementById("task-msg-to").addEventListener("input", syncTaskOutreachActions);
+  document.getElementById("task-msg-body").addEventListener("input", syncTaskOutreachActions);
+
+  /* Session 3.3c — the authoring surface. Six listeners, all on static nodes
+     declared in index.html, so they bind once at boot and survive every
+     repaint of the block above them.
+
+     The preview repaints on the SAME `input` event as the counters rather than
+     on a timer or a blur: A2's whole claim is that what the box shows is what
+     the clipboard carries, and a preview that lags by a keystroke is a preview
+     that is wrong for a keystroke. */
+  document.getElementById("task-msg-body").addEventListener("input", renderTaskBodyPreview);
+  document.getElementById("task-body-edit-toggle").addEventListener("click", () =>
+    toggleTaskDisclosure(document.getElementById("task-msg-body-group")));
+  document.getElementById("task-body-preview-toggle").addEventListener("click", () =>
+    toggleTaskDisclosure(document.getElementById("task-msg-preview-group")));
+  document.getElementById("task-md-bold").addEventListener("click", () => taskBodyWrapSelection("**", "**"));
+  document.getElementById("task-md-italic").addEventListener("click", () => taskBodyWrapSelection("*", "*"));
+  document.getElementById("task-md-link").addEventListener("click", taskBodyInsertLink);
+
+  /* ⛔ THE PREVIEW IS READ-ONLY, AND THAT INCLUDES ITS LINKS. The anchors are
+     real <a href> — they have to be, because this innerHTML is byte-identical
+     to the text/html the clipboard carries — so a click would navigate the app
+     out of itself and put a URL from a message body into the address bar.
+     Q8/P9: no recipient and no message content reaches a URL bar. Preventing
+     the default keeps the markup identical and the box inert. */
+  document.getElementById("task-msg-preview").addEventListener("click", (e) => {
+    const a = e.target && e.target.closest ? e.target.closest("a") : null;
+    if (a) e.preventDefault();
+  });
+
   /* §13.8: the prospect name is a link to that contact. SAVE FIRST — the
      click comes from inside the editor, so committing what was typed and then
      going to look is the natural reading, and it means nothing has to be
@@ -15810,6 +16475,23 @@ function setupEventListeners() {
   document.getElementById("setting-task-date-mode").addEventListener("change", (e) => {
     if (!state.taskSettings || typeof state.taskSettings !== "object") state.taskSettings = {};
     state.taskSettings.dateMode = e.target.value === "all" ? "all" : "business";
+    saveState();
+  });
+
+  /* Phase 3 / Q3 as amended by A1 (Session 3.3). The work Gmail address —
+     ONE key, not two. There is no Bcc field and there must not be one.
+
+     Trimmed, because a stray space rides into the URL path and Gmail resolves
+     a different account (or none). BLANK IS KEPT AS BLANK: it disables every
+     email launch button and names Settings, and it must never be re-seeded or
+     silently replaced by /u/0/, which renumbers when a Google account is
+     added. This writes a value that Session 3.1 already gave backup coverage —
+     no new store, no new row, no wipeAllData() line. */
+  document.getElementById("setting-outreach-work-gmail").addEventListener("change", (e) => {
+    if (!state.taskSettings || typeof state.taskSettings !== "object") state.taskSettings = {};
+    const v = (e.target.value || "").trim();
+    e.target.value = v;
+    state.taskSettings.workGmailAddress = v;
     saveState();
   });
 
@@ -16400,6 +17082,15 @@ function renderSettingsLists() {
   const taskDateModeSelect = document.getElementById("setting-task-date-mode");
   if (taskDateModeSelect) {
     taskDateModeSelect.value = (state.taskSettings && state.taskSettings.dateMode === "all") ? "all" : "business";
+  }
+
+  // 14. Outreach work Gmail address (Phase 3 / Session 3.3, Q3 as amended by
+  // A1). Same shape as 13: a scalar setting, rendered from live state, whose
+  // backup coverage is the ["Outreach Work Gmail", …] row Session 3.1 added.
+  // `|| ""` is right here — a blank is a real value, not an unset one.
+  const workGmailInput = document.getElementById("setting-outreach-work-gmail");
+  if (workGmailInput) {
+    workGmailInput.value = (state.taskSettings && state.taskSettings.workGmailAddress) || "";
   }
 }
 
