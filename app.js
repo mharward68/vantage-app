@@ -1254,24 +1254,26 @@ function deriveSeniority(title) {
   return "Individual Contributor";
 }
 
-/* PHASE 3 / Q3 (Session 3.1). THE OUTREACH BCC LOGGING ADDRESS, WRITTEN ONCE.
+/* PHASE 3 / AMENDMENT A1 (Session 3.1b, 2026-09-04). THE OUTREACH BCC IS GONE,
+   AND OUTREACH_BCC_DEFAULT WAS DELETED FROM THIS SPOT.
 
-   ⛔ ONE LITERAL, ONE PLACE, DELIBERATELY. Scope §9.7 exists because this
-   address was typed three times by hand and produced three different spellings
-   — michaelh@, michalh@ and @youavdept — and a wrong Bcc does not throw, does
-   not warn and appears in no Done-when: it bounces silently or delivers to a
-   stranger, and surfaces weeks later as a hole in the sent-mail archive. The
-   local part `michaelh` matches this document set and the Workspace admin
-   account of scope §9.2; the domain `youravdept.com` is corroborated
-   throughout the repo (BUILD_NOTES records it being kept OFF the free-email
-   blocklist because it is a real company). DO NOT re-key this string anywhere
-   else — a second copy is how the two eventually stop matching. Session 3.3's
-   Settings field reads state.taskSettings.emailBcc, never this constant.
+   ⛔ VANTAGE EMITS NO BCC. The Google Workspace outbound content-compliance
+   rule already blind-copies every message sent from the work account —
+   including replies typed straight into Gmail, which Vantage could never reach
+   — so the logging this setting existed to provide happens upstream, and in
+   more cases than Vantage could cover. Amendment A1 in
+   ai/phases/phase-3-outreach-launch.md; reasoning and the reversal condition
+   in ai/DECISIONS.md (2026-09-03).
 
-   It is a SEED, not a constant the app reads at click time: Q3 says emailBcc is
-   read from state at click time so that changing it applies immediately to
-   tasks that already exist. */
-const OUTREACH_BCC_DEFAULT = "michaelh@youravdept.com";
+   ⛔ DO NOT RE-ADD ANY OF THIS. There is no OUTREACH_BCC_DEFAULT, no
+   state.taskSettings.emailBcc, no ["Outreach Bcc", …] settings row, no
+   "outreach bcc" restore branch, and — from Session 3.3 — no &bcc= term in
+   gmailComposeUrl() and no Bcc line on screen. A1 DELETES the parameter; it
+   does not make it conditional on a blank setting.
+
+   ⚠️ workGmailAddress IS UNTOUCHED BY A1 and lives on below. It targets the
+   right inbox and has nothing to do with the Bcc. A session that tidies up by
+   removing "both outreach settings" has broken account targeting. */
 
 function ensureStateDefaults() {
   // Snapshot health describes this machine's filesystem, not the user's data.
@@ -1305,21 +1307,41 @@ function ensureStateDefaults() {
      next load. That is the entire reason Q3 puts them here.
 
      ⛔ TESTED WITH === undefined, NOT WITH FALSINESS, AND THAT IS THE POINT:
-     "" IS A MEANINGFUL VALUE FOR BOTH. A blank workGmailAddress disables every
-     email button and names Settings (Q3) — it must never silently fall back to
-     /u/0/ — and a blank emailBcc omits the &bcc= parameter entirely. A
-     truthiness guard would make "deliberately blank" inexpressible and would
-     re-seed the address on every boot and every restore, which is the
+     "" IS A MEANINGFUL VALUE. A blank workGmailAddress disables every email
+     button and names Settings (Q3) — it must never silently fall back to
+     /u/0/. A truthiness guard would make "deliberately blank" inexpressible
+     and would re-seed on every boot and every restore, which is the
      length === 0 defect recorded in BUILD_NOTES for the managed lists, pointed
      at a scalar. Related and deliberately avoided: the 2B.13 rule that a seed
      must write the shape its migration tests for — here nothing writes "" as a
      seed, so a blank is always the user's own.
 
-     Backup coverage is two rows in prm_settings.csv (generateSettingsCSV /
+     Backup coverage is ONE row in prm_settings.csv (generateSettingsCSV /
      restoreSettingsFromCSV), following the C4 Task Date Mode precedent. No new
-     file, no new store. */
+     file, no new store.
+
+     ⛔ A1 (Session 3.1b): THE SECOND KEY, emailBcc, IS GONE — no seed, no row,
+     no restore branch. Its default constant was deleted above. */
   if (state.taskSettings.workGmailAddress === undefined) state.taskSettings.workGmailAddress = "";
-  if (state.taskSettings.emailBcc === undefined) state.taskSettings.emailBcc = OUTREACH_BCC_DEFAULT;
+  /* PHASE 3 / A1 (Session 3.1b). THE FIELD REMOVAL ON A LIVE RECORD.
+
+     Session 3.1 seeded emailBcc into every database that has booted since
+     2026-09-03, including Michael's. Deleting the seed alone would leave that
+     dead key sitting in state, in every ZIP, and in every snapshot forever,
+     where a later session would find it and reasonably conclude the Bcc is
+     still a thing. So the key is removed from the live record here, in the one
+     path that runs on boot AND after every restore — which is also what makes
+     restoring a 3.1-era backup safe: the retired row is now ignored on the way
+     in (no branch reads it) and any key that arrives by another route is
+     cleared on the way through here.
+
+     ⚠️ THIS IS A FIELD REMOVAL, SO IT IS NAMED RATHER THAN LEFT UNREMARKED.
+     It is NOT a DIRECTIVES §4 destructive data change: the only value it can
+     destroy is a seeded default no user typed, no user-entered content passes
+     through this key, and it is idempotent. Rollback is to restore the seed
+     and the constant — both are in this session's diff, and the shipped value
+     was 23 characters written in exactly one place by design. */
+  if ("emailBcc" in state.taskSettings) delete state.taskSettings.emailBcc;
   /* Phase 1 / C15 (Session 1.10). The app's ONE persisted-UI-layout record,
      keyed by table id so a second table adopts it without a second
      implementation. Only "taskhub" is populated in Phase 1.
@@ -2449,16 +2471,21 @@ function generateSettingsCSV() {
   // Custom Sort Order rather than in a file of its own. This is what gives
   // state.taskSettings its DIRECTIVES §4 backup coverage.
   rows.push(["Task Date Mode", (state.taskSettings && state.taskSettings.dateMode) || "business"]);
-  /* PHASE 3 / Q3 (Session 3.1). state.taskSettings' two outreach keys ride here
-     as two more scalar rows, exactly as C4's Task Date Mode does. This IS their
-     entire DIRECTIVES §4 backup coverage — no new file, and they inherit every
-     restore path prm_settings.csv already reaches.
+  /* PHASE 3 / Q3 (Session 3.1), AMENDED BY A1 (Session 3.1b). ONE outreach key
+     rides here as a scalar row, exactly as C4's Task Date Mode does. This IS
+     its entire DIRECTIVES §4 backup coverage — no new file, and it inherits
+     every restore path prm_settings.csv already reaches.
 
      `|| ""` is safe here in a way it would NOT be in the defaults path: a blank
      is written as a blank and read back as a blank, so a deliberately-cleared
-     Bcc survives the round trip rather than being re-seeded. */
+     address survives the round trip rather than being re-seeded.
+
+     ⛔ THE ["Outreach Bcc", …] ROW WAS DELETED HERE BY A1 — Vantage emits no
+     Bcc, so there is nothing to back up. A backup written before 3.1b still
+     CONTAINS that row; restoreSettingsFromCSV() no longer has a branch for it
+     and it falls through the else-if chain like any unknown Option Type, which
+     is verified rather than assumed. Do not add a branch to "handle" it. */
   rows.push(["Outreach Work Gmail", (state.taskSettings && state.taskSettings.workGmailAddress) || ""]);
-  rows.push(["Outreach Bcc", (state.taskSettings && state.taskSettings.emailBcc) || ""]);
   // Phase 1 / C17. state.columnLayouts' ENTIRE DIRECTIVES §4 coverage is this
   // one row, following the Custom Sort Order precedent. The payload is JSON
   // and therefore full of `"` characters — the round trip depends on
@@ -2966,8 +2993,6 @@ function restoreSettingsFromCSV(text) {
   // ensureStateDefaults() — which always runs after a restore — seeds them.
   let sawWorkGmailAddress = false;
   let workGmailAddress = "";
-  let sawEmailBcc = false;
-  let emailBcc = "";
   let sawColumnLayouts = false;
   let columnLayouts = null;
 
@@ -3055,9 +3080,11 @@ function restoreSettingsFromCSV(text) {
       // meaningful (it disables every email button), not "unset".
       sawWorkGmailAddress = true;
       workGmailAddress = val;
-    } else if (typeLower === "outreach bcc") {
-      sawEmailBcc = true;
-      emailBcc = val;
+      /* PHASE 3 / A1 (Session 3.1b). THERE IS NO "outreach bcc" BRANCH.
+         A settings CSV written before 3.1b carries an ["Outreach Bcc", …] row;
+         with no branch for it, it falls through this else-if chain exactly as
+         any unknown Option Type does — ignored, not fatal. Verified against a
+         real 3.1-era prm_settings.csv, not assumed. Do not add a branch back. */
     } else if (typeLower === "column layouts") {
       // Phase 1 / C17. A malformed cell must not take the whole settings
       // restore down with it — a corrupt column width is cosmetic, and losing
@@ -3094,15 +3121,12 @@ function restoreSettingsFromCSV(text) {
     if (!state.taskSettings || typeof state.taskSettings !== "object") state.taskSettings = {};
     state.taskSettings.dateMode = taskDateMode;
   }
-  // Phase 3 / Q3 (Session 3.1). Guarded the same way — a settings CSV with no
-  // outreach rows leaves whatever is live alone.
+  // Phase 3 / Q3 (Session 3.1), amended by A1 (3.1b). Guarded the same way — a
+  // settings CSV with no outreach row leaves whatever is live alone. The
+  // emailBcc apply block that sat below this one was deleted by A1.
   if (sawWorkGmailAddress) {
     if (!state.taskSettings || typeof state.taskSettings !== "object") state.taskSettings = {};
     state.taskSettings.workGmailAddress = workGmailAddress;
-  }
-  if (sawEmailBcc) {
-    if (!state.taskSettings || typeof state.taskSettings !== "object") state.taskSettings = {};
-    state.taskSettings.emailBcc = emailBcc;
   }
   // C17. Restored wholesale like every sibling list. Unknown keys inside it
   // and keys missing from it are handled at READ time by the C15 migration
