@@ -2,23 +2,28 @@
 
 *Vantage — a Prospecting Relationship Manager*
 
-> ## ⏸ BLOCKED ON ONE THING ONLY — 2B.10's DRILL. Updated 2026-09-03.
+> ## ▶ RUNNING — two sessions in. Updated 2026-09-04, after Session 3.2.
 >
-> *Written 2026-09-02. **Revised at the Phase 2B close**, because the banner it
-> replaced said "nine sessions stand between today and Session 3.1" and that has
-> not been true since 2026-09-03.*
+> *Written 2026-09-02. Revised at the Phase 2B close, and again here — the
+> banner this replaced said Phase 3 was blocked on 2B.10's drill, which ran on
+> 2026-09-03.*
 >
-> **All twenty-two Phase 2B sessions have run** — 2B.11, 2B.12, 2B.16, 2B.13,
-> 2B.19 (+2B.19b), 2B.18, 2B.20, 2B.21, 2B.17, 2B.22, 2B.14, 2B.15, and 2B.10's
-> document half. `CACHE_NAME` is **v126**, not v107. Everything is committed and
-> pushed at **`ec2bd1a`**.
+> **Phase 2B is CLOSED.** All twenty-two sessions ran; the export → wipe →
+> restore drill and the snapshot drill both ran against the production database
+> and it came back to its exact opening byte count.
 >
-> ⛔ **WHAT REMAINS: 2B.10's export → wipe → restore drill and its snapshot
-> re-verify.** Both need Michael to take a manual ZIP and close every Vantage
-> window; neither has run. **Phase 2B is not closed until they do, and 3.1 must
-> not start before that** — 3.1's own Done-when calls `wipeAllData()` against
-> real data, and doing that on a phase whose restore path has never been proved
-> is the wrong order.
+> **Phase 3 has shipped 3.1 and 3.2.** `CACHE_NAME` is **v128**. `app.js`
+> **17,849** · `index.html` **3,876** · `style.css` **4,991**. **Committed and
+> pushed at `7a853f1`** — read out of `git log`, not carried from a handoff.
+>
+> ⛔ **NEXT IS 3.1b, AND IT MUST LAND BEFORE 3.3.** Four deletions plus a cache
+> bump: it removes the Bcc that amendment A1 retired, and 3.3 is the session
+> that would otherwise build `&bcc=` straight back in.
+>
+> ⚠️ **THREE FROZEN CONTRACTS HAVE BEEN AMENDED SINCE THIS SHEET WAS WRITTEN —
+> A1, A2, A3 — AND TWO OF THEM CHANGE WHAT 3.3 BUILDS.** Summarised below;
+> written in full in `ai/phases/phase-3-outreach-launch.md § Frozen-contract
+> amendments`. **Read them before running 3.3.**
 >
 > **Numbered 3, not renumbered.** Hosting stays Phase 4, and its pre-flight
 > already exists at `ai/spec/phase-4-firebase-preflight.md`.
@@ -103,10 +108,39 @@ enrollments produce. **Not scoped — see Step 0B.**
 
 # Step 2A — Run sessions 3.1 through 3.4
 
-Compartment A is **5** sessions as planned, four of them build and one the phase
-close. Forecast **6–7** for this compartment once contingency is applied. The
-extra ones are what reviewing Session 3.4 is expected to produce, and they take
-numbers **3.6 and up**. **3.5 keeps its number and always runs last.**
+Compartment A was **5** sessions as planned. It is **7** as of 2026-09-04:
+**3.1b** was added when amendment A1 retired the Bcc after 3.1 had already
+shipped it, and **3.3c** when amendment A2 grew 3.3 past a single session.
+Forecast **8–9** once contingency is applied. The contingency is what reviewing
+Session 3.4 is expected to produce, and it takes numbers **3.6 and up**.
+**3.5 keeps its number and always runs last.**
+
+⚠️ **Worth separating at the 3.5 calibration: both extra sessions came from
+amendments Michael authorised mid-phase, not from a session being
+underestimated.** Those are different failures and only one of them is an
+estimating problem. Do not let the phase report "7 against a planned 5" as though
+it were the 1.8 pattern repeating.
+
+---
+
+## ⚠️ Three amendments, and what each one changes
+
+*Full text: `ai/phases/phase-3-outreach-launch.md § Frozen-contract amendments`.
+This table is the reminder, not the record.*
+
+| | Date | Changes | Effect on the sessions |
+| :---: | --- | --- | --- |
+| **A1** | 2026-09-03 | Q3, Q4, Q5 | **Vantage emits NO Bcc.** The Workspace outbound rule already journals everything sent from the work account. `emailBcc`, its seed, its constant, its CSV row and its restore leg all go. **`workGmailAddress` is untouched.** → **costs Session 3.1b**, and 3.3 must not build `&bcc=`. |
+| **A2** | 2026-09-04 | Q1, Q4, Q5, Q6, Q7 | **Clickable links.** A body may hold `[text](url)`, `**bold**`, `*italic*` — three forms, list closed, **no font family or size**. The clipboard carries `text/html` + `text/plain`; LinkedIn gets **flattened text**, never markup and never HTML. A `compose` body with a link opens Gmail **To + Subject only** and copies the body. Counters follow the flattened output on LinkedIn. The Body box becomes **two disclosures**. → **grew 3.3, then split off Session 3.3c**. |
+| **A3** | 2026-09-03 *(recorded 2026-09-04)* | Q2, Q4, Q5 | **Email `thread` opens NOTHING.** `gmailSearchUrl()` is cut — not written, not stubbed. **Two explicit copy buttons, address and message.** → shrinks 3.3, and retires the `#search/` redirect risk entirely. |
+
+⛔ **A3 IS ALSO A WARNING ABOUT HOW THESE DOCUMENTS DRIFT.** It was decided on
+2026-09-03 and lived in the **scope** and in **this run sheet** for a full day
+while the **phase plan** still described the cut mechanism as live — Q4 defined
+the function, 3.3's tasks built it, its Done-when checked it, and 3.5 owed a
+`BUILD_NOTES.md` entry about it. **A session reading only the plan would have
+built a cut function and verified it.** Found at the 3.2 close. **The plan is not
+automatically the newest document.**
 
 For each session, four things:
 
@@ -151,8 +185,18 @@ EXECUTE
   PHASE 3 STANDING RULES — these are contract Q8 and they are not negotiable:
 - VANTAGE NEVER SENDS. No email is sent, no draft is created via any API, and no
   LinkedIn action is automated. Vantage opens a page; I do the rest.
-- NO NEW TOP-LEVEL STORE. The two settings go on state.taskSettings, which
+- NO NEW TOP-LEVEL STORE. The setting goes on state.taskSettings, which
   wipeAllData() already clears. No state.outreachSettings, no new CSV file.
+- READ THE THREE AMENDMENTS BEFORE TRUSTING A FROZEN CONTRACT. A1, A2 and A3 are
+  in the phase plan after Q8. Q1-Q7 are all amended by at least one of them, and
+  a contract paragraph that contradicts an amendment is the stale one.
+- VANTAGE EMITS NO BCC (A1). No &bcc= term, no emailBcc key, no Bcc line on
+  screen. The Workspace rule already journals the work account.
+- EMAIL thread OPENS NOTHING (A3). No gmailSearchUrl(), not even stubbed. Two
+  explicit copy buttons, address then message, and they are a SEQUENCE - there
+  is one clipboard and the second overwrites the first.
+- LINKEDIN NEVER RECEIVES MARKUP OR HTML (A2). The converter always runs; it
+  flattens for LinkedIn and emits HTML only for email.
 - window.open IS CALLED SYNCHRONOUSLY INSIDE THE CLICK HANDLER. No await before
   it, ever. Clipboard writes, saveState() and re-renders all happen after.
 - NO ROUTING. A recipient address must never enter location.hash, a URL bar or
@@ -197,14 +241,22 @@ For every session after the first, change **only** the first line.
 
 | | Session | | Size | My time |
 | :---: | :---: | --- | :---: | :---: |
-| ☐ | **3.1** | Task outreach fields, settings, and their backup coverage ⚠️ ZIP first | M | ~8 min |
-| ☐ | **3.2** | The outreach block — manual entry, auto-fill, counters | M | ~8 min |
-| ☐ | **3.3** | Email launch — the `compose` URL, two `thread` copy buttons, and every guard **(SMALLER after 2026-09-03: no `thread` URL builder, no Bcc workaround)** | M | ~8 min |
+| ✅ | **3.1** | Task outreach fields, settings, and their backup coverage | M | ran ~8 min |
+| ☐ | **3.1b** | **Remove the Bcc (amendment A1)** — four deletions + a cache bump. ⛔ **MUST land before 3.3** | S | ~2 min |
+| ✅ | **3.2** | The outreach block — manual entry, auto-fill, counters | M | ran ~4 min |
+| ☐ | **3.3** | Email launch — the `compose` URL, the clipboard helper, the converter, two `thread` copy buttons, every guard. **A1 + A2 + A3 all land here** | M | ~10 min |
+| ☐ | **3.3c** | **The authoring surface** — Bold/Italic/Link toolbar, the two disclosures, the live preview. Pure UI over 3.3's converter | M | ~8 min |
 | ☐ | **3.4** | LinkedIn launch — slug, three kinds, explicit copy controls ← **review here** | M | ~10 min |
-| ☐ | **3.5** | **Phase close** — drill, curation, declarations audit ⚠️ ZIP + proved snapshot write (`wroteToFolder: true`, not the chip — a known display defect) first | M | ~20 min |
+| ☐ | **3.5** | **Phase close** — drill, curation, declarations audit, **and an audit of A1/A2/A3 against the code** ⚠️ ZIP + proved snapshot write (`wroteToFolder: true`, not the chip — a known display defect) first | M | ~20 min |
 
-**3.1 → 3.4 is strictly sequential.** Each builds on the previous session's
-surface. None of them removes anything.
+**Strictly sequential, and the order is 3.1b → 3.3 → 3.3c → 3.4 → 3.5.** Each
+builds on the previous session's surface and **none of them removes a working
+one** — 3.1b removes only a setting that nothing reads.
+
+⚠️ **3.3 and 3.3c were one session until 2026-09-04.** They were split so the
+half that can fail invisibly — popup blocker, clipboard permission, URL ceiling,
+Gmail's treatment of an HTML flavour — is separate from the half that can only
+look wrong. **Do not recombine them to save a handoff.**
 
 ## Before these start — ✅ ALL FOUR ANSWERED 2026-09-03
 
@@ -213,9 +265,10 @@ their answers rather than deleted, because two of them CHANGED WHAT GETS BUILT.*
 
 | # | Question | Answer, 2026-09-03 | Effect |
 | :---: | --- | --- | --- |
-| 1 | The work Gmail address, entered in Settings | **Still owed — it is a value Michael types into Settings, not a decision.** | 3.3. Blank disables email buttons with a message. |
+| 1 | The work Gmail address, entered in Settings | ⛔ **STILL OWED as of 2026-09-04.** `workGmailAddress` reads `""` in the live database. A value to type, not a decision. | 3.3. Blank correctly disables every email button with a message naming Settings. |
+| 1b | **The real lead-magnet URL** — the Tech RFP one | ⛔ **NEW, owed for 3.3.** | A2's link check verified against `example.com` proves the mechanism and not the thing actually sent. |
 | 2 | LinkedIn free or Premium? | **Premium, with Sales Navigator.** | ✅ `connect` is **BUILT**, not cut. The "may be cut mid-session" risk is retired. |
-| 3 | Confirm the seeded Bcc default | **`michaelh@youravdept.com`** — local part confirmed. ⚠️ Three typings produced three spellings, so **3.1's Done-when renders it on screen for one eyeball check** instead of asking a fourth time. | 3.1 |
+| 3 | ~~Confirm the seeded Bcc default~~ | ⛔ **MOOT — amendment A1 retired the Bcc entirely, hours after 3.1 seeded it.** The value was confirmed correct on screen and then deleted. **Do not re-open the spelling question; there is no Bcc.** | 3.1b removes it |
 | 4 | Google Workspace with admin access? | **Yes, and the outbound compliance rule is SET.** | ⚠️ **SCOPE CUT: 3.3 drops §7.6's Bcc workaround entirely** — no rendered Bcc line, no separate copy control, no "remember Bcc" toast. The `compose` Bcc stays. |
 
 ### ⚠️ AND FOUR MORE DECISIONS LANDED THE SAME DAY — 3.3 GOT SMALLER, NOT BIGGER
@@ -257,6 +310,38 @@ Each of these **passes a spot-check while still broken.**
 - **3.2/Q6 — validating the template is not validating the value.** A
   290-character connection note overflows once `[Company]` resolves to
   "Northwestern Mutual Financial Network." Both moments, or neither is real.
+
+### Added 2026-09-04, from Session 3.2 — every one of these cost real time
+
+- **⚠️⚠️ THE APP RUNS PERFECTLY WITH THE SERVER DOWN, AND IT COST A FULL
+  STOP-AND-ASK.** `sw.js` is cache-first, so with `npx serve` stopped the app
+  still booted, rendered all six views, read 651 prospects and showed a clean
+  five-line console — **entirely out of the previous version's cache.** Every
+  symptom pointed at a failed `CACHE_NAME` bump instead. **The tell is that
+  `sw.js` is the one file NOT in `ASSETS`**, so it alone must come off the
+  network. One call settles it: fetch a cached asset, an unreal path, and
+  `/sw.js`. Server up gives `200 / 404 / 200`; server down gives
+  `200 / THREW / THREW`. ⛔ **A cached asset answering 200 is NOT evidence the
+  server is up — it is what makes this invisible.** In `BUILD_NOTES.md` now.
+- **⛔ `state.activeView` IS PERSISTED, SO ITS STRING LENGTH MOVES THE DATABASE
+  BYTE COUNT.** End a session on `data-management` having started on
+  `dashboard` and the rollback reports **6 bytes** of residue — `"data-management"`
+  is 15 characters against `"dashboard"`'s 9. It reads exactly like leaked data.
+  **`switchView()` back to the opening view before any byte-exact claim.**
+- **DO NOT COUNT A PANEL'S NODES INSIDE A `switchView()` SWEEP LOOP** — it reads
+  a half-rendered panel. `#view-data-management` returned 54 against a baseline
+  of 68 in the loop, and **68 when measured on its own.** Looks like a
+  regression in a view the session never touched.
+- **⛔ `computer.zoom`'s region is NOT the click coordinate space** — the two
+  differ by exactly `devicePixelRatio`, because the returned image is
+  letterboxed. Clicks want `css × (imgW ÷ innerWidth)`; zoom wants that **times
+  `devicePixelRatio`.** Cost two dead calls.
+- **⛔ TEST AGAINST REAL RECORDS, WRITE UP PLACEHOLDERS. THE REPO IS PUBLIC.**
+  3.2's fixtures used one of the 651 real contacts — correct — and the first
+  draft of the handoff then quoted her **name, work email, employer and LinkedIn
+  URL** as evidence. Caught before the commit. **A verification proves a string
+  round-tripped, not who it named.** This bites hardest from here on, because the
+  outreach fields hold addresses and profile URLs by design.
 
 ### Added 2026-09-03, from the decisions above
 

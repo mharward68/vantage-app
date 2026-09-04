@@ -85,16 +85,23 @@ Every one is reversible.
 
 ## Frozen contracts — written literally; later sessions treat as read-only
 
-> ## ⛔ FIVE OF THESE HAVE BEEN AMENDED. READ § Frozen-contract amendments BELOW BEFORE BUILDING Q1, Q3, Q4, Q5 OR Q6.
+> ## ⛔ SIX OF THE EIGHT HAVE BEEN AMENDED. READ § Frozen-contract amendments BELOW BEFORE BUILDING Q1, Q2, Q3, Q4, Q5, Q6 OR Q7.
 >
-> **A1 (2026-09-03) — Q3, Q4 and Q5 still say Vantage emits a Bcc. It does not.**
-> **A2 (2026-09-04) — Q1, Q4, Q5 and Q6 still describe a plain-text-only clipboard. It carries HTML, and email bodies may hold links.**
+> **A1 (2026-09-03) — Q3, Q4, Q5 still say Vantage emits a Bcc. It does not.**
+> **A2 (2026-09-04) — Q1, Q4, Q5, Q6, Q7 still describe a plain-text clipboard and one Body box. The clipboard carries HTML, bodies may hold links, and the Body box becomes two disclosures.**
+> **A3 (2026-09-03, recorded 2026-09-04) — Q2, Q4, Q5 still say `thread` opens a Gmail search. It opens NOTHING; the builder is cut.**
 >
 > The contracts below are left as originally written — that is this project's
 > convention, and the amendment record is the mechanism — but **a session that
-> builds Q4's `&bcc=` term, or writes Q5's clipboard helper as
-> `writeText`, because it read this section and not the amendments has shipped
-> the wrong thing.** The amendments section is immediately after Q8.
+> builds Q4's `&bcc=` term, or `gmailSearchUrl()`, or writes Q5's clipboard
+> helper as `writeText`, because it read this section and not the amendments has
+> shipped the wrong thing.** The amendments section is immediately after Q8.
+>
+> ⚠️ **A3 IS THE WARNING ABOUT THIS SECTION ITSELF.** It was decided on
+> 2026-09-03 and lived in the scope and the run sheet for a full day while this
+> plan still described the cut mechanism as live. **The plan is not automatically
+> the newest document — check the amendments, the scope and the run sheet before
+> trusting a contract paragraph.**
 
 ### Q1 — The task's five outreach fields
 
@@ -284,6 +291,24 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 - ⚠️ **UNLIKE A1, THIS COSTS NO REPAIR PASS.** Session 3.2 shipped the body field and **no clipboard code at all**, so the whole of this lands inside 3.3, which writes the helper anyway.
 - **What would reverse it:** Gmail refusing an HTML flavour written from this origin. **Live, not settled** — `BUILD_NOTES.md` records that clipboard behaviour differs between `localhost` and a hosted origin, which matters again at Phase 4. **If it fails, the third fallback is not a rework — the link still works, only the hiding is lost.**
 
+### A3 — 2026-09-03 · **Q2, Q4, Q5: email `thread` builds NO URL and opens NOTHING.** Authorised by Michael on 2026-09-03. ⚠️ **Recorded here 2026-09-04 — this is a TRANSCRIPTION, not a new decision.**
+
+⛔ **THIS AMENDMENT EXISTS BECAUSE THE PLAN WAS THE ONLY DOCUMENT THAT MISSED IT.** `ai/spec/sequence-outreach-launch-scope.md` §7.3 and §16 carry the decision with Michael's own words, and `ai/phases/phase-3-RUNSHEET.md` carries it too — **both dated 2026-09-03, and both since before Session 3.1 ran.** The plan below still defines `gmailSearchUrl()` in Q4, still lists it in 3.3's tasks and Done-when, and still owes a `BUILD_NOTES.md` entry about it at 3.5. **A session reading only the plan would build a cut function, verify it, and record a finding about a mechanism that is not in the product.** Found and recorded at the close of 3.2.
+
+**His words, from the scope:** *"…in my gmail so, replace."* A `thread` task is a follow-up inside a conversation that already exists in his inbox — he finds it himself, in Gmail, where he is already looking.
+
+| Contract | As frozen | **As amended** |
+| --- | --- | --- |
+| **Q2** | `thread` → "Opens Gmail search for the contact" | **`thread` opens NOTHING.** No launch button, no URL, no `window.open`. |
+| **Q4** | `gmailSearchUrl(task)` returning `gmailBase() + #search/…` | **The function is CUT.** Not written, not stubbed. `gmailBase()` and `gmailComposeUrl()` are unaffected. |
+| **Q5** | `thread` copies the body on open and toasts | **TWO explicit copy buttons — address and message — and nothing opens.** Both values (`msgTo`, `msgBody`) already exist on the task, so this needs no new field and no builder. **Two buttons, not three.** |
+
+**Consequences a later session must not re-derive:**
+
+- ⛔ **THE `#search/` ACCOUNT-REDIRECT RISK IS RETIRED, NOT UNRESOLVED.** 3.3's risk paragraph and 3.5's owed `BUILD_NOTES.md` entry about whether a fragment survives `/mail/u/<address>/` → `/mail/u/N/` are **both moot** — nothing builds the fragment. Do not go and test it.
+- ⚠️ **AND THE TWO COPY BUTTONS ARE A SEQUENCE, NOT A PAIR** — there is one clipboard, so the second copy overwrites the first. `Copy address` → paste → find the thread → `Copy message` → paste. **Do not lay them out as two equivalent options side by side**; that shape invites clicking both, and losing the address is silent and reads as the first button being broken. (Already in the run sheet's traps; repeated here because this is the session that builds them.)
+- **`compose` is untouched by A3** and still opens Gmail prefilled — as amended by A1 (no Bcc) and A2 (To and Subject only when the body carries a link).
+
 ---
 
 ## Sessions
@@ -367,12 +392,12 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 - **Compartment:** UI, with LOGIC · **Depends on:** 3.2
 - **Two compartments justified:** the builders exist only to serve these two buttons and the buttons cannot be verified without them. Splitting ships either dead functions or dead controls.
 - **Goal:** Q4's email builders and Q5's handler exist. **Launch Email** opens Gmail composed on the work account (**no Bcc — A1**); **Open Thread** opens Gmail searching that contact and copies the body. **A body carrying a link pastes into Gmail as a real clickable link — A2.** Every guard in Q5 and Q6 fires.
-- ⚠️ **Size: M–L** · My time: ~15 min · **Confidence: Medium** — **re-sized 2026-09-04 when amendment A2 landed**, and deliberately not left at M. A2 adds a converter, a third clipboard fallback, a second trigger on the degrade path, and a verification that **cannot be done from the console** — it needs a real paste into a real Gmail window and a screenshot. A1 takes a little back (one Settings key, no `&bcc=`), but nothing like as much. **This was already the runner-up to overrun before A2; it is now the favourite.**
+- **Size: M** · My time: ~10 min · **Confidence: Medium** — **re-sized twice on 2026-09-04.** Amendment A2 pushed it to M–L (a converter, a third clipboard fallback, a second degrade trigger, and a verification that cannot be done from the console); **the authoring surface was then split out as Session 3.3c**, which brings it back to M. **Confidence stays Medium, not High** — this session still owns every mechanism in the phase that fails invisibly, and its Gmail paste check is the one thing here no console can judge.
 - **Files:** modified `app.js`, `index.html`, `style.css`, `sw.js`
 - **Tasks:**
-  1. `gmailBase()`, `gmailComposeUrl()`, `gmailSearchUrl()` per Q4, with `tf=cm`. **No `&bcc=` term — A1.**
+  1. `gmailBase()` and `gmailComposeUrl()` per Q4, with `tf=cm`. **No `&bcc=` term — A1. NO `gmailSearchUrl()` — A3: it is cut, and `thread` opens nothing.**
   2. The one clipboard helper and its **three** fallbacks, per Q5 **as amended by A2**: `navigator.clipboard.write()` with a `ClipboardItem` carrying `text/html` and `text/plain`, then the hidden textarea + `execCommand`, then select-the-field, then **plain text with the URL left bare.**
-  3. **A2: the markdown→HTML converter, and the has-formatting test that drives it.** ⛔ **THREE FORMS, AND THE LIST IS CLOSED:** `[text](url)`, `**bold**`, `*italic*`. **Font family and size are excluded by decision, not by omission** — see `DECISIONS.md`. Headings, lists, blockquotes, code spans, tables and images are OUT. This is a converter, not a markdown renderer, and it must not grow into one.
+  3. **A2: the converter, and the has-formatting test that drives it.** ⛔ **THREE FORMS, AND THE LIST IS CLOSED:** `[text](url)`, `**bold**`, `*italic*`. **Font family and size are excluded by decision, not by omission** — see `DECISIONS.md`. Headings, lists, blockquotes, code spans, tables and images are OUT. This is a converter, not a markdown renderer, and it must not grow into one. **Two outputs: HTML for the email kinds, flattened text for the LinkedIn ones.** ⚠️ **No toolbar and no preview in this session** — they are 3.3c, and this session's body control is 3.2's plain textarea with the markdown typed by hand. Ugly for one session, and it keeps the risky half separate from the cosmetic one.
   4. Both buttons, with `window.open` called **synchronously first** — Q5. Everything else after, the clipboard write included.
   5. Guards: blank `workGmailAddress` (disabled + Settings message), blank `msgTo` (disabled), over-length URL (compose without body + copy + toast) — **and A2's second trigger for that same degrade path: a body containing a link.**
   6. Settings UI for `workGmailAddress`. **One key, not two — A1.**
@@ -382,7 +407,7 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
   - Console: paste `gmailComposeUrl(task)` in full for a task whose body holds two blank lines, an ampersand, a `+` and a `"`. Then paste each parameter run back through `decodeURIComponent`, showing To, Bcc, Subject and Body **character-identical to `state`**, and `%0A` present where the newlines were.
   - Console: paste the URL showing `tf=cm` present and `view=cm` / `fs=` **absent**.
   - Console: clear `emailBcc`, paste the URL showing **no `&bcc=`**; restore it and paste it back.
-  - Console: paste `gmailSearchUrl(task)`, and the decoded fragment reading `to:<addr> OR from:<addr>`.
+  - **A3 — `thread` opens NOTHING.** Console: paste that `gmailSearchUrl` is `undefined`, that a `thread` task renders **no launch button**, and that its **two copy buttons** are present. Click each and paste the clipboard after it, showing the second **overwrote** the first — that is the behaviour, and the layout has to make the sequence obvious.
   - Console: set `workGmailAddress = ""` → paste both buttons' `disabled` and their title text. Set `msgTo = ""` → same.
   - Console: set a body long enough to push the URL past 2000 → paste the URL showing **no `body=`**, paste the clipboard content equal to `msgBody`, and paste the toast text.
   - **One real open per kind, by screenshot:** Gmail compose showing To, Bcc, Subject and the body's paragraph breaks intact; Gmail search showing the contact's thread list.
@@ -392,9 +417,35 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
   - **A2 — LinkedIn must NOT convert.** Console: the same body on `inmail`, `message` and `connect`, showing the clipboard carries **plain text only** and the markdown intact. This is the check that stops a later tidy-up unifying the two paths.
   - Clean console; `check_ids.py` at baseline.
 - **Needs my eyes:** the composed email in Gmail — the body's line breaks, **and the linked phrase: blue, underlined, URL hidden, and it goes where it should when clicked.** No console check can judge either.
-- **Risk and fallback:** `#search/` must survive Gmail's account redirect (`/mail/u/<address>/` → `/mail/u/N/`). Fragments normally survive, but this is unverified. If it does not, fall back to storing the resolved numeric index in Settings alongside the address — and record the finding in `BUILD_NOTES.md` either way, because the next person will assume it works.
+- **Risk and fallback:** ~~`#search/` must survive Gmail's account redirect.~~ ⛔ **RETIRED BY A3 — nothing builds the fragment, so there is nothing to test. Do not go looking.** The account redirect still matters for `gmailComposeUrl()`, which uses the same `gmailBase()`, but a path is not a fragment and paths are not the thing in doubt.
 
   **A2's risk is different in kind and is the one to watch: it fails LOOKING LIKE IT WORKED.** A rich clipboard write that silently falls back to plain text produces a copy button that flashes success, a paste that lands text, and a link that is merely visible rather than hidden — which reads as a styling quibble, not a failure. **The success state must distinguish the two** ("Body copied with link" vs "Body copied — plain text"), because that toast is the only place the difference is visible before the email is sent. `navigator.clipboard.write()` needs a secure context and live user activation; `localhost` qualifies today and **Phase 4's hosted origin is a separate question, already flagged in `BUILD_NOTES.md`.**
+
+### Session 3.3c — The authoring surface: toolbar, two disclosures, live preview
+
+- **Compartment:** UI · **Depends on:** 3.3 · **Added 2026-09-04**, splitting Session 3.3 at Michael's direction when amendment A2 pushed it to L.
+- **Split here and not elsewhere, deliberately.** 3.3 carries everything that can fail invisibly — the popup blocker, the clipboard permission, the URL ceiling, Gmail's treatment of an HTML flavour — and its verification needs a real paste into a real Gmail window. **This session is pure UI over a converter that is already built and already proved.** Nothing in it can produce a wrong email; the worst case is a box that looks wrong. Those two risk profiles do not belong in one session, and the phase plan's own history is the argument: 1.8 was sized S, ran L, and ate 45 of Phase 1's 88 minutes.
+- **Goal:** contract Q7 as amended by A2. The single Body control becomes **"Edit Task"** (toolbar + textarea) and **"Preview task in HTML"** (read-only), each expandable, with the new/existing defaults.
+- **Size: M** · My time: ~8 min · **Confidence: High**
+- **Files:** modified `app.js`, `index.html`, `style.css`, `sw.js`
+- **Tasks:**
+  1. The two disclosures, replacing 3.2's single `#task-msg-body-group`. Labels **"Edit Task"** and **"Preview task in HTML"**, styled as buttons, not chevrons.
+  2. Defaults on open: **new task → Edit expanded, Preview contracted; existing task → the reverse.** Decided in `openTaskEditor()` from `!!task`, exactly as 3.2 already decides `isNew`.
+  3. ⛔ **The open/closed state is stored NOWHERE** — a class on an element the editor rebuilds, per the `.pd-company-card` precedent (2B.16). **No new store, no settings row, no `wipeAllData()` line. Contract Q8 is untouched and this session adds no persistence at all.**
+  4. Toolbar: **Bold, Italic, Link.** Each operates on the textarea's `selectionStart`/`selectionEnd` and writes the syntax; Link prompts for the URL. **The user never types a `*` or a `[`.**
+  5. The preview, rendered by **3.3's converter** — not a second renderer. Read-only, selectable, repainting on input. **One function feeding both the preview and the clipboard is what makes "what you see is what pastes" structural rather than tested.**
+  6. Bump `CACHE_NAME`.
+- **Inputs needed from me:** none.
+- **Done when:**
+  - Console: paste both disclosures' open/closed state on a **new** task and on an **existing** one, showing the defaults inverted.
+  - Console: confirm the collapsed state is in **no** store — `state`, `localStorage` and the settings CSV all unchanged across a collapse, a reload and a reopen.
+  - Console: select a range in the textarea, click **B**, paste the field's value showing `**…**` wrapped around exactly the selection and the caret left sane. Same for Italic and Link.
+  - Console: paste the preview's `innerHTML` and the clipboard's `text/html` **for the same body**, showing them **identical** — this is the check the one-converter design exists to make possible.
+  - Console: the preview on a LinkedIn kind, showing **flattened text and no markup**.
+  - **Screenshot** both boxes expanded and both contracted, and the preview showing a blue underlined link beside bold and italic.
+  - Reload; `msgBody` unchanged. Clean console; `check_ids.py` at baseline; **the task editor regresses clean** — a `channel: ""` task shows no outreach block at all.
+- **Needs my eyes:** whether the two boxes crowd the editor, and whether the defaults feel right after a few real tasks. **This is the surface I use every day; it is the one to be fussy about.**
+- **Risk and fallback:** low, and contained by construction — the converter is already proved by 3.3, so the only new failure is cosmetic. If the two disclosures crowd the modal, the fallback is a single box with a Preview **toggle** rather than two stacked boxes. Do **not** fall back to a separate modal.
 
 ### Session 3.4 — LinkedIn launch: slug, three kinds, explicit copy controls
 
@@ -431,7 +482,8 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
   1. **Re-prove the export path** — full export → wipe → restore on real data, counts pasted. This phase **did** add five columns and two settings rows, so this is not a formality.
   2. **Re-verify a snapshot restore.** Tier 1 remains the sole protection; re-proved at every close.
   3. **Estimate calibration** — and say whether Phase 3 repeated the 8→11 and 10→17 pattern.
-  4. **Amendments owed:** a `DECISIONS.md` entry for why the Gmail API was declined and what would reverse it; a `BUILD_NOTES.md` entry for `tf=cm` versus the stale `view=cm&fs=1`; another for whether `#search/` survives the account redirect; another for whichever LinkedIn route shipped. Propose; do not apply.
+  4. **Amendments owed:** a `DECISIONS.md` entry for why the Gmail API was declined and what would reverse it; a `BUILD_NOTES.md` entry for `tf=cm` versus the stale `view=cm&fs=1`; ~~another for whether `#search/` survives the account redirect~~ **(dropped — A3 cut the builder)**; another for whichever LinkedIn route shipped; **and one for whether Gmail honoured the `text/html` clipboard flavour, which is A2's live question and the one Phase 4 will re-open on a hosted origin.** Propose; do not apply.
+  6. ⚠️ **AUDIT THE FOUR AMENDMENTS AGAINST THE CODE, and say plainly whether each is true in the product.** A1, A2 and A3 were all authorised mid-phase and **A3 sat unrecorded in this plan for a day while the scope and run sheet carried it** — that is the failure mode this phase actually produced, and a close that does not check for it will not find the next one.
   5. **Phase 4 is Hosting** and its pre-flight already exists at `ai/spec/phase-4-firebase-preflight.md`. Unlike Phase 3, it does **not** need an intake — say so in the handoff.
 - **Inputs needed from me:** the amendment approvals, and one click if the snapshot folder needs re-granting.
 - **Done when:** every check has real pasted output, `BUILD_NOTES.md` has been curated with what was cut reported, `DECLARATIONS.md` is still one page.
@@ -448,9 +500,11 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
                                             in-session, wroteToFolder: true, 1,211,512 bytes.
 3.1b Remove the Bcc           (DATA, S)  — after 3.1, BEFORE 3.3.  Amendment A1.  Added 2026-09-03
 3.2  Outreach block           (UI,   M)  — ✅ SHIPPED 2026-09-04.  CACHE_NAME v128.  One bump.
-3.3  Email launch             (UI, M–L)  — after 3.2 AND after 3.1b.  ⚠️ RE-SIZED 2026-09-04:
-                                            amendment A2 (clickable links) lands here.
-3.4  LinkedIn launch          (UI,   M)  — after 3.3          ← the review point
+3.3  Email launch + converter (UI+L, M)  — after 3.2 AND after 3.1b.  Amendment A2's risky half:
+                                            builders, buttons, guards, clipboard, converter.
+3.3c Authoring surface        (UI,   M)  — after 3.3.  Added 2026-09-04 by splitting 3.3.
+                                            Toolbar, two disclosures, live preview.  Pure UI.
+3.4  LinkedIn launch          (UI,   M)  — after 3.3c         ← the review point
 ──── enrollment compartment ─────────────  NOT PLANNED. Needs a Prompt 1 intake. Takes 3.6+
 ──── outreach producer ──────────────────  NOT PLANNED. Depends on the enrollment entities. Takes 3.6+
 3.5  Close                    (QA,   M)  — LAST. Always last.  ⚠️ ZIP + green snapshot first
@@ -468,8 +522,8 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 
 | | |
 | --- | --- |
-| **Sessions planned** | **5** — and this is **one compartment of two**, not the phase. |
-| **Sessions forecast, this compartment** | **6–7**, applying the +35% contingency from `DECISIONS.md` 2026-08-30. The contingency is what the 3.4 review is expected to produce; it takes 3.6+. |
+| **Sessions planned** | **7** as of 2026-09-04 — the original 5, plus **3.1b** (amendment A1) and **3.3c** (the 3.3 split under amendment A2). Still **one compartment of two**, not the phase. **Two of the two extra sessions came from amendments Michael authorised mid-phase, not from underestimation** — worth separating at the 3.5 calibration, because they are different failures and only one of them is an estimating problem. |
+| **Sessions forecast, this compartment** | **8–9**, applying the +35% contingency from `DECISIONS.md` 2026-08-30 to the revised 7. The contingency is what the 3.4 review is expected to produce; it takes 3.6+. |
 | **Sessions forecast, Phase 3 whole** | **Unknown, and deliberately not guessed.** The enrollment compartment has no scope. The retired scope's own build order listed six work items before any of this existed, so 6–9 is a floor, not an estimate. |
 | **Mix** | 0 L · 5 M · 0 S. No S: every session here touches `app.js` and `sw.js`, and three touch all four files. Sizing any of them S would be the 1.8 mistake. |
 | **My total attention** | **~56 min planned** for this compartment, no session over 10 except the close at 20. Add ~15 min for review-response → **~70 min forecast.** Method unchanged from Phase 1 per the calibration's instruction. |
