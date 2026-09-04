@@ -1,5 +1,20 @@
 # Phase 3 Run Sheet — Sequencing
 
+> ## ⛔ SUPERSEDED FROM STEP 2R ONWARD — 2026-09-04
+>
+> **The rest of Phase 3 is run from `ai/phases/phase-3-sequencing-RUNSHEET.md`.**
+> That sheet covers the review, the enrollment intake, the merged plan, sessions
+> 3.6+ and the `3.5b` close, with the prompts corrected for amendments A1–A4 and
+> for the fact that Session 3.5 already ran as a compartment close.
+>
+> **This file is kept as the historical record of Steps 0A, 1A and 2A** — the
+> intake, the plan and sessions 3.1 → 3.4. Its Step 2R, 0B, 1B, 2B and 3 blocks
+> are stale: **Step 2R's Bcc question asks about a mechanism amendment A1
+> removed**, and Step 3 is written as though the close has not started.
+> **Do not paste a prompt out of this file.** Both sheets are deleted at the
+> phase close.
+
+
 *Vantage — a Prospecting Relationship Manager*
 
 > ## ▶ RUNNING — two sessions in. Updated 2026-09-04, after Session 3.2.
