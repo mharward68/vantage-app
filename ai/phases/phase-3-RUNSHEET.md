@@ -247,7 +247,8 @@ For every session after the first, change **only** the first line.
 | ☐ | **3.3** | Email launch — the `compose` URL, the clipboard helper, the converter, two `thread` copy buttons, every guard. **A1 + A2 + A3 all land here** | M | ~10 min |
 | ☐ | **3.3c** | **The authoring surface** — Bold/Italic/Link toolbar, the two disclosures, the live preview. Pure UI over 3.3's converter | M | ~8 min |
 | ☐ | **3.4** | LinkedIn launch — slug, three kinds, explicit copy controls ← **review here** | M | ~10 min |
-| ☐ | **3.5** | **Phase close** — drill, curation, declarations audit, **and an audit of A1/A2/A3 against the code** ⚠️ ZIP + proved snapshot write (`wroteToFolder: true`, not the chip — a known display defect) first | M | ~20 min |
+| ☑ | **3.5** | **COMPARTMENT close — RAN 2026-09-04 12:16, early, on Michael's instruction.** Drill, snapshot re-verify, A1–A4 audit (all four true), calibration, curation, proposals — **all done.** ⛔ **The phase is NOT closed.** | M | ~4 min actual |
+| ☐ | **3.5b** | **THE REAL PHASE CLOSE — always last, after 3.6+.** Owes: both-compartment calibration; the drill again **only if** enrollment changes the task record shape; delete this run sheet; Phase 4 handoff; `phase-4-firebase-preflight.md` currency check | S/M | ~10 min |
 
 **Strictly sequential, and the order is 3.1b → 3.3 → 3.3c → 3.4 → 3.5.** Each
 builds on the previous session's surface and **none of them removes a working
@@ -544,7 +545,13 @@ filename changed to `ai/phases/phase-3-sequencing.md`.*
 
 # Step 3 — Close the phase
 
-*One final new conversation. This is Session 3.5 and it always runs last.*
+*One final new conversation. This is Session **3.5b** and it always runs last.*
+
+> ⚠️ **Session 3.5 already ran, early, on 2026-09-04, as a COMPARTMENT close.** Steps 1, 2, 3, 5 and 6 below
+> are **done** for the outreach-launch compartment — do not re-run them from scratch. Read
+> `ai/archive/2026-09-04_1216_AIContext.md` first and carry its output forward. **Step 5 (the drill) only
+> needs re-running if the enrollment compartment changed the task record shape.** Step 2's calibration must
+> now cover BOTH compartments, and Steps 4, 7, 8 and 9 are the ones still genuinely owed.
 
 ```
 Close Phase 3.

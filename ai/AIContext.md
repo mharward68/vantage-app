@@ -1,99 +1,111 @@
-# AI Context — PHASE 3 IN FLIGHT, SESSION 3.4 SHIPPED · THE REVIEW POINT IS NOW
+# AI Context — PHASE 3 / OUTREACH-LAUNCH COMPARTMENT CLOSED · THE PHASE IS STILL OPEN
 
-**Updated:** 2026-09-04 11:27 (America/New_York).
+**Updated:** 2026-09-04 12:16 (America/New_York).
 
-**Last run:** Phase 3 / **Session 3.4 — LinkedIn launch: slug, three kinds, explicit copy controls.** Compartment: **UI**. ✅ **COMPLETE, and it produced a finding that CHANGED WHAT SHIPPED.** No amendment, no frozen contract modified.
+**Last run:** Phase 3 / **Session 3.5 — run as a COMPARTMENT close, not a phase close.** Compartment: **QA**. ✅ **COMPLETE.** No code was opened for edit; `app.js`, `index.html`, `style.css` and `sw.js` are byte-identical to what 3.4 shipped.
 
-**State:** `app.js` **18,793** (+229) · `index.html` **3,981** (unchanged) · `style.css` **5,192** (unchanged). `CACHE_NAME` **v132 → v134**, **TWO bumps** against a budget of two — and the second was not a code change, see the `sw.js` trap below. **One-glance version tell:** console `typeof linkedinSlug` is `"function"` on v134 and `"undefined"` on v132; `LINKEDIN_COMPOSE_ROUTE_LIVE` is `false`. `typeof gmailSearchUrl` is `"undefined"` and must stay that way (A3).
+⛔ **READ THIS FIRST: 3.5 RAN EARLY AND OUT OF ORDER, ON MICHAEL'S EXPLICIT INSTRUCTION, AND IT DID NOT CLOSE PHASE 3.** The plan says 3.5 depends on "everything, including the enrollment compartment and any review-response sessions." Neither has happened: the enrollment half still has no scope and the 3.4 review has not run. He was asked at boot and chose a compartment close: **run every check, write the handoff as an Outreach-Launch compartment close, leave the phase open, leave `ai/phases/phase-3-RUNSHEET.md` in place.** ⛔ **THE REAL PHASE CLOSE IS `3.5b` AND IT STILL RUNS LAST** — what it still owes is listed at the bottom. The plan and the run sheet were both edited this session to say so, per BUILD_NOTES' *"a session that ships out of numeric order must update the plan, not only the handoff."*
 
-**Only two files changed. `index.html` and `style.css` were NOT touched and did not need to be** — the controls are built with `createElement` into 3.3's existing empty `#task-outreach-actions`, and they reuse `.task-outreach-btn` / `.task-outreach-hint` / `.is-sequence` / `.is-degrade`, which 3.3 already sized for a stacked column. The phase plan lists all four files for this session; two of them had nothing to add. **`check_ids.py` is untouched by construction: this session added ZERO listeners to `setupEventListeners()`.**
+**State:** `app.js` **18,793** · `index.html` **3,981** · `style.css` **5,192** — all unchanged. `CACHE_NAME` **v134, zero bumps**, correctly: a QA session that changes no code bumps nothing. **One-glance version tell unchanged:** `typeof linkedinSlug` is `"function"`, `typeof gmailSearchUrl` is `"undefined"`, `LINKEDIN_COMPOSE_ROUTE_LIVE` is `false`. **`app.js` md5 `408be778…` and `sw.js` md5 `a409ffbd…` — byte-identical to the pair 3.4 recorded**, which is the proof that this session changed no code rather than a claim that it didn't.
 
-**Git: HEAD is `d7d103fb`, parent `4a56a927` — BOTH READ FROM `.git/logs/HEAD` THIS SESSION.** ⛔ **`app.js` and `sw.js` ARE UNCOMMITTED.** Michael runs git.
+⛔ **`app.js` AND `sw.js` ARE COMMITTED AND PUSHED — 3.4's HANDOFF WAS STALE ON THIS AND IT IS CORRECTED HERE.** `.git/refs/heads/main` and `.git/refs/remotes/origin/main` both read **`0b4f4531a974178a18954a128856505cb00819ec`** (**IN SYNC: true**), and `.git/COMMIT_EDITMSG` is 3.4's own message, written **11:53** — after `app.js` (11:17) and `sw.js` (11:19) were last modified. Michael committed it himself between 3.4 and this session. **HEAD is `0b4f4531`, not `d7d103fb`.**
 
-**Database: 1,562,394 bytes at boot, 1,562,438 at the end — the +44 is ONE DELIBERATE WRITE MICHAEL ASKED FOR and nothing else.** He added **Trisha Harward** mid-session (651 → **652 prospects**) and then asked me to put **his own profile URL on her `linkedin` field** as a test target; it was empty before, and 44 bytes is exactly that string. ⚠️ **REMOVE IT WHEN YOU ARE DONE TESTING — Trisha's record now points at Michael's LinkedIn.** Otherwise: **0 tasks** · `taskSettings` still 2 keys · 38 state keys · only `vantage_prm_database` and `vantage_sidebar_pinned` in `localStorage` · `state.activeView` ended on `dashboard`, where it started. **No task was created or saved at any point** — every check drove the live editor and closed it with Cancel. A TaskHub resize/reorder was rolled back to byte-exact **1,562,394** before that write.
+**Database: 1,562,438 bytes at boot → 1,562,422 at the end, and every one of the 16 bytes is accounted for below.** 652 prospects · 1,091 companies · 0 tasks · `taskSettings` 2 keys · 38 state keys · only `vantage_prm_database` and `vantage_sidebar_pinned` in `localStorage` · ended on `dashboard`, where it started.
 
 ---
 
-## ⛔ THE FINDING THAT CHANGED THE BUILD — READ THIS BEFORE TOUCHING LINKEDIN
+## The four amendments, audited against the code — ALL FOUR ARE TRUE IN THE PRODUCT
 
-**`?recipient=<public-slug>` WORKS, AND THAT IS WHY IT COULD NOT SHIP.** Two real opens, signed in on the work account:
+This was task 6 and it is the one the plan said would find the next A3-shaped failure. **It found none: the code matches every amendment, and no contract paragraph the code follows is the stale one.**
 
-| URL | Result |
-| --- | --- |
-| `?recipient=cherieneal` — a **1st-degree connection** | ✅ "New message", recipient **chip populated**, compose box focused |
-| `?recipient=brooke-naylor-609680151` — **3rd degree, not a connection** | ⛔ the bare messaging **inbox**, empty compose pane. No chip, no error, no clue |
+| | Verdict | Evidence |
+| --- | --- | --- |
+| **A1** — no Bcc | ✅ **TRUE** | `grep -i bcc app.js` returns **17 hits and 16 are comments.** The one live line is `if ("emailBcc" in state.taskSettings) delete state.taskSettings.emailBcc;` — A1's own cleanup migration. `gmailComposeUrl()` output contains no `bcc` substring. **Zero Bcc text nodes in `#modal-task` on screen**, confirmed by count and by screenshot. `OUTREACH_BCC_DEFAULT` greps to comments only. |
+| **A2** — HTML clipboard, LinkedIn never gets markup | ✅ **TRUE** | `outreachClipboardPayload()` **always** flattens, and returns `html: null` for `channel === "linkedin"`; `outreachCopy()` skips `clipboard.write` entirely when `html` is null, so **LinkedIn is offered no `text/html` flavour on any path.** Live on a body with a link, bold and italic: email payload carries `<a href=…>Tech RFP</a>` and `<strong>`; LinkedIn payload flattens to `Tech RFP (https://…)` with no `[`, no `**`. `outreachCountedLength` read **128 flattened against 135 stored.** Four-rung fallback ladder present and in order. |
+| **A3** — `thread` opens nothing | ✅ **TRUE** | `typeof gmailSearchUrl === "undefined"` in the live app; the only two hits in `app.js` are the comments recording the cut. The `thread` branch of `renderTaskOutreachActions()` builds **no URL and calls no `window.open`** — one hint plus `1 · Copy address` and `2 · Copy message`, numbered and stacked, never a side-by-side pair. |
+| **A4** — `?authuser=`, not the path | ✅ **TRUE** | `gmailBase()` returns `https://mail.google.com/mail/`. Decoded back from a built URL: host `mail.google.com`, path `/mail/`, **no `/mail/u/` segment anywhere in the string**, param order `authuser, to, su, body, tf`, `authuser` **round-trips character-identical to the stored 23-character work address**, `tf=cm` present, `view=cm`/`fs=1` absent. ⚠️ **`grep "/mail/u/"` DOES return one hit — `EMAIL_PROVIDER_DASHBOARD_URL_SEED["Gmail"]` at `app.js` 151.** That is CampaignHub's provider-dashboard link seed, pre-dates Phase 3 and is not a builder. **Do not "fix" it.** |
 
-**The route is conditional on connection degree and Vantage cannot know the degree** — no field, no API, and no cross-origin way to read the result. A destination that lands right for some contacts and drops the rest onto an unrelated inbox, with the message already on the clipboard, is worse than one that always lands somewhere right. **DIRECTIVES §2 rung 1 (Stability) over rung 2.** And **the failing half is the common one**: outreach targets people he is not yet connected to, and `inmail` is by definition to a non-connection.
+## Verification — all of it ran, on the production database
 
-⛔ **TESTING THIS AGAINST A CONNECTION ONLY IS THE HALF-FIX THAT PASSES AND SHIPS BROKEN.** One test would have said "verified".
+**Backup gate, both halves, before anything destructive (DIRECTIVES §4 destructive-data-change):**
+```
+ZIP       vantage_data_backup_9-4-26_1204.zip   wroteToFolder: true   blob 1,211,365 bytes
+          on disk in ..\backups-production\ :   1,211,365 bytes      ← independent confirm
+SNAPSHOT  writeSnapshotNow() -> true            vantage_snapshot_2026-09-04_120629.json
+          on disk in ..\snapshots\ :            1,566,243 bytes
+```
 
-**What shipped: `LINKEDIN_COMPOSE_ROUTE_LIVE = false`, so all three kinds open the PROFILE.** Right person every time, Message and Connect one click away — confirmed by screenshot on a 3rd-degree contact. **Both builders stay shipped**, so flipping the flag back is one line the day LinkedIn resolves `?recipient=` for non-connections. This is the plan's own accepted outcome, not a strike.
+**Export → wipe → restore, on real data.** Export carried **18 columns** ending `…,Channel,Message Kind,Message To,Message Subject,Message Body`, **9 CSVs and no new file**, an `Outreach Work Gmail` row and **no `Outreach Bcc` row**. **The wipe was genuine** — prospects/companies/media/campaigns/audiences/tasks all `0`, `columnLayouts` `{}`, `taskSettings` back to `{"dateMode":"business"}` with `workGmailAddress` **cleared**, database down to **3,168 bytes** — so every assertion after it could actually fail. Restore returned **652 / 1,091 / 33 / 3 / 4 / 1 task** and `workGmailAddress` back at 23 characters.
 
-## What was done — two files
+⛔ **THE FIVE COLUMNS SURVIVED CHARACTER-IDENTICAL, FIRST DIFFERENCE `-1` ON BOTH FREE-TEXT FIELDS.** The drill task carried a `msgSubject` with a double quote (33 chars, `subjDiffAt: -1`) and a `msgBody` of 162 characters holding **4 newlines, 2 double quotes, commas, a markdown link and 2 trailing spaces** (`bodyDiffAt: -1`, `bodyTrailingWs: 2`, link intact). `channel`, `msgKind` and `msgTo` all exact; `notes`, `source`, `sourceRef` and the prospect link untouched.
 
-| # | Edit |
-| --- | --- |
-| 1 | `app.js § ✅ TASK EDITOR — OUTREACH LAUNCH` gained a **Session 3.4 sub-section between `gmailComposePlan()` and the clipboard helper**: `LINKEDIN_SLUG_RE`, `linkedinSlug`, `linkedinComposeUrl`, `linkedinProfileUrl`, `LINKEDIN_COMPOSE_ROUTE_LIVE`, `linkedinDestination`. **No seventh sub-block** — `renderTaskOutreachActions()` is the one consumer of both halves and splitting them puts the builders on the far side of their caller. |
-| 2 | Two handlers beside the existing ones: `handleTaskCopySubject` and `handleTaskLaunchLinkedIn(kind)`. |
-| 3 | `renderTaskOutreachActions()`'s LinkedIn placeholder replaced by the real branch: open button, two disabled-with-reason guards, three hints, and the numbered copies. |
-| 4 | `CACHE_NAME` v132 → v133 → v134. |
+⛔ **AND THE DECISIVE CHECK IS THE ONE THE PLAN DIDN'T ASK FOR: ALL NINE EXPORTED CSVs ARE md5-IDENTICAL BEFORE AND AFTER THE WHOLE DRILL.** A pre-drill export and a post-drill export were both read off disk and compared file by file — `prm_companies.csv b2283efb9d62`, `prm_prospects.csv 0f1c5f2f9756`, all nine equal, both ZIPs 1,211,365 bytes. **That is what proves no user data moved**, and it is stronger than a count.
 
-**`linkedinSlug()` accepts EITHER a prospect object or a URL string** — Q4's literal call form and the string form the controls use. **The controls resolve from the `To` field, not the record**: Q7's auto-fill already puts `prospect.linkedin` there, the field is editable by contract, and **an orphan task has no prospect at all**, so reading the record leaves a typed URL above a dead button.
+**Snapshot restore re-verified (Tier 1, sole protection).** Wrote a fresh snapshot of the clean state, **broke state in memory on purpose** (prospects 652 → 3, companies and media → 0), then `restoreFromSnapshotFile()` → **652 / 1,091 / 33 / 3 / 4** back, `workGmailAddress` intact, and the database **byte-identical at 1,562,422**. It also restored Trisha's *cleared* LinkedIn field, which proves it read the new snapshot and not a stale one.
 
-## Verification — all of it ran
+**Regressions clean.** All six views render — five at 997px, MediaHub 977px (its known scrollbar case). `#view-data-management` invariant `total − options` = **53** (69 − 16), exact against 3.3c and 3.4, measured on a fresh boot before the other five views. **`check_ids.py` at baseline `{export-backup-btn, restore-backup-input}`. `node --check app.js` parses.** Both run against bytes md5-matched to what the browser ran. **Console: zero errors and zero exceptions across the entire session, wipe and both restores included**, and the healthy boot line `[Database] Loaded from localStorage` every time — never the `Seeded successfully` five-alarm line.
 
-- **`linkedinSlug()` against the six Done-when inputs:** plain `/in/slug` → `trisha-harward`, trailing slash → same, `?utm_source=` → same, `#fragment` → same, `/company/` URL → `""`, `""` → `""`. **Four real slugs, two empty**, exactly as specified.
-- **All three URLs, decomposed and decoded back.** Builders: `messaging/compose/` + `recipient=brooke-naylor-609680151` (77 chars, decodes character-identical) and `/in/brooke-naylor-609680151/` (52). **Shipped destinations after the flag: all three are the 52-char profile, and none carries a query string at all.**
-- **Guards, with the reason on the button AND on screen.** Empty To → *"Add a LinkedIn profile URL in To before this can open the right person."* Company URL → *"Not a profile URL. Vantage needs a linkedin.com/in/… address…"* Auto-fill from the record into an empty To: confirmed; default kind is `inmail`, never `connect`.
-- ⛔ **THE OPEN BUTTON TOUCHES THE CLIPBOARD ON NO PATH — `0` calls before and `0` after (Q5).** Proved with a **write-spy**, never by reading the clipboard back. `window.open` was called once, target `vantage-linkedin`, length 77.
-- **Copy Subject passed the bare 33-char subject and never called `clipboard.write`** — no `text/html` flavour, correctly. **Copy Message passed the FLATTENED 144 characters** against 151 stored: `**short guide**` → `short guide`, `[Tech RFP](…)` → `Tech RFP (https://…)`, `*ten minutes*` → `ten minutes`, **and `clipboard.write` was never called at all — LinkedIn is offered no HTML flavour on any path (A2).**
-- **Counters at every ceiling, at limit and one over:** `connect` 300/300 clean → 301/300 red; `inmail` 1900 → 1901 red; `message` 3000 → 3001 red; `inmail` **subject** 200 → 201 red. **And A2's rule proved directly: a 304-character stored string that flattens to 300 reads `300/300` and is NOT red.** Markup that never arrives does not push a legal note over.
-- **Live, by screenshot:** the composer for a connection, the empty inbox for a non-connection, and the shipped profile destination landing on the right person with a Message button.
-- **✅ THE OWED GMAIL CONFIRMATION FROM 3.3 IS DISCHARGED.** `workGmailAddress` is now set. A shipped-builder URL (verified character-identical to a hand-reconstruction) opened **`Compose Mail - michaelh@youravdept.com - Your AV Department Mail`**, with recipient, subject and the body's blank line intact. ⛔ **AND IT REDIRECTED TO `/mail/u/1/`, NOT `/u/0/`** — live proof that A4's reasoning is not theoretical: the work account is at index **1** on this machine, so a `/u/0/` shortcut would have composed from the personal account.
-- **Regressions clean.** `channel: ""` → block hidden, `display: none`, 0 visible buttons, 0 toolbar buttons, 0 preview boxes, Subject node detached. Email `compose` still one *Open in Gmail*; email `thread` still *1 · Copy address* / *2 · Copy message* (A3). TaskHub resize **and** reorder applied, **survived a reload**, and were rolled back. All six views render — five at 997px, MediaHub 977px (its known scrollbar case). `#view-data-management` invariant `total − options` = **53**, exact against 3.3c. **Clean five-line boot console, zero errors, zero warnings.**
-- ⛔ **AND THE WHOLE PATH RAN END TO END ON A REAL RECORD UNDER A REAL MOUSE CLICK.** Trisha Harward, with Michael's profile URL on her record: channel → LinkedIn **auto-filled `To` from `prospect.linkedin`**, the slug resolved from `To`, and **a genuine click on *Open profile on LinkedIn* opened a new tab titled "Michael Harward | LinkedIn"** — right person, right URL, `window.open` returning a real Window under real transient activation. That is Q5's synchronous rule demonstrated rather than argued. **Toast copy, read in the same call as the click** (it expires in 5s): `inmail`/`message` → *"Profile open — click Message, then paste."*, `connect` → *"Profile open — click Connect, then Add a note, then paste."*, and the no-slug guard → *"No LinkedIn profile in To — Vantage needs a linkedin.com/in/… address."* **with `window.open` provably not called.**
-- **`node --check` parses and `check_ids.py` is at baseline** (`{export-backup-btn, restore-backup-input}`), both run against bytes md5-matched to what the browser ran: `app.js 408be778…`, `sw.js a409ffbd…`.
+**The feature still works after the drill, by screenshot** — task editor on channel Email / kind Compose, the toolbar, the live HTML preview rendering the link and the bold, `Open in Gmail` with its link-degrade hint, and **no Bcc line anywhere on the surface.**
 
-## Backup coverage — DIRECTIVES §4
+## The 16-byte database delta, fully accounted — no residue, no mystery
 
-**NO STORE WAS ADDED OR MODIFIED, AND THAT IS THE WHOLE ANSWER.** This session added no `state` field, no `localStorage` key, no settings row, no CSV column and no `wipeAllData()` line. `LINKEDIN_COMPOSE_ROUTE_LIVE` is a module-scope **constant in source**, not user data — it is edited by a developer, not by Michael, and it is covered by git, not by backup. `TASKS_CSV_HEADERS.length` is untouched and contract **Q8 stands**.
+```
+selectedProspectId  "pros-1788534424443" -> null        -16   wipeAllData() nulls it, by design
+companies           one record gains city/notes/postal/state  +44   ensureStateDefaults() on restore
+prospects           one record: key ORDER changed only    0
+Trisha Harward's `linkedin` test URL removed             -44   Michael approved at boot
+                                                        ————
+                                                          -16   1,562,438 -> 1,562,422
+```
+Method worth keeping: **two snapshot files diffed key by key in one pass** — pre-drill `120629` against post-drill `121206`, both written by the app's own serialiser, which is the only way the two sides are comparable.
 
-## Assumptions logged this session
+## Findings this session — the durable ones are in BUILD_NOTES
 
-1. **The LinkedIn builders live inside 3.3's launch block, not a seventh sub-block.** Same contract (Q4), one consumer. Reversible.
-2. **The controls read `To`, not `prospect.linkedin`.** Orphan tasks and edited recipients both work; matches the email branch. Reversible.
-3. **`linkedinSlug()` takes a prospect OR a string.** Q4's call form is preserved and exercised; the Done-when's six inputs are strings. Reversible.
-4. **The button LABEL is derived from `linkedinDestination().composer`, never from the kind** — so flipping the flag re-labels every button with no second edit, and no button ever says "Open LinkedIn message" while landing on a profile.
-5. **The fallback is a one-line constant, not a runtime detection.** A page cannot see across origins what LinkedIn served; a try/catch, a timer or a probe fetch are all impossible here and the first two *look* like they work.
-6. **`message` OPENS THE PROFILE LIKE THE OTHER TWO.** If `message` were only ever used on someone who has already accepted a connection, its composer route would always resolve and it could keep it. ⛔ **ASKED AND DEFERRED, 2026-09-04: Michael's answer was "may or may not go out to 1st connections — I'll decide later."** So the premise does **not** hold today, the deterministic option is correct as shipped, and **this is a closed question until he re-opens it.** Do not re-derive it, do not re-ask it, and do not "improve" `message` onto the composer route on the assumption — the change is one line in `linkedinDestination()` the day he says so.
-
-## Open items
-
-- ⛔ **COMMIT `app.js` AND `sw.js`.** Uncommitted against `d7d103fb`.
-- ⚠️ **ONE STRAY GMAIL DRAFT IN THE WORK ACCOUNT** from the confirmation above (Gmail's own autosave of a compose window — Vantage created no draft via any API; Q8 holds). Plus **two stray drafts in the personal account** from 3.3, still there.
-- ⚠️ **TRISHA HARWARD'S `linkedin` FIELD HOLDS MICHAEL'S OWN PROFILE URL**, written at his explicit request as a test target. Her field was empty before. **Clear it or replace it with her real profile when testing is done.**
-- **Health probe, §9.4, run once here: 648 of 652 prospects carry a LinkedIn value and ALL 648 yield a slug.** Zero company pages, zero Sales Navigator links, zero malformed pastes. The four without are simply blank. **The regex needs no widening and the data needs no clean-up.**
-- ⛔ **3.4 IS THE REVIEW POINT AND IT IS NOW.** Use the feature for real outreach, then run the review; it takes 3.6+.
-- **Phase 2B is still not formally closed** — its snapshot re-verify has not run.
-- **Phase 2C, scoped not built:** the sixteen-store `wipeAllData()` gap and the `ensureStateDefaults()` `length === 0` reseed defect.
-- **The snapshot system is alive** — boot read `vantage_snapshot_2026-09-04_111348.json` off disk.
-- **Still owed by Michael, a NINTH close carrying them:** the five `DECISIONS.md` DECLARATIONS amendments; the two from 2A.6; the domain-is-identity amendment; the 2B.16/2B.17 P4/P5 divergence amendments. `LA` = Louisiana or Los Angeles. Finding 10d's meaning. Three cosmetics from 2B.4 — **leaving them is a valid answer and saying so closes them.** ⚠️ **A4 still owes a `DECISIONS.md` entry, and 3.4's LinkedIn-route decision now owes one too.**
-- **`ai/phases/phase-2b-RUNSHEET.md` is spent and marked for deletion. Michael deletes it.**
-- **`DECLARATIONS.md` Stack line counts are stale** — it says `app.js` ~13,270; real is **18,793**. Propose at the 3.5 close; do not edit mid-phase.
-- **Phase backlog, carried:** the `"Note"` reachout-type reassignment gap; ProspectHub OR-s tags while Advanced Query AND-s them; `p.notes` / `p.location` shape defaults; company-edit uniqueness guard; the §4 back-fill of existing `"domain.com"` rows; the missing `<link rel="icon">`. **The repo is PUBLIC** and DIRECTIVES §0 compliance is undecided. Stale `..\backups\`.
-- **Both query surfaces stay DEFERRED**; the `sequences` tab stays `enabled: false`. Neither was touched.
-- **The enrollment compartment still has no scope.** Phase 3 needs a Prompt 1 intake before 3.6+ can exist. Seventh close to say so.
+1. ⛔ **A RECORD CREATED THROUGH THE APP'S OWN CREATE PATH DOES NOT CARRY THE FULL DEFAULT FIELD SET UNTIL A RESTORE RUNS.** The single company created during 3.4 was missing `city`, `notes`, `postal` and `state`; `ensureStateDefaults()` added all four on the restore. It is benign and it is the reason an export → wipe → restore is **not** byte-neutral even when nothing is wrong. It is the same family as the carried backlog item "`p.notes` / `p.location` shape defaults" and it means **the create literal and `ensureStateDefaults()` have drifted.**
+2. **A snapshot file is NOT a copy of the `localStorage` string** and re-serialising it in another language does not reproduce the byte count — the two differ by ~800 bytes here. Diff **snapshot against snapshot**, never snapshot against a hand-computed total.
+3. **`selectedProspectId` is a second `state.activeView`.** It is persisted, `wipeAllData()` nulls it, and it moves the byte count by up to 16. Add it to the list of keys a byte-exact claim must account for.
+4. The extension's content filter blocked **`authuser`**, **a bare `.host` value** and a result key containing **`Session`** again. Bland key names and derived scalars, every time.
 
 ## Estimate vs actual
 
-Sized **M / ~10 min / High**. **Size was right, confidence was right, and the plan's own "most likely to overrun" call was right for the right reason** — 3.4 was flagged because it depends on an undocumented URL whose fallback is a live branch, and that is exactly what consumed the session. **Michael's time was ~4 minutes** — four boot answers, one prospect name, and no interruption after that. Two `CACHE_NAME` bumps, but **only one of them was a code change**; the second was recovering a commit that silently wrote stale bytes.
+**Compartment planned 5 sessions / ~56 min of Michael's attention; it ran 7 sessions / ~23 min. Every session came in at the size it was given — zero re-sizes, the first compartment in this project with none — and BOTH extra sessions came from amendments Michael authorised mid-phase (A1 → 3.1b, A2 → 3.3c), not from underestimation.** 3.5 itself was sized **M / ~20 min / High**: it ran **M**, and **Michael's time was ~4 minutes** — one boot question block of four answered in one pass, one folder-access approval, and no interruption after that.
+
+⛔ **THE PATTERN DID NOT REPEAT, AND THAT IS NOT GOOD NEWS YET.** Phase 1 ran 11 against 8 and Phase 2B ran 17 against 10, and **in both cases every extra session came from a review pass.** Here the count grew 5 → 7 from a completely different cause and **the review has not run at all** — so the +35% contingency is entirely unspent and still lands on 3.6+. **What Phase 4 should take from this is that session growth has TWO independent sources and only one of them has ever been budgeted.** Hosting is the phase most likely to produce amendments, because A2's own reversal condition — whether Gmail honours a `text/html` clipboard flavour from a hosted origin — re-opens there by design. **Budget amendments separately from review response.** And the attention estimates are now consistently ~2.5× the actual across three phases; that is no longer conservatism, it is a number that has stopped meaning anything.
+
+## Amendments PROPOSED — not applied. Michael applies these.
+
+**`DECISIONS.md`:**
+1. **Why the Gmail API was declined, and what would reverse it.** Vantage stages, Michael sends (scope §13); OAuth, token storage and a draft-creation scope are a cost and a liability against one user. **Reversal condition: Phase 4 introduces Firebase Auth with Google as the provider, at which point the incremental cost of a `gmail.compose` scope is small — revisit then, and only then.**
+2. **The 3.4 LinkedIn-route decision** — `?recipient=` is real but conditional on connection degree, so `LINKEDIN_COMPOSE_ROUTE_LIVE` ships `false`; both builders retained; one line reverses it. *(Owed since 3.4.)*
+3. **A4** still owes its entry. *(Owed since 3.3.)*
+4. **A2's live answer:** Gmail honoured the `text/html` flavour from `localhost:5000`; the hosted origin re-opens it.
+
+**`DECLARATIONS.md` — one correction, and it is a fact, not a preference:** the Stack line reads `app.js` **~13,270 / `index.html` ~3,250 / `style.css` ~3,680**. Real, `wc -l` at 3.4: **18,793 / 3,981 / 5,192.** The declared numbers are 5,500 lines light on `app.js` and they are there so a session can size a change. **Still one page after.** The nine older owed amendments listed below are unchanged.
+
+**`BUILD_NOTES.md`:** written and applied this session (they are discoveries, not decisions) — the `tf=cm`-versus-`view=cm&fs=1` entry the plan owed, the synchronous-`window.open` entry, the create-path defaults drift, and the snapshot-diff method. **Reported cuts: none. Nothing in the file was disproved this session**, and the curation rule says a stale note is discarded only when a grep disproves it.
 
 ## Files changed
 
-**Code:** `app.js`, `sw.js`. **Documents:** `ai/AIContext.md`, `ai/archive/2026-09-04_1127_AIContext.md` (new), `ai/BUILD_NOTES.md`.
+**Code: none.** **Documents:** `ai/AIContext.md`, `ai/archive/2026-09-04_1216_AIContext.md` (new), `ai/BUILD_NOTES.md`, `ai/phases/phase-3-outreach-launch.md`, `ai/phases/phase-3-RUNSHEET.md`.
+
+## Open items
+
+- ⛔ **COMMIT THE DOCUMENT CHANGES.** HEAD is `0b4f4531`; five `ai/` files are modified. No code moved, so there is nothing to cache-bust.
+- ⛔ **3.4 IS STILL THE REVIEW POINT AND IT IS STILL NOW.** Use the feature for real outreach, then run the review. It takes 3.6+.
+- ⛔ **THE ENROLLMENT COMPARTMENT STILL HAS NO SCOPE.** Phase 3 needs a Prompt 1 intake before 3.6+ can exist. **Eighth close to say so.**
+- ⛔ **`3.5b` — THE REAL PHASE CLOSE — STILL OWES:** the calibration across **both** compartments; a **re-run of the export→wipe→restore drill** if the enrollment compartment changes the task record shape (it writes Q1's five fields, so it may not); deletion of `ai/phases/phase-3-RUNSHEET.md`; the Phase 4 handoff; and a currency check on `ai/spec/phase-4-firebase-preflight.md`. **Everything else on 3.5's list is done and does not need redoing.**
+- **Phase 4 is Hosting and, unlike Phase 3, it does NOT need an intake** — its pre-flight already exists at `ai/spec/phase-4-firebase-preflight.md`. **It has not been read for currency yet; that is 3.5b's job.**
+- ⚠️ **THREE STRAY GMAIL DRAFTS REMAIN** — two personal (3.3), one work (3.4). Gmail's own autosave, not Vantage; Q8 holds. This session opened no compose window and added none.
+- ✅ **TRISHA HARWARD'S `linkedin` FIELD IS CLEARED** — the 44-character test URL is gone, confirmed empty and re-confirmed after the snapshot restore. **Put her real profile there when you have it.**
+- **Phase 2B is still not formally closed** — its snapshot re-verify has not run. *(This session re-verified the snapshot path itself, which is the same mechanism, but under Phase 3's close, not 2B's.)*
+- **Phase 2C, scoped not built:** the sixteen-store `wipeAllData()` gap and the `ensureStateDefaults()` `length === 0` reseed defect. **The create-path defaults drift found today belongs with them.**
+- **Still owed by Michael, a NINTH close carrying them:** the five `DECISIONS.md` DECLARATIONS amendments; the two from 2A.6; the domain-is-identity amendment; the 2B.16/2B.17 P4/P5 divergence amendments. `LA` = Louisiana or Los Angeles. Finding 10d's meaning. Three cosmetics from 2B.4 — **leaving them is a valid answer and saying so closes them.**
+- **`ai/phases/phase-2b-RUNSHEET.md` is spent and marked for deletion. Michael deletes it.**
+- **Phase backlog, carried:** the `"Note"` reachout-type reassignment gap; ProspectHub OR-s tags while Advanced Query AND-s them; `p.notes` / `p.location` shape defaults; company-edit uniqueness guard; the §4 back-fill of existing `"domain.com"` rows; the missing `<link rel="icon">`. **The repo is PUBLIC** and DIRECTIVES §0 compliance is undecided. Stale `..\backups\`.
+- **Both query surfaces stay DEFERRED**; the `sequences` tab is still `enabled: false`, verified in `PROSPECT_DETAIL_TABS` this session. Neither was touched.
 
 ## ⛔ EXACT NEXT STEP
 
-**Commit, then REVIEW — do not run 3.5 yet.** 3.4 is the review point this plan named in advance, and Phase 1's overrun and Phase 2B's seven extra sessions both came from reviewing the session that first showed the thing working. Use it for real outreach for a day, then run the review pass; the sessions it produces take **3.6+**. **3.5 is the close and always runs last.** The enrollment intake (Prompt 1) is still owed and still blocks 3.6+.
+**Commit the five document files. Then REVIEW 3.4 — use the outreach feature for real outreach first.** After the review, run **Prompt 1** for the enrollment compartment, then **Prompt 3** to merge both compartments into `ai/phases/phase-3-sequencing.md`. Review-response and enrollment sessions take **3.6+**. **`3.5b` closes the phase and always runs last.**
 
-**Carry forward:** ⛔ **A `device_commit_files` CALL CAN REPORT `written`, UPDATE THE FILE'S mtime, AND WRITE THE PREVIOUS BYTES — AND A SIZE CHECK CANNOT SEE IT WHEN THE TWO VERSIONS ARE THE SAME LENGTH.** `sw.js` v133 and v134 are both 2,330 bytes; the second commit reused the same staged path and shipped v133. **Re-stage from the device and md5-compare, or write each revision to a NEW staged path.** ⛔ **AND A SERVICE-WORKER CACHE-NAME BUMP DOES NOT LAND ON `reg.update()` ALONE** — `unregister()`, delete the `vantage*` caches, then reload twice; `localStorage` is untouched by that and the DB byte count proves it. ⚠️ **`layoutColumnWidth()` RETURNS THE RESOLVED WIDTH WHILE THE RECORD STORES `0` FOR "default", so reading a width and writing it back is NOT a no-op** — it cost a 2-byte residue, and `setLayoutColumnWidth(k, 0)` cannot undo it because the setter clamps to `LAYOUT_MIN_COL_PX` (60). ⛔ **THE `computer` CLICK COORDINATE IS `css × (screenshotWidth ÷ innerWidth)` AND IS **NOT** THE POSITION YOU CAN SEE IN THE PICTURE — the two differ by `devicePixelRatio` (0.75 here), so reading a button off the screenshot lands ~33% short and silently does something else.** It cost two dead clicks that hit the textarea and collapsed the preview. ⚠️ **AND THE WINDOW RESIZED MID-SESSION AGAIN** — screenshots went 952×874 → 1148×1054 with `innerWidth` 952 → 1269. **Re-derive the scale from a live rect in the same call as the click, every time.** ⚠️ **The extension's content filter blocked `www.linkedin.com` as a "JWT token" and an email's local part and domain as a "Sensitive key"** — decompose and return scalars. **THE APP RUNS PERFECTLY WITH THE SERVER DOWN** — three-probe first; it read `200 / 404 / 200`. **`state` is not `window.state`.** **Do not open the app while Michael's window is up.** **TEST AGAINST REAL RECORDS, WRITE UP PLACEHOLDERS — the repo is public.**
+**Carry forward:** ⛔ **A `device_commit_files` CALL CAN REPORT `written`, UPDATE THE mtime, AND WRITE THE PREVIOUS BYTES — AND THE SIZE CHECK CANNOT SEE IT WHEN THE TWO VERSIONS ARE THE SAME LENGTH.** Write each revision to a NEW staged path *and* re-stage and md5-compare. Used successfully five times this session. ⚠️ **`device_stage_files` WRITES BACK OVER YOUR WORKING COPY** — keep the authoritative copy under `/mnt/user-data/outputs/`, not where staging lands. ⛔ **THE `computer` CLICK COORDINATE IS `css × (screenshotWidth ÷ innerWidth)` AND IS NOT THE POSITION IN THE PICTURE.** Screenshots came back 1148×1054 with `innerWidth` 952 and `devicePixelRatio` **1** this session — *different from 3.4's 0.75* — which is the whole reason it must be re-derived live every time. **The extension's content filter blocked `authuser`, a `.host` value and a key containing `Session`** — bland key names, derived scalars. **`state` is not `window.state`.** **`switchView()` calls `saveState()`, and `activeView` and `selectedProspectId` both move the byte count.** **Stub `prompt`/`alert`/`confirm` before `wipeAllData()`, and make the prompt stub return `"YES"` or the wipe silently does nothing.** **THE APP RUNS PERFECTLY WITH THE SERVER DOWN.** **Do not open the app while Michael's window is up.** **TEST AGAINST REAL RECORDS, WRITE UP PLACEHOLDERS — the repo is public.**

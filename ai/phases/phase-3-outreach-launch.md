@@ -499,6 +499,13 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 
 ### Session 3.5 — Phase close: drill, curation, declarations audit
 
+> ⛔ **RAN EARLY, 2026-09-04 12:16, AS A *COMPARTMENT* CLOSE — ON MICHAEL'S EXPLICIT INSTRUCTION, AND IT DID NOT CLOSE PHASE 3.**
+> The enrollment compartment still has no scope and the 3.4 review has not run, so "Depends on: everything" was not satisfied. He was asked at boot and chose to run every check now and leave the phase open.
+> **WHAT IS DONE AND MUST NOT BE REDONE:** the export→wipe→restore drill on real data (all nine CSVs md5-identical either side), the snapshot restore re-verify, the A1–A4 audit against the code (**all four true**), the compartment estimate calibration, the `BUILD_NOTES.md` curation, and the `DECISIONS.md` / `DECLARATIONS.md` proposals.
+> ⛔ **THE REAL PHASE CLOSE IS `3.5b` AND IT STILL RUNS LAST.** It owes: the calibration across **both** compartments; a re-run of the drill **only if** the enrollment compartment changes the task record shape; deletion of `ai/phases/phase-3-RUNSHEET.md`; the Phase 4 handoff; and a currency check on `ai/spec/phase-4-firebase-preflight.md`.
+> Full output: `ai/archive/2026-09-04_1216_AIContext.md` and the handoff that replaced it.
+
+
 - **Compartment:** QA · **Depends on:** everything, **including the enrollment compartment and any review-response sessions.** Always last.
 - **Goal:** The phase goal is verified against real data, the export path is re-proved whole, the standing files are true, and Phase 4 has a starting point.
 - **Size: M** · My time: ~20 min · **Confidence: High**
@@ -533,7 +540,9 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 3.4  LinkedIn launch          (UI,   M)  — after 3.3c         ← the review point
 ──── enrollment compartment ─────────────  NOT PLANNED. Needs a Prompt 1 intake. Takes 3.6+
 ──── outreach producer ──────────────────  NOT PLANNED. Depends on the enrollment entities. Takes 3.6+
-3.5  Close                    (QA,   M)  — LAST. Always last.  ⚠️ ZIP + green snapshot first
+3.5  Close                    (QA,   M)  — ⚠️ RAN EARLY 2026-09-04 as a COMPARTMENT close, on
+                                            Michael's instruction.  Checks all done; phase NOT closed.
+3.5b Phase close              (QA,   S/M) — ▶ THE REAL CLOSE.  LAST.  Always last.  After 3.6+.
 ```
 
 **3.1 → 3.4 is strictly sequential and each session leaves the app usable.** Nothing is removed at any point; every session is purely additive, which is what makes this compartment safe to run before the half of Phase 3 that isn't scoped.
@@ -542,7 +551,7 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 
 **The enrollment compartment must be scoped before it can be ordered.** It is not merely unplanned — its entities do not exist, so the producer sessions that depend on them cannot be written either. What is knowable today: the producer only ever *writes* Q1's fields, so no contract above changes when it lands.
 
-**The close keeps its number and moves last**, exactly as 1.8 and 2B.10 did. `BUILD_NOTES.md` and `AIContext.md` will point at "3.5" as the close long before the appended sessions exist.
+**The close keeps its number and moves last**, exactly as 1.8 and 2B.10 did. ⚠️ **AMENDED 2026-09-04: 3.5 was run early as a compartment close and `3.5b` is now the session that runs last** — the same shape as 2B.10's document half and completion pass, which also split across two sittings. `BUILD_NOTES.md` and `AIContext.md` will point at "3.5" as the close long before the appended sessions exist.
 
 ## Phase estimate
 
