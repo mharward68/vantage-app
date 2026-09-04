@@ -2634,7 +2634,12 @@
        inspector's Tasks subsection and (from Session 1.5) TaskHub row clicks.
        openTaskEditor(taskId, prospectId) fills it; saveTaskFromEditor() commits. -->
   <div id="modal-task" class="modal-overlay hidden">
-    <div class="modal-card" style="max-width: 560px;">
+    <!-- max-height/overflow added Session 3.2: the outreach block makes this
+         form taller than a short window, and the same pair is already what
+         #modal-task-orphans below uses. The alternative the phase plan named as
+         the fallback — collapsing the block into a disclosure — is NOT needed:
+         at Channel "None" the form grows by exactly one select. -->
+    <div class="modal-card" style="max-width: 560px; max-height: 88vh; overflow-y: auto;">
       <h3 id="task-modal-heading">New Task</h3>
 
       <!-- Mark complete (Session 1.9, scope §13.5). Replaces the two-value
@@ -2723,6 +2728,81 @@
         <label for="task-notes">Notes</label>
         <textarea id="task-notes" rows="6"
           placeholder="Free text. May hold a full multi-paragraph email body."></textarea>
+      </div>
+
+      <!-- ── OUTREACH BLOCK (Phase 3 / Session 3.2, contract Q7) ─────────────
+           Sits BELOW Notes, per Q7 and scope §4.
+
+           `notes` IS NOT REPURPOSED (Assumption 7). It keeps its Phase 1
+           meaning — free text Michael types, exported as the "Notes" column —
+           and the message body is a separate field. restoreTasksFromCSV()
+           deliberately does not trim Notes because it may hold a
+           multi-paragraph body; overloading it with a structured message makes
+           that one column two things at once.
+
+           Channel "None" hides everything from #task-outreach-fields down, and
+           it is the default for every task created without outreach in mind
+           and the migrated value for every task predating Phase 3.
+
+           ⛔ THE SUBJECT GROUP IS REMOVED FROM THE DOM, NOT HIDDEN, for the
+           three kinds that have no subject (Q2: connect, message, thread). It
+           is declared here so its listener binds once at boot and survives the
+           detach — syncTaskOutreachBlock() takes the node out and puts it back
+           in front of #task-msg-body-group. A hidden-but-present Subject is how
+           a value typed under `inmail` silently rides along under `connect`.
+
+           ⛔ THERE IS NO BCC LINE, AND ITS ABSENCE IS DELIBERATE. Contract
+           amendment A1 (2026-09-03) retired the Bcc outright — the Google
+           Workspace outbound rule blind-copies the work account, including
+           replies typed straight into Gmail, so Vantage neither emits nor
+           displays one. The phase plan's Session 3.2 task 5 and its "Needs my
+           eyes" question about the Bcc line both predate A1. Do not add one
+           back from reading Q3. -->
+      <div id="task-outreach-block" class="task-outreach-block">
+        <div class="task-outreach-heading">Outreach</div>
+
+        <div class="form-group">
+          <label for="task-channel">Channel</label>
+          <select id="task-channel">
+            <option value="">None</option>
+            <option value="email">Email</option>
+            <option value="linkedin">LinkedIn</option>
+          </select>
+        </div>
+
+        <div id="task-outreach-fields" class="task-outreach-fields hidden">
+          <!-- Options are rebuilt from the Q2 table on every channel change —
+               the markup carries none, so there is one enumeration of the five
+               kinds and it lives in app.js. -->
+          <div class="form-group" id="task-msg-kind-group">
+            <label for="task-msg-kind">Kind</label>
+            <select id="task-msg-kind"></select>
+          </div>
+
+          <!-- Read side: who this reaches, and the display-only "Re:" on a
+               thread. Built with createElement in renderTaskOutreachReadout(). -->
+          <div id="task-outreach-readout" class="task-outreach-readout"></div>
+
+          <div class="form-group" id="task-msg-to-group">
+            <label for="task-msg-to">To</label>
+            <input type="text" id="task-msg-to" autocomplete="off"
+              placeholder="Fills from the linked contact when you pick a channel — editable">
+          </div>
+
+          <div class="form-group" id="task-msg-subject-group">
+            <label for="task-msg-subject">Subject</label>
+            <input type="text" id="task-msg-subject" autocomplete="off"
+              placeholder="Stored WITHOUT any &quot;Re:&quot; prefix — Q1">
+            <div class="task-msg-count" data-count-for="task-msg-subject"></div>
+          </div>
+
+          <div class="form-group" id="task-msg-body-group">
+            <label for="task-msg-body">Message</label>
+            <textarea id="task-msg-body" rows="8"
+              placeholder="The message itself. Notes above stays your own free text."></textarea>
+            <div class="task-msg-count" data-count-for="task-msg-body"></div>
+          </div>
+        </div>
       </div>
 
       <div class="modal-actions" style="justify-content: space-between;">

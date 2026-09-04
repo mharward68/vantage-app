@@ -4864,6 +4864,11 @@ function openTaskEditor(taskId = null, prospectId = null) {
     fixed.title = wantedProspect ? "Save and open this contact in Prospect Hub" : "";
   }
 
+  /* Phase 3 / Q7 (Session 3.2). LAST, and after the prospect wiring above:
+     the read side and auto-fill both resolve the contact from #task-prospect,
+     which is only correct once that block has run. */
+  fillTaskOutreachFromTask(task);
+
   modal.classList.remove("hidden");
   document.getElementById("task-title").focus();
 }
@@ -5051,6 +5056,306 @@ function taskReachoutTypeFromEditor() {
   return document.getElementById("task-reachout-type").value || null;
 }
 
+/* ==========================================================================
+   ✅ TASK EDITOR — THE OUTREACH BLOCK  (Phase 3 / Session 3.2, contract Q7)
+
+   Session 3.1 gave the task record its five outreach fields and their backup
+   coverage and wrote no control. This is the control. NOTHING HERE OPENS
+   ANYTHING — no URL builder, no button, no clipboard. Gmail is Session 3.3 and
+   LinkedIn is 3.4.
+
+   THE FIVE THINGS THIS BLOCK IS BUILT ON, each with a reason a later session
+   will otherwise undo:
+
+   (1) ONE SET OF FIELDS, ONE RENDER (open risk 8). A hand-typed task and a
+       sequence-written one are the same record on the same screen. When the
+       producer half lands it only ever WRITES Q1's five fields; it does not get
+       a second block, a second renderer or a sequence-only field.
+
+   (2) THE CONTROLS ARE READ AT SAVE, NOT COMMITTED ON CHANGE. Every other field
+       in this editor works that way and Cancel has to keep meaning Cancel. The
+       detail view's commit-on-change (commitProspectField) is right for an
+       edit-in-place surface and wrong for a modal with two buttons.
+
+   (3) `channel` DECIDES WHETHER THIS IS OUTREACH; `msgKind` DECIDES EVERYTHING
+       ELSE — the destination, whether a subject exists, and the ceiling. That
+       is what delivers "only the first LinkedIn step carries a subject" with no
+       positional rule anywhere (Q2).
+
+   (4) AUTO-FILL WRITES INTO AN EMPTY FIELD ONLY, ON CHANNEL CHANGE ONLY (Q7).
+
+   (5) OVER-LIMIT IS SHOWN, NEVER BLOCKED AND NEVER TRUNCATED (Q6). The red
+       counter is the whole enforcement. Blocking would silently drop a step out
+       of a sequence, which is worse than a visible over-length task.
+
+   `source` / `sourceRef` are NOT touched (Assumption 5) and `notes` is NOT
+   repurposed (Assumption 7).
+   ========================================================================== */
+
+/* Contract Q2, written once. The ORDER is Q2's own table order, because the
+   Done-when pastes these options back and compares them to it. The DEFAULT is a
+   separate map below and is deliberately not "the first option". */
+const TASK_CHANNEL_KINDS = {
+  email: [
+    { value: "compose", label: "Compose — new email" },
+    { value: "thread",  label: "Thread — reply in an existing conversation" }
+  ],
+  linkedin: [
+    { value: "connect", label: "Connect — invitation with a note" },
+    { value: "inmail",  label: "InMail — composer, with a subject" },
+    { value: "message", label: "Message — composer, no subject" }
+  ]
+};
+
+/* Scope §3.1: email opens on `compose`, LinkedIn on `inmail`, and **`connect`
+   is never a default** — it is chosen deliberately, because it is a different
+   gesture with a different destination and a 300-character ceiling. That is why
+   this map exists instead of taking kinds[0]: `connect` is first in Q2's table. */
+const CHANNEL_DEFAULT_KIND = { email: "compose", linkedin: "inmail" };
+
+/* Contract Q6. `0` means NO FIXED CEILING FOR THIS FIELD, not "zero characters"
+   — the counter then reads a bare character count and never goes red.
+
+   ⚠️ `compose` HAS NO PER-FIELD CEILING ON PURPOSE. Q6's constraint for it is
+   the ASSEMBLED URL at ~2000 characters, which cannot be measured without
+   gmailComposeUrl(), and that builder plus its degrade-don't-fail guard belong
+   to Session 3.3. Do not approximate the URL length here from the body alone —
+   a wrong ceiling that looks authoritative is worse than an honest count. */
+const TASK_MSG_LIMITS = {
+  compose: { subject: 0,   body: 0    },
+  thread:  { subject: 0,   body: 0    },
+  connect: { subject: 0,   body: 300  },
+  inmail:  { subject: 200, body: 1900 },
+  message: { subject: 0,   body: 3000 }
+};
+
+// Q2: the kind decides whether a subject exists at all.
+function taskKindHasSubject(kind) {
+  return kind === "compose" || kind === "inmail";
+}
+
+/* The Subject group is DETACHED from the document for the kinds that have no
+   subject, so getElementById cannot find it or anything inside it. This holds
+   the node across the detach. Captured lazily — at module-evaluation time the
+   document does not exist yet. */
+let taskSubjectGroupNode = null;
+function taskSubjectGroup() {
+  if (!taskSubjectGroupNode) taskSubjectGroupNode = document.getElementById("task-msg-subject-group");
+  return taskSubjectGroupNode;
+}
+function taskSubjectInput() {
+  const g = taskSubjectGroup();
+  return g ? g.querySelector("input") : null;
+}
+
+// The prospect this task is wired to, read from the hidden input (C14) rather
+// than from the task record, so it is correct mid-repair before any save.
+function taskEditorProspect() {
+  const id = document.getElementById("task-prospect").value;
+  return (state.prospects || []).find(x => x.id === id) || null;
+}
+
+function renderTaskKindOptions(channel, wanted) {
+  const sel = document.getElementById("task-msg-kind");
+  if (!sel) return;
+  // createElement, not innerHTML +=: += rebuilds the subtree and detaches
+  // listeners, and this file has been bitten by it.
+  sel.innerHTML = "";
+  const kinds = TASK_CHANNEL_KINDS[channel] || [];
+  kinds.forEach(k => {
+    const o = document.createElement("option");
+    o.value = k.value;
+    o.textContent = k.label;
+    sel.appendChild(o);
+  });
+  sel.value = kinds.some(k => k.value === wanted)
+    ? wanted
+    : (CHANNEL_DEFAULT_KIND[channel] || "");
+}
+
+function syncTaskMsgCount(input, out, max) {
+  if (!input || !out) return;
+  const n = input.value.length;
+  out.textContent = max ? `${n}/${max}` : `${n} characters`;
+  // Q6: shown, never blocked, never truncated. `>` and not `>=` — exactly at
+  // the ceiling is still legal.
+  out.classList.toggle("is-over", !!max && n > max);
+}
+
+function syncTaskMsgCounts() {
+  const channel = document.getElementById("task-channel").value || "";
+  const kindSel = document.getElementById("task-msg-kind");
+  const kind = channel && kindSel ? (kindSel.value || "") : "";
+  const lim = TASK_MSG_LIMITS[kind] || { subject: 0, body: 0 };
+
+  const g = taskSubjectGroup();
+  if (g) syncTaskMsgCount(taskSubjectInput(), g.querySelector(".task-msg-count"), lim.subject);
+  syncTaskMsgCount(
+    document.getElementById("task-msg-body"),
+    document.querySelector("#task-msg-body-group .task-msg-count"),
+    lim.body
+  );
+}
+
+/* The read side. Contact header, and the display-only "Re:" on a thread.
+
+   ⛔ Q1: `msgSubject` NEVER STORES "Re:". The prefix is added HERE, for
+   `thread` only. Storing it means the second follow-up reads "Re: Re: …", and
+   the third "Re: Re: Re: …" — it looks right exactly once. */
+function renderTaskOutreachReadout(channel, kind) {
+  const box = document.getElementById("task-outreach-readout");
+  if (!box) return;
+  box.innerHTML = "";            // nothing in here carries a listener
+  if (!channel) return;
+
+  const p = taskEditorProspect();
+
+  const name = document.createElement("div");
+  name.className = "task-outreach-name";
+  name.textContent = p
+    ? (`${p.firstName || ""} ${p.lastName || ""}`.trim() || "(unnamed contact)")
+    : "No linked contact — type the recipient by hand.";
+  box.appendChild(name);
+
+  if (p) {
+    const company = getCompanyName(p.companyId);
+    if (company) {
+      const c = document.createElement("div");
+      c.className = "task-outreach-meta";
+      c.textContent = company;
+      box.appendChild(c);
+    }
+    const addr = document.createElement("div");
+    addr.className = "task-outreach-meta";
+    // The contact's address ON RECORD, which is not the same thing as the To
+    // field: To is editable and may deliberately differ.
+    addr.textContent = channel === "email"
+      ? `Email: ${p.email || "— none on record"}`
+      : `LinkedIn: ${p.linkedin || "— none on record"}`;
+    box.appendChild(addr);
+  }
+
+  if (kind === "thread") {
+    const subj = document.createElement("div");
+    subj.className = "task-outreach-subject";
+    const stored = (taskSubjectInput() ? taskSubjectInput().value : "").trim();
+    subj.textContent = stored
+      ? `Subject: Re: ${stored}`
+      : "Subject: Re: (inherited from the existing thread)";
+    box.appendChild(subj);
+  }
+}
+
+/* One repaint for the whole block: visibility, the Subject group's PRESENCE,
+   both counters, and the read side. */
+function syncTaskOutreachBlock() {
+  const channel = document.getElementById("task-channel").value || "";
+  const kindSel = document.getElementById("task-msg-kind");
+  const kind = channel && kindSel ? (kindSel.value || "") : "";
+
+  document.getElementById("task-outreach-fields").classList.toggle("hidden", !channel);
+
+  /* ⛔ PRESENT OR ABSENT — never hidden. See the index.html comment. The node
+     keeps its value and its listener across the detach, so switching kinds and
+     back inside one editor session loses nothing; what a kind without a subject
+     saves is "" (readTaskOutreachFromEditor). */
+  const group = taskSubjectGroup();
+  const wants = !!channel && taskKindHasSubject(kind);
+  if (group) {
+    if (wants && !group.isConnected) {
+      document.getElementById("task-msg-body-group").before(group);
+    } else if (!wants && group.isConnected) {
+      group.remove();
+    }
+  }
+
+  syncTaskMsgCounts();
+  renderTaskOutreachReadout(channel, kind);
+}
+
+function handleTaskChannelChange() {
+  const channel = document.getElementById("task-channel").value || "";
+  // The kinds do not overlap across channels, so a channel change always
+  // re-chooses the kind: "" as the wanted value lands on CHANNEL_DEFAULT_KIND.
+  renderTaskKindOptions(channel, "");
+  autofillTaskRecipient(channel);
+  syncTaskOutreachBlock();
+}
+
+/* Q7. ⛔ INTO AN EMPTY FIELD ONLY, AND ON CHANNEL CHANGE ONLY.
+
+   Auto-fill is a starting value, not a lock. A value already in the field —
+   typed by hand, or written by a sequence — is never overwritten. The only way
+   to see this fail is to type a recipient, switch channel, and switch BACK: a
+   one-way test passes while the bug is live.
+
+   An orphan task has no contact to fill from and simply requires typing it;
+   that is not an error state and nothing is logged. */
+function autofillTaskRecipient(channel) {
+  const to = document.getElementById("task-msg-to");
+  if (!to) return;
+  if (to.value.trim() !== "") return;
+  if (!channel) return;
+  const p = taskEditorProspect();
+  if (!p) return;
+  to.value = channel === "email" ? (p.email || "") : (p.linkedin || "");
+}
+
+// Called from openTaskEditor(), AFTER the prospect wiring — the read side and
+// auto-fill both read #task-prospect. No auto-fill happens here: Q7 fires it on
+// channel change only, so opening a task never rewrites what it already holds.
+function fillTaskOutreachFromTask(task) {
+  const channel = task ? (task.channel || "") : "";
+  document.getElementById("task-channel").value = channel;
+  renderTaskKindOptions(channel, task ? (task.msgKind || "") : "");
+  document.getElementById("task-msg-to").value = task ? (task.msgTo || "") : "";
+  const subj = taskSubjectInput();
+  if (subj) subj.value = task ? (task.msgSubject || "") : "";
+  document.getElementById("task-msg-body").value = task ? (task.msgBody || "") : "";
+  syncTaskOutreachBlock();
+}
+
+/* Read at save. `existing` is the record being edited, or null on create.
+
+   ⛔ CHANNEL "None" CLEARS THE TWO ENUM FIELDS AND LEAVES THE THREE CONTENT
+   FIELDS ALONE. DIRECTIVES §2 rung 1 (Stability) over rung 3 (Simplicity): a
+   mis-click on None followed by Save must not silently destroy a body someone
+   spent ten minutes on. `channel === ""` already means "not an outreach task"
+   and hides every control and every future button, so the residue is inert —
+   and picking a channel again shows the text still there. */
+function readTaskOutreachFromEditor(existing) {
+  const channel = document.getElementById("task-channel").value || "";
+
+  if (!channel) {
+    return {
+      channel: "",
+      msgKind: "",
+      msgTo: existing ? (existing.msgTo || "") : "",
+      msgSubject: existing ? (existing.msgSubject || "") : "",
+      msgBody: existing ? (existing.msgBody || "") : ""
+    };
+  }
+
+  const kindSel = document.getElementById("task-msg-kind");
+  const msgKind = kindSel ? (kindSel.value || "") : "";
+  const subj = taskSubjectInput();
+
+  return {
+    channel: channel,
+    msgKind: msgKind,
+    // Trimmed: an address or profile URL with stray whitespace is a defect,
+    // never content.
+    msgTo: document.getElementById("task-msg-to").value.trim(),
+    // Q2: the KIND decides whether a subject exists, so a kind without one
+    // stores "". A value left behind under a kind that cannot show it is how a
+    // subject typed for an InMail turns up on a connection request.
+    msgSubject: (taskKindHasSubject(msgKind) && subj) ? subj.value.trim() : "",
+    // NOT trimmed — the same rule as Notes and restoreTasksFromCSV(): leading
+    // and trailing whitespace in a message body is content.
+    msgBody: document.getElementById("task-msg-body").value
+  };
+}
+
 function closeTaskEditor() {
   document.getElementById("modal-task")?.classList.add("hidden");
   editingTaskId = null;
@@ -5078,12 +5383,25 @@ function saveTaskFromEditor() {
 
   const existing = editingTaskId ? (state.tasks || []).find(t => t.id === editingTaskId) : null;
 
+  /* Phase 3 / Q7 (Session 3.2). Read WITH the other fields and written in both
+     branches, so there is one commit point for the whole editor. Deliberately
+     not committed on change — Cancel has to keep meaning Cancel. */
+  const outreach = readTaskOutreachFromEditor(existing);
+
   if (existing) {
     const wasCompleted = existing.status === "completed";
     existing.prospectId = prospectId;
     existing.title = title;
     existing.notes = notes;
     existing.dueDate = dueDate;
+
+    // Phase 3 / Q1 (Session 3.2). Five flat fields, assigned beside their
+    // siblings. `source` / `sourceRef` are untouched — Assumption 5.
+    existing.channel = outreach.channel;
+    existing.msgKind = outreach.msgKind;
+    existing.msgTo = outreach.msgTo;
+    existing.msgSubject = outreach.msgSubject;
+    existing.msgBody = outreach.msgBody;
 
     /* Completion transition. This does NOT set status/completedDate itself:
        it hands the open→completed transition to completeTask(), which is the
@@ -5127,12 +5445,16 @@ function saveTaskFromEditor() {
          and the migration write the SAME shape — that is the 2B.13 rule (a ""
          seed against an === undefined migration is not a defect here because
          "" is the intended terminal value, not a repairable one).
-         3.2 is what gives these a UI; this session writes no control. */
-      channel: "",
-      msgKind: "",
-      msgTo: "",
-      msgSubject: "",
-      msgBody: ""
+
+         SESSION 3.2 GAVE THESE THEIR CONTROLS, so the create branch now takes
+         what the editor holds rather than five literal "". On a task created
+         with Channel "None" — the default, and the ordinary case — every one of
+         these is still "", which is exactly what 3.1 wrote. */
+      channel: outreach.channel,
+      msgKind: outreach.msgKind,
+      msgTo: outreach.msgTo,
+      msgSubject: outreach.msgSubject,
+      msgBody: outreach.msgBody
     });
   }
 
@@ -15351,6 +15673,23 @@ function setupEventListeners() {
   // even offered, so both boxes repaint the same block.
   document.getElementById("task-complete").addEventListener("change", syncTaskReachoutBlock);
   document.getElementById("task-log-reachout").addEventListener("change", syncTaskReachoutBlock);
+
+  /* Phase 3 / Q7 (Session 3.2) — the outreach block. Four listeners, bound once
+     at boot while every element is attached.
+
+     ⛔ #task-msg-subject IS BOUND HERE EVEN THOUGH ITS GROUP IS LATER DETACHED
+     FROM THE DOCUMENT. A listener lives on the node, not on the document, so it
+     survives .remove() and the re-insert — which is the whole reason the group
+     is declared in index.html rather than built in JS.
+
+     The two `input` listeners repaint the COUNTERS ONLY. Routing them through
+     syncTaskOutreachBlock() would rebuild the read side on every keystroke of a
+     3,000-character body for no gain: nothing in the read side depends on a
+     value the user can type while it is visible. */
+  document.getElementById("task-channel").addEventListener("change", handleTaskChannelChange);
+  document.getElementById("task-msg-kind").addEventListener("change", syncTaskOutreachBlock);
+  document.getElementById("task-msg-subject").addEventListener("input", syncTaskMsgCounts);
+  document.getElementById("task-msg-body").addEventListener("input", syncTaskMsgCounts);
 
   /* §13.8: the prospect name is a link to that contact. SAVE FIRST — the
      click comes from inside the editor, so committing what was typed and then

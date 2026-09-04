@@ -1,101 +1,91 @@
-# AI Context — PHASE 3 / OUTREACH LAUNCH
+# AI Context — PHASE 3 IN FLIGHT, SESSION 3.2 SHIPPED
 
-**Updated:** 2026-09-03 17:32 (America/New_York).
+**Updated:** 2026-09-04 06:37 (America/New_York).
 
-**Last run:** Phase 3 / **Session 3.1 — Task outreach fields, settings, and their backup coverage.** Compartment: **DATA**. ✅ **COMPLETE.** Every Done-when check ran with real pasted output; nothing was deferred.
+**Last run:** Phase 3 / **Session 3.2 — the outreach block: manual entry, auto-fill, counters.** Compartment: **UI**. ✅ **COMPLETE.** Contract Q7 exists. No buttons, no URL builders, no clipboard — nothing opens anything. That is 3.3 and 3.4.
 
-**State:** `app.js` **17,510** (was 17,346; **+164, and about two thirds of that is comment**) · `index.html` **3,796** · `style.css` **4,926** — the last two untouched. `CACHE_NAME` **v127** (one bump; the two-bump budget was not needed). **Git: UNKNOWN.** No shell reached this repo this session and no push or ref read happened in it — per the rule 2B.10 wrote after four handoffs restated an unverifiable SHA, **this line says UNKNOWN rather than a number.** `app.js` and `sw.js` are modified on disk and uncommitted, on top of whatever 2B.10 left.
+**State:** `app.js` **17,849** (+339) · `index.html` **3,876** (+80) · `style.css` **4,991** (+65). `CACHE_NAME` **v127 → v128**, ONE bump against a budget of two. **One-glance version tell:** the task editor has an **OUTREACH** heading below Notes with a Channel select. Console alternative: `typeof TASK_CHANNEL_KINDS` → `"object"` is v128, `"undefined"` is v127.
 
-**One-glance version tell:** paste `TASKS_CSV_HEADERS.length` in the console. **18** is v127. **13** means you are on the cached v126 document — reload once more.
+**Git:** ⚠️ **UNCOMMITTED, and now deeper.** Tip was `0220770` at the 2B.10 close *as that session reported it* — **this session could not run git and did not verify it, so treat the SHA as UNKNOWN rather than repeating it.** Outstanding: 3.1's AIContext drift, 2B.10's `ai/` edits, and this session's four code files plus `ai/`. Git is always Michael-runs-it.
 
----
-
-## ⛔⛔ THE FIRST THING THIS SESSION FOUND, AND EVERY LATER SESSION INHERITS IT
-
-**THE WORKING SET IS GONE. MICHAEL'S CHROME NOW BOOTS THE PRODUCTION IMPORT.** Read from live `localStorage` at boot: **651 prospects · 1,090 companies · 33 media · 3 campaigns · 4 audience lists · 0 tasks · 1,561,677 bytes.** `BUILD_NOTES.md` said the 4-prospect / 5-company sandbox was what loads; that note is **corrected in place**, not appended to. Three things follow immediately, and 3.2 pays for all three:
-
-1. **There are ZERO tasks.** TaskHub is empty and the task editor has nothing to open. **Any task-shaped check must create a task first** — 3.1 did, through the shipped `saveTaskFromEditor()` path, and deleted it by full rollback at the end.
-2. **A wipe drill now destroys 651 real prospects.** The ZIP is not a formality.
-3. **A round trip takes ~15 seconds**, not the instant the sandbox took. Poll on `state.prospects.length`, and do not read the wait as a hang.
+**Database: RETURNED TO ITS OPENING BYTE COUNT, EXACTLY.** 1,561,677 bytes at boot and 1,561,677 at close. 651 prospects · 1,090 companies · 33 media · 3 campaigns · 4 audience lists · **0 tasks** · prospect_tags 9 · reachoutTypes 8 · taskSettings 3 keys · columnLayouts 3. Two fixture tasks were created through the shipped `saveTaskFromEditor()` path and rolled out.
 
 ---
 
 ## What was done
 
-| Piece | Where |
+| Piece | Result |
 | --- | --- |
-| **Q3 — two settings** | `state.taskSettings.workGmailAddress` (`""`) and `.emailBcc` seeded in `ensureStateDefaults()` beside `dateMode`, guarded `=== undefined` so a deliberate blank stays blank. **`wipeAllData()` NOT edited** — it already replaces `taskSettings` whole. |
-| **Q1 — five task fields** | `channel` / `msgKind` / `msgTo` / `msgSubject` / `msgBody`, flat. Defaults loop in `ensureStateDefaults()`; also written at creation in `saveTaskFromEditor()`, so a task made after boot reads `""` not `undefined`. |
-| **CSV export** | Five headers **appended at the end** of `TASKS_CSV_HEADERS` (13 → **18**) and five values to `taskCSVRow()`. |
-| **CSV restore** | Five `pick()` reads in `restoreTasksFromCSV()`. `channel` / `msgKind` / `msgTo` trim; **`msgSubject` and `msgBody` do not** — free text, like Notes. |
-| **Settings backup** | Two rows, `Outreach Work Gmail` and `Outreach Bcc`, beside C4's `Task Date Mode`, with a `sawX`-guarded restore leg. |
-| **`sw.js`** | v126 → **v127**. |
+| **Channel / Kind selects** | Kind's options rebuild from the Q2 table on every channel change. Channel `None` hides everything below it and is the default. |
+| **To / Subject / Body** | Subject is **removed from the DOM**, not hidden, for `connect` / `message` / `thread`. Counters live under Subject and Body. |
+| **Auto-fill** | On channel change only, into an **empty** field only. Email → `prospect.email`, LinkedIn → `prospect.linkedin`. Orphan → stays `""`. |
+| **Counters** | Q6 ceilings, red past the limit, never truncating and never blocking. |
+| **Read side** | Contact header (name / company / the address on record) and the display-only `Re:` on `thread`. **No Bcc line — amendment A1.** |
+| **Commit point** | The five fields are read in `saveTaskFromEditor()` with every other field. Cancel still means Cancel. |
 
-**Beyond the plan, deliberately, and it is the one thing a reviewer should look at:** `channel` and `msgKind` are **coerced to their Q2 enum on restore**, following the `status` line directly above them. An unrecognised value degrades to `""` (= not an outreach task, inert). Reason: 3.3 and 3.4 feed both fields into URL builders, and a hand-edited cell reading `javascript:alert(1)` reaching `msgKind` is what this closes. Ladder rung 1 over rung 3. Proved with a two-row CSV.
+## Verification — all of it ran, against the production database
 
-## Verification — all of it ran
-
-- `state.taskSettings` → `{dateMode:"business", emailBcc:"michaelh@youravdept.com", workGmailAddress:""}`.
-- Five fields set on a real task → reload → **character-identical**, per field.
-- `TASKS_CSV_HEADERS.length` **18**; `taskCSVRow(t)` 18 values, first 13 at their original indexes.
-- **ZIP round trip on the production database, and it CAN fail.** Own ZIP taken first by wrapping `saveBackupFile` to **call through** — `wroteToFolder: true`, **1,211,512 bytes**, real file in `..\backups-production\` as `vantage_data_backup_9-3-26_1730.zip`. Then export → `wipeAllData()` → **651/1,090 → 0/0, both new keys ABSENT, `dateMode` back to `"business"`, probe task gone** → restore → **651 · 1,090 · 33 · 3 · 4 · 1 task, all five fields and all three settings character-identical, 0 orphans.**
-- Pre-Phase-3 **13-column** tasks CSV restored with **no error**, all five fields `""`.
-- `msgBody` probe carried `\n\n`, an embedded `"`, `\r\n`, `&`, `$`, a comma and trailing spaces — **154 characters in, 154 out.**
-- Clean console (five ordinary boot logs, zero warnings, zero errors). `check_ids.py` **at baseline** — `{'restore-backup-input', 'export-backup-btn'}` before and after, byte-identical result. All six views render. State survives reload.
-- **Full rollback verified:** database written back to the pre-session string, **1,561,677 bytes**, 651 · 1,090 · **0 tasks**, no probe records, no stray `__` keys.
-
-## Estimate vs actual
-
-Sized **M / ~8 min / High**. **It ran M and the confidence was right** — no surprises in the CSV layer, exactly as the plan predicted for 3.1. **Michael's time: ~4 minutes** (one boot question block of two, answered in one pass; one screenshot to read). **One `CACHE_NAME` bump against a budget of two.** The plan's ~8 min was close; the phase's standing "cut the attention figure by a third" correction held again.
-
-## Assumptions logged this session
-
-1. **The Bcc is `michaelh@youravdept.com`, seeded from a single module-scope constant `OUTREACH_BCC_DEFAULT`.** Scope §9.7 settled the value and said the check is on screen, not a fourth retyping — so 3.1 rendered it from live state in an overlay and **Michael read it**. 3.1 builds no Settings UI, so the overlay stands in for §9.7's "Settings field"; **3.3 must still show it in the real control.**
-2. **The enum coercion above was added without asking.** Reversible in one line; recorded here and in `BUILD_NOTES.md` because it is a deviation from the written task list, not a silent one.
-3. **The probe task was created through the shipped `saveTaskFromEditor()` path**, not pushed as a literal — which is also what proved the five fields are written at creation.
-4. **Cleanup was a full rollback of the database string, not a delete of the probe task.** Exact, and provable by byte count.
-5. **Phase 2B is still not formally closed** — its drill and snapshot re-verify have still not run. 3.1 ran anyway on Michael's explicit instruction. ⚠️ **3.1's drill covered the same ground on a much larger database and passed, which weakens the case for re-running 2B.10's, but does NOT close 2B** — the snapshot re-verify is a different check and has still not happened.
+- **Five-field round trip:** control set → `change` dispatched → **state untouched** (all five still `""`) → Save → `{channel:"email", msgKind:"compose", msgTo:"typed@example-org.org", msgSubject:"AV production for the Summit", msgBody:"Hi <name>,\n\n…\"Summit\"… & …\n\nBest,\nMichael"}`. Body character-identical, both blank lines and the embedded `"` intact. *(⚠️ Values REDACTED — the fixture was one of Michael's 651 real contacts and **this repo is public**. The evidence is that the strings round-tripped, not who they named. See the note at the foot of this file.)*
+- **Kind options match Q2 exactly:** email `["compose","thread"]`, LinkedIn `["connect","inmail","message"]`. Defaults `compose` / `inmail` — **`connect` is never a default**, per scope §3.1.
+- **Subject ABSENT, three ways** (`getElementById` → null, `group.isConnected` → false, `document.contains` → false) for `thread`, `connect`, `message` and channel `None`; present with `display: flex` for `compose` and `inmail`.
+- **Auto-fill:** open → **no fill** — a hand-typed `first.last@…` survived against a record holding a *different* address (`flast@…`), which is what makes this check mean something. Empty + Email → the record's `email`, matched exactly. Empty + LinkedIn → the record's `linkedin`, matched exactly. **Typed value survives three channel switches** including switching back — the direction a one-way test cannot see.
+- **Orphan:** warning shown, prospect unresolved, `msgTo === ""` on both channels, nothing thrown.
+- **Counters:** `299/300` grey · `300/300` grey · `301/300` **rgb(220, 38, 38)**. Also `1900/1900`→`1901/1900`, `3000/3000`→`3001/3000`, subject `200/200`→`201/200`. `compose` and `thread` read a bare `"2500 characters"` — Q6 gives them no per-field ceiling. At `304/300` the body was **not truncated** and Save was **not disabled**.
+- **`Re:` is display-only:** readout reads `Subject: Re: AV production for the Summit` while `task.msgSubject` still reads it **without** the prefix.
+- **Reload:** all five survive character-identical. `TASKS_CSV_HEADERS.length` **18** (unchanged — no new column). `taskCSVRow()` shows the five values in positions 14–18.
+- **Console:** the ordinary five-line boot. Zero warnings, zero errors, no favicon 404.
+- **All six views render** — dashboard 89 · prospects 6,684 · media 1,148 · campaigns 272 · tasks 66 (2 fixtures) · data-management 68.
+- **`check_ids.py` at baseline** — `{'restore-backup-input', 'export-backup-btn'}` — run against the files **as they now sit on the mini-PC**, md5-matched to the bytes the browser verified. `node --check app.js` parses.
+- **Screenshots:** the block at canvas width for `compose` and for `connect`, sidebar pinned and unpinned, plus the red `304/300`.
 
 ## Backup coverage — DIRECTIVES §4
 
-**NO NEW TOP-LEVEL STORE. NO NEW CSV FILE. NO NEW `wipeAllData()` LINE.** Two new keys on the existing `state.taskSettings` store — **covered**, by two rows in `prm_settings.csv`, exported and restored, and cleared by the wipe (proved: both keys absent post-wipe). Five new fields on the existing `state.tasks` store — **covered**, five columns in `prm_tasks.csv`, exported and restored, cleared with the task. **A destructive operation ran against real data and the rollback point was taken first and verified.**
+**NO NEW STORE, NO NEW CSV FILE, NO NEW PERSISTED FIELD.** This session is UI over the five columns Session 3.1 already added to `TASKS_CSV_HEADERS` and their `restoreTasksFromCSV()` leg. `TASKS_CSV_HEADERS.length` is still **18**. `wipeAllData()` was not edited and must not be. Coverage is therefore **unchanged and already proved** — 3.1's ZIP round trip covers every field this session gives a control to. No destructive operation ran; the rollback was a filter on `state.tasks` and the byte count returned exactly.
+
+## ⚠️ A CONVENTION THIS SESSION NEARLY BROKE, AND THE NEXT SESSION WILL FACE THE SAME PULL
+
+**THE REPO IS PUBLIC AND `ai/` IS IN IT.** This session's fixtures were two tasks created against **a real contact out of the 651** — the honest choice for testing, and the right one. But the first draft of this handoff quoted that contact's **name, work email, employer and LinkedIn URL** as verification evidence, which would have published a real person's contact details to GitHub. **Caught before the commit and redacted above.**
+
+**A scan settles that it was the only leak:** every other document in `ai/` uses placeholders — `first.last@example-org.org`, `sally.quinn@acmellc.com`, the four `prm_data.json` fictional seeds. **The convention already existed; this session was the one that nearly broke it.**
+
+⛔ **THE RULE, SO IT STOPS BEING RE-DERIVED: TEST AGAINST REAL RECORDS, WRITE UP PLACEHOLDERS.** A verification proves that a string round-tripped, not who it named — the identity is never the evidence. This bites hardest in Phase 3 specifically, because the outreach fields hold **addresses and profile URLs by design** and every session from here to 3.5 will be pasting them into a handoff. **DIRECTIVES §0 lists compliance as NOT DECIDED and this is what that costs in practice.**
+
+## Assumptions logged this session
+
+1. ⛔ **NO BCC LINE, AND THE PLAN STILL ASKS FOR ONE.** Task 5 says "Bcc line for email kinds" and the "Needs my eyes" line asks whether an always-visible Bcc line is reassuring or noise. **Both predate amendment A1**, which retired the Bcc outright. Rendering one would display a Bcc the app will never emit. **A1 wins; the plan's task 5 is amended by it in fact.** Reversible in one function if A1 is ever reversed.
+2. **The five fields commit on SAVE, not on change.** Every other field in this editor does, and Cancel has to keep meaning Cancel. Proved in both directions above. Reversible.
+3. **Channel `None` clears `channel` and `msgKind` and LEAVES the three content fields alone.** DIRECTIVES §2 rung 1 over rung 3: a mis-click on None followed by Save must not silently destroy a typed body. `channel === ""` already hides every control and every future button, so the residue is inert.
+4. **A kind without a subject stores `msgSubject: ""`.** The control visibly disappears, so the loss is not silent, and it stops a subject typed for an `inmail` turning up on a `connect`.
+5. **`compose` gets no per-field ceiling, only a bare count.** Q6's constraint for it is the assembled URL, which needs `gmailComposeUrl()` — **that builder and its degrade-don't-fail guard are 3.3's.** An approximated URL ceiling that looks authoritative is worse than an honest count.
+6. **The modal card gained `max-height: 88vh; overflow-y: auto`** (the same pair `#modal-task-orphans` already uses). At Michael's 1440px window the card is 1,121px and does **not** scroll — this is insurance for a short window, not a live behaviour. The plan's collapse-to-a-disclosure fallback was **not** needed.
 
 ## Open items
 
-- ✅ **ANSWERED BY MICHAEL, 2026-09-03 17:45, AND IT IS A FROZEN-CONTRACT PROBLEM, NOT A SCOPE REDUCTION.** His words: ***"Google Workspace Bcc rule is in place. Vantage does not Bcc emails."*** The admin rule blind-copies every outbound message automatically, including replies sent from Gmail with Vantage nowhere in sight. **So the Bcc is redundant at the URL layer — and he has ruled that Vantage must not emit one at all.**
+- ⛔ **UNCOMMITTED WORK, THREE SESSIONS' WORTH.** **One commit.** The parent SHA is **UNKNOWN to this session** — do not carry `0220770` forward without a `git status` to show for it (BUILD_NOTES § *Working inside app.js*).
+- ⛔ **SESSION 3.1b MUST STILL RUN BEFORE 3.3.** It did not run today and 3.2 never needed it. `state.taskSettings.emailBcc` is still `"michaelh@youravdept.com"` in the live database, and `OUTREACH_BCC_DEFAULT` is still in `app.js`. **3.2 added nothing that reads either** — the removal is exactly as small as 3.1b describes. The free fixture 2B.10 left it (`vantage_data_backup_9-3-26_1756.zip`, carrying a live `Outreach Bcc` row) is still the right ZIP to use.
+- **3.3 needs the work Gmail address.** `workGmailAddress` is still `""`.
+- **The snapshot chip was not observed this session** — the editor was open over it for most of the run. Still two sightings, one non-sighting; the permission-lapse reading still favoured over a render bug.
+- **Still owed by Michael, now a FIFTH close carrying them:** the five `DECISIONS.md` DECLARATIONS amendments; the two from 2A.6 (one-word hub names; the in-app-navigation principle); the domain-is-identity amendment; the P4/P5 divergence amendments 2B.16/2B.17 proposed. `LA` = Louisiana or Los Angeles. Finding 10d's meaning. Three cosmetics from 2B.4 — **leaving them is a valid answer and saying so closes them.**
+- **`ai/phases/phase-2b-RUNSHEET.md` is spent and marked for deletion.** A remote session cannot delete files here. **Michael deletes it.**
+- **`DECLARATIONS.md` Stack line counts are stale** — says `app.js` ~13,270; real is **17,849**. Propose at the 3.5 close; do not edit mid-phase.
+- **Phase 2C, scoped not built:** the sixteen-store `wipeAllData()` gap (enumerated at the 2B.10 close) and the `ensureStateDefaults()` `length === 0` reseed defect.
+- **Phase backlog, added 2026-09-04:** deleting a reachout type in Settings reassigns orphaned history entries to `"Note"`, and **`"Note"` is not a registered reachout type** — history rows end up pointing at a type absent from the list. Nothing currently minds. Either seed `"Note"` or reassign to a registered value.
+- **Phase backlog, carried:** ProspectHub OR-s tags while Advanced Query AND-s them; `p.notes` / `p.location` shape defaults; company-edit uniqueness guard; the §4 back-fill of existing `"domain.com"` rows; the missing `<link rel="icon">`. **The repo is PUBLIC.** DIRECTIVES §0 compliance undecided. Stale `..\backups\`.
+- **Both query surfaces stay DEFERRED**; the `sequences` tab stays `enabled: false`. Neither was touched.
+- **The enrollment compartment still has no scope.** Phase 3 needs a Prompt 1 intake before 3.6+ can exist. This is the third close to say so.
 
-  ✅ **RESOLVED THE SAME HOUR. MICHAEL AUTHORISED THE FROZEN-CONTRACT AMENDMENT: REMOVE `emailBcc` OUTRIGHT.** It is written up as **amendment A1** in `ai/phases/phase-3-outreach-launch.md` § *Frozen-contract amendments*, with the reasoning, the rejected alternatives and the reversal condition in `ai/DECISIONS.md` (2026-09-03). **Q3** loses the key, its seed, its `OUTREACH_BCC_DEFAULT` constant, its CSV row and its restore leg; **Q4**'s `gmailComposeUrl()` loses the `&bcc=` term entirely — not made conditional, deleted; **Q5**'s `thread` toast reads *"Body copied."* **`workGmailAddress` is untouched.** The contracts above Q8 are left as originally written and now carry a banner pointing at the amendments section, per the 2B P5/P8/P9 convention.
+## Estimate vs actual
 
-  ⛔ **IT COSTS A REPAIR PASS ON A SESSION THAT SHIPPED HOURS EARLIER: SESSION 3.1b, SIZED S, ADDED TO THE PLAN AND THE SESSION ORDER. IT MUST RUN BEFORE 3.3** — 3.3 is the session that would otherwise build the parameter. Its Done-when includes the one check that is easy to skip: **a 3.1-era settings CSV still carrying an `Outreach Bcc` row must restore cleanly, with the row inert rather than fatal.**
-
-  **Why removal beat leaving the key unread:** a seeded, exported, restored setting that no code path consumes reads as unfinished wiring, and the next session to grep `emailBcc` reconnects it. Removing it is cheaper than the comment that would have to stop that.
-- ✅ **SCOPE §9.7 IS CLOSED.** Michael read the seeded value on screen and confirmed **`michaelh@youravdept.com`** is correct. **Do not re-raise the spelling.** ⚠️ Note the irony to carry: the address is now confirmed correct *and* may be about to become unused.
-- **⛔ MICHAEL'S OWN CALL, 2026-09-03: "shouldn't we close 2B first?" — HE IS RIGHT, AND 3.2 SHOULD WAIT.** See the next-step block below.
-- **3.3 also needs the work Gmail address** to type into Settings. `workGmailAddress` is `""` today, which correctly disables every email button.
-- **The snapshot chip display defect fired again** — read **"Not protected"** in the same second `saveBackupFile` returned `wroteToFolder: true` on a 1.18 MB write. Still unowned.
-- **Phase 2B: the drill and the snapshot re-verify.** See Assumption 5.
-- **Still owed by Michael, carried:** the five **DECLARATIONS amendments** proposed in `DECISIONS.md`, and the two from the 2A.6 close still not applied (one-word hub names; the in-app-navigation principle) — **third close carrying them**. `LA` = Louisiana or Los Angeles. Finding 10d's meaning. Three cosmetics from 2B.4 — **leaving them is a valid answer and saying so closes them.**
-- **Phase 2C, scoped not built:** the sixteen-store `wipeAllData()` gap and the `ensureStateDefaults()` `length === 0` reseed defect — **one session, M, ZIP first.** One open question: the three-way split for `domainHosts` / `domainRegistrars` / `emailProviders`.
-- **`DECLARATIONS.md` Stack line counts are stale again** — it says `app.js` ~13,270 / 13,272. Real: **17,510**. Propose at the 3.5 close; do not edit it mid-phase.
-- **Phase backlog, carried:** ProspectHub OR-s tags while Advanced Query AND-s them; `p.notes` and `p.location` shape defaults; company-edit uniqueness guard; ZIP restore's 1 orphaned task on a sandbox round trip; the §4 back-fill of existing `"domain.com"` rows; the missing `<link rel="icon">`. **The repo is PUBLIC.** DIRECTIVES §0 compliance undecided. Stale `..\backups\`.
+Sized **M / ~8 min / High**. **Came in at M as planned for the code** — 339 lines of `app.js`, roughly two thirds comment, in one pass with no rework and **one** `CACHE_NAME` bump against a budget of two. **Michael's time was ~4 minutes**, but split awkwardly: one boot question answered in one pass, then **a second, unplanned interruption** — the `npx serve` process was not running, which cost a full stop-and-ask cycle. Discounting that, this was the cleanest session of the phase so far.
 
 ## Files changed
 
-**Code:** `app.js`, `sw.js`. **Documents:** `ai/AIContext.md`, `ai/archive/2026-09-03_1732_AIContext.md` (new), `ai/BUILD_NOTES.md`.
+**Code:** `app.js`, `index.html`, `style.css`, `sw.js`. **Documents:** `ai/AIContext.md`, `ai/archive/2026-09-04_0637_AIContext.md` (new), `ai/BUILD_NOTES.md`.
 
-## ⛔ EXACT NEXT STEP — **FINISH 2B.10 FIRST. NOT 3.2.**
+## ⛔ EXACT NEXT STEP — **SESSION 3.1b**, then 3.3
 
-**Michael called this himself at 3.1's close and the plan agrees with him**: `phase-3-outreach-launch.md` lists 3.1's dependency as "Phase 2B closed," and it was not. 3.1 ran on his explicit instruction and is sound, but **the phase should not accumulate a second session on an open dependency.**
+**3.1b (S, DATA) is now the only thing standing between here and 3.3**, and 3.3 is where its cost stops being small: it deletes four things `app.js` still carries and its Done-when needs a 3.1-era settings CSV to restore with the retired row **inert, not fatal**. Then **3.3 — email launch (UI + LOGIC, ⚠️ M–L, ~15 min)**: `gmailBase()` / `gmailComposeUrl()` / `gmailSearchUrl()` with `tf=cm` (**never `view=cm&fs=1`**), the clipboard helper, both buttons with **`window.open` called synchronously first**, and the guards. **⛔ There is no `&bcc=` term — A1.**
 
-**What 2B.10 still owes, and only one of the two is real work:**
+⛔ **A SECOND FROZEN-CONTRACT AMENDMENT LANDED AFTER THIS SESSION CLOSED — A2, 2026-09-04, AND IT IS 3.3's, NOT 3.2's.** Michael asked whether Vantage can produce clickable links — a lead magnet behind the words *"Tech RFP"* — and the answer is **yes**. A body may carry a markdown link stored literally; the copy control writes `text/html` **and** `text/plain`, so a Gmail paste arrives blue, underlined and clickable with the URL hidden. **Q1, Q4, Q5 and Q6 are amended**; `ai/phases/phase-3-outreach-launch.md § Frozen-contract amendments` and `ai/DECISIONS.md` 2026-09-04 carry it in full. **Four things not to re-derive:** `window.open` is still synchronous-first and the clipboard write is a promise; **LinkedIn never converts** (its composer strips formatting and markdown would eat the 300-char `connect` ceiling); **the converter carries exactly three forms — link, `**bold**`, `*italic*` — and font family and size are excluded by decision, not omission**; and **this costs no repair pass** — 3.2 shipped no clipboard code at all, so the whole of it lands in 3.3. **3.3 was re-sized M → M–L for it, deliberately.** Verification needs a **real paste into a real Gmail window**, not a console round trip.
 
-1. **The export → wipe → restore drill. ⛔ MICHAEL'S CALL, 2026-09-03: RUN IT IN FULL — the close gets its OWN drill on the record, not a citation of 3.1's.** He was offered the shorter version and declined it. **So: ⚠️ ZIP first, then a real export → `wipeAllData()` → restore with counts pasted, and report it as proving TEN stores of twenty-six, not all of them.** That framing is 2B.10's actual finding and the drill does not change it. **What 3.1 already established, so the close does not rediscover it:** the drill now runs against **651 prospects / 1,090 companies** and takes **~15 seconds**, not the instant the sandbox took — poll on `state.prospects.length`; stub `prompt`/`alert`/`confirm` first (`wipeAllData()` needs `"YES"` exactly); `wipeIndexedDB()` leaves the `handles` store alone so the backup-folder grant survives and the drill can read its own ZIP back with no file picker.
-2. ⛔ **The snapshot restore re-verify: GENUINELY NOT DONE, AND IT IS THE ONE THING NO SESSION HAS COVERED.** Tier 1 is the sole recovery protection through Phase 3, DIRECTIVES §0 says it is re-proved at every close, and none has been since. ⚠️ Its gate is `saveBackupFile`'s `wroteToFolder`, **not the sidebar chip** — 3.1 saw the chip read "Not protected" in the same second a 1,211,512-byte write returned `wroteToFolder: true`.
-
-Also owed at that close: **the run sheet deletion** (`ai/phases/phase-2b-RUNSHEET.md`, marked spent — **a remote session cannot delete files here; Michael deletes it**), and **the DECLARATIONS amendments**, now carrying from two closes.
-
-**Then Session 3.1b (S, amendment A1), then Session 3.2 — the outreach block (UI, M, ~8 min).** 3.1b may also be folded into the 2B.10 conversation if it has room; it is a DATA change of four deletions and its own `CACHE_NAME` bump. **It must not slip past 3.3.** Q7: Channel and Kind selects, To / Subject / Body, auto-fill from the linked prospect into an empty field only, live counters against Q6's ceilings, and the read-side render in the task inspector. **No buttons; nothing opens anything yet.** It touches `app.js`, `index.html`, `style.css`, `sw.js`.
-
-**Before it starts, know this:** the database has **0 tasks**, so 3.2's Done-when — five controls, auto-fill on a linked prospect, an orphan task, counters at 299/300/301 — **needs tasks created first**, and one of them must be an orphan. Create them, and roll back the database string at the end the way 3.1 did.
-
-**Carry forward:** the `🧱 HUB SHELL` block stays LAST in `style.css`. `#canvas-body` is never edited. `state` is not `window.state` (but top-level functions ARE on `window` — that is what makes the `saveBackupFile` wrapper work). **No routing, ever** — Q8, and this feature puts real addresses one step from a URL. `switchView()` calls `saveState()`. **Do not open the app while Michael's window is up.** Stub `prompt`/`alert`/`confirm` before anything destructive. **Name result keys blandly** — the extension's content filter blocked a plain boolean this session because its key contained the word "Session". `devicePixelRatio` was **1** and `innerWidth` **1920** at 3.1 — re-measure, it is a property of the window.
+**Carry forward:** ⚠️ **THE APP RUNS PERFECTLY WITH THE SERVER DOWN** — cache-first means a stopped `npx serve` looks like a normal boot and a bump that will not land; the three-probe diagnostic is now in `BUILD_NOTES.md § Service worker and caching`, **run it before diagnosing anything else**. `state.activeView` is PERSISTED and its string length moves the database byte count — **return the cursor to the opening view before any byte-exact rollback comparison** (this session's 6-byte residue was `"data-management"` vs `"dashboard"`, nothing more). `computer.zoom` regions want `css × (screenshotWidth ÷ innerWidth) × devicePixelRatio`, which is the click formula times DPR — the two are different spaces. Do not count a panel's nodes inside a `switchView()` sweep loop; it reads half-rendered. `state` is not `window.state`. `devicePixelRatio` read **1 / 1920×1080 at first load and 0.75 / 2560×1440** minutes later — re-measure immediately before any click or screenshot. **Do not open the app while Michael's window is up.** Name result keys blandly.

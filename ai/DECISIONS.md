@@ -606,3 +606,47 @@ Same functions, same guard, same ZIP. **The `length === 0` guard is the shared r
 ⚠️ **THE AMENDMENT COSTS A FOLLOW-UP TO A SESSION THAT HAS ALREADY SHIPPED. IT IS OWED AS SESSION 3.1b** — Session 3.1 built the Q3 half in good faith hours before this ruling, so the removal is real code plus a `CACHE_NAME` bump, not a documentation edit. Sized **S**. Following the 2B.19 / 2B.19b precedent for a repair pass on a shipped session, and it must run **before 3.3**, which is the session that would otherwise build `&bcc=`.
 
 ⚠️ **AND THE SPELLING QUESTION THAT DOMINATED THE SCOPE IS NOW MOOT — RECORD THAT PLAINLY SO NOBODY RE-OPENS IT.** Scope §9.7 spent a full section, three typings and an on-screen verification settling `michaelh@youravdept.com`; Michael confirmed it correct at 3.1's close, and it was retired as a value the same hour. **The section stays as the record of how a silent-failure value should be settled** — render it from live state and have the human read it, rather than asking a fourth time — which is the durable half and is worth more than the address was.
+
+---
+
+## 2026-09-04 — Vantage produces clickable links. The clipboard carries HTML, and frozen contracts Q1, Q4, Q5 and Q6 are amended to say so
+
+**Michael, after the close of Session 3.2:** *"Can I create, copy, and paste active links from Vantage?"* — asked about a lead-magnet link sitting behind the words *"Tech RFP"* in an email body, and answered **yes**.
+
+**Chose:** a message body may carry a link written as markdown — `[Tech RFP](https://…)` — stored literally in `msgBody`, and the copy control writes **both** `text/html` and `text/plain` to the clipboard so a paste into Gmail arrives with the phrase blue, underlined and clickable, and the URL not visible. Vantage still shows the markdown; the rendering happens in Gmail.
+
+**What is amended, and each was frozen:**
+
+- **Q1** — `msgBody` may hold markdown link syntax. **This does not loosen the literal-text rule**: `[Tech RFP](https://…)` is literal text that resolves to itself, not an unresolved merge token, and there is still exactly one code path and one render. What it does mean is that the STORED value and the PASTED value are no longer the same string, which was previously true by accident and is now true by design.
+- **Q4/Q5, email `compose`** — a body containing a link opens Gmail with **To and Subject only** and copies the rich body, toasting *"Body copied — paste into Gmail."* **This is not a new mechanism.** It is Q6's existing over-long-URL degrade path gaining a second trigger, because `&body=` is plain text and cannot carry a link either way. A body with no link is unaffected and still lands in one click.
+- **Q5, the clipboard helper** — `navigator.clipboard.writeText` is replaced by `navigator.clipboard.write()` with a `ClipboardItem` carrying `text/html` **and** `text/plain`. The two existing fallbacks stand and gain a third position below them: **plain text, with the URL left visible and bare.** ⛔ **`window.open` is still called SYNCHRONOUSLY FIRST — the clipboard write is a promise and must not move ahead of it.** That rule is untouched and is the one most likely to be broken while implementing this.
+- **Q6** — the character counters count the STORED string, markup included. On email this is inert: neither `compose` nor `thread` has a per-field ceiling. **On LinkedIn it would be wrong, and the answer is that links do not go there at all** — see below.
+
+**Because:** the lead magnet is the point of the outreach. A bare URL in the body works but reads as a mailshot; the phrase carrying the link is what an ordinary person sends. And the mechanism is not exotic — it is the same rich-text paste that happens when anyone copies from a web page.
+
+⛔ **LINKEDIN IS EXCLUDED, AND NOT AS AN OVERSIGHT.** Its composer strips formatting outright, so a markdown link pasted into an InMail, a message or a connection note arrives as literal `[Tech RFP](https://…)` characters **and eats the 300-character ceiling twice over**. `connect` at 300 is where this bites hardest. **The three LinkedIn kinds copy plain text and must never convert.** A future session that "unifies" the two copy paths for tidiness ships this defect.
+
+**Rejected — a rich contenteditable body, so the link is blue and underlined inside Vantage too.** The shape Michael first imagined, and the honest answer is that it costs far more than it returns: it fights the character counters (which count characters, not nodes), the CSV column (which is a flat string), and the one-path rule Q1 exists to protect. **The markdown is visible and slightly ugly for the four seconds it is on screen in Vantage, and correct in the place it is actually read.**
+
+**Rejected — always prefilling the body through `&body=` and letting Gmail auto-link a bare URL.** Zero work, and it does produce a clickable link. It cannot hide the URL behind a phrase, which is the whole request.
+
+**Rejected — an always-visible Copy Body button on `compose`, beside the launch button.** It gives the user the choice per message, and it is the wrong shape: it means clicking Launch and then wondering whether to also click Copy, and pasting over a body Gmail has already prefilled. **The trigger belongs on the content, not on the user** — the app knows whether the body has a link.
+
+**What would reverse this:** Gmail refusing an HTML clipboard flavour written from this origin. **That is a live question, not a settled one** — `BUILD_NOTES.md` already records that clipboard behaviour differs between `localhost` and a hosted origin, which will matter again at Phase 4. Session 3.3 verifies it with a real paste. **If it fails, the fallback is already specified above and is not a rework: plain text, bare URL, still clickable.** The link works either way; only the hiding is at risk.
+
+⚠️ **THIS DOES NOT COST A REPAIR PASS.** Unlike amendment A1, nothing has been built yet — Session 3.2 shipped the body field and no clipboard code at all. **The whole of this lands inside Session 3.3, which is where the clipboard helper is written anyway.** Retrofitting a second clipboard flavour onto a shipped helper is how a codebase ends up with two of them.
+
+### The converter carries THREE forms, and the list is closed
+
+**Michael, immediately after:** *"That also implies that I can insert formatting items like bold, italics, font choice and size."*
+
+**Chose: links, bold and italic. Not font family, not font size.** `[text](url)`, `**bold**`, `*italic*` — three markdown forms, one converter, and **the list is closed.** Bold and italic cost nothing beyond links: same converter, same clipboard flavour, same fallback, no new risk, and Gmail's paste sanitiser preserves all three.
+
+⛔ **FONT FAMILY AND SIZE ARE EXCLUDED, AND THE REASON IS NOT TECHNICAL — THEY WOULD WORK.** Inline `style="font-family:…;font-size:…"` survives a Gmail paste. They are excluded because:
+
+- **There is no markdown for them.** Bold, italic and links have syntax a person types into a `<textarea>`. A typeface does not. Supporting it means either raw HTML in the body — which a textarea invites you to get wrong, and which then rides into the CSV cell and the character counters — or the rich contenteditable editor already rejected above.
+- **A specified font is the thing that makes an email look pasted in.** It overrides the recipient's client default, renders differently across Gmail, Outlook, Apple Mail and a phone, and — the tell that actually matters — **it will not match Michael's own Gmail signature or the quoted thread below it.** A body in Calibri 14 sitting above a signature in the account default is the most recognisable sign of a message assembled somewhere else. **Specifying nothing is what a typed email looks like**, and this whole feature exists so a staged email is indistinguishable from one he typed.
+
+**Reversible cheaply if that judgement turns out to be wrong** — it is one more branch in the same converter. **But reverse it on evidence from real sent mail, not on preference**, and answer the authoring-surface question first.
+
+⛔ **THE LIST BEING CLOSED IS THE POINT.** Three forms is a converter; six is a markdown renderer — and a markdown renderer inside a `msgBody` that must also survive a CSV round trip, a character ceiling and a plain-text fallback is a different feature with a different scope. **Headings, lists, blockquotes, code spans, tables and images are OUT.** If more than these three is ever wanted, that is a scope question, not a session widening a regex.

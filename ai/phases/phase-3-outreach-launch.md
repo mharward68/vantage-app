@@ -85,12 +85,15 @@ Every one is reversible.
 
 ## Frozen contracts — written literally; later sessions treat as read-only
 
-> ## ⛔ THREE OF THESE WERE AMENDED ON 2026-09-03. READ § Frozen-contract amendments BELOW BEFORE BUILDING Q3, Q4 OR Q5.
+> ## ⛔ FIVE OF THESE HAVE BEEN AMENDED. READ § Frozen-contract amendments BELOW BEFORE BUILDING Q1, Q3, Q4, Q5 OR Q6.
 >
-> **Q3, Q4 and Q5 still say Vantage emits a Bcc. It does not.** The contracts
-> below are left as originally written — that is this project's convention, and
-> the amendment record is the mechanism — but **a session that builds Q4's
-> `&bcc=` term because it read this section and not the amendments has shipped
+> **A1 (2026-09-03) — Q3, Q4 and Q5 still say Vantage emits a Bcc. It does not.**
+> **A2 (2026-09-04) — Q1, Q4, Q5 and Q6 still describe a plain-text-only clipboard. It carries HTML, and email bodies may hold links.**
+>
+> The contracts below are left as originally written — that is this project's
+> convention, and the amendment record is the mechanism — but **a session that
+> builds Q4's `&bcc=` term, or writes Q5's clipboard helper as
+> `writeText`, because it read this section and not the amendments has shipped
 > the wrong thing.** The amendments section is immediately after Q8.
 
 ### Q1 — The task's five outreach fields
@@ -260,6 +263,27 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 - **Scope §9.7 (the Bcc spelling) is MOOT.** Michael confirmed `michaelh@youravdept.com` correct on screen at 3.1's close and the value was retired the same hour. **The section stays as the record of how to settle a silent-failure value** — render it from live state and have the human read it — which is the part worth keeping.
 - ⛔ **IT COSTS A REPAIR PASS ON A SHIPPED SESSION. SEE SESSION 3.1b BELOW.**
 
+### A2 — 2026-09-04 · **Q1, Q4, Q5, Q6: Vantage produces CLICKABLE LINKS, and the clipboard carries HTML.** Authorised by Michael after the close of Session 3.2.
+
+**His question:** *"Can I create, copy, and paste active links from Vantage?"* — a lead-magnet URL sitting behind the words *"Tech RFP"*. **The answer is yes.** A body may carry a markdown link, `[Tech RFP](https://…)`, stored literally; the copy control writes `text/html` alongside `text/plain`, so a paste into Gmail arrives with the phrase blue, underlined and clickable and the URL not visible. Full reasoning, the three rejected shapes and the reversal condition: `ai/DECISIONS.md`, 2026-09-04.
+
+| Contract | As frozen | **As amended** |
+| --- | --- | --- |
+| **Q1** | the five fields hold literal text | **Unchanged in force, clarified in scope.** `[Tech RFP](https://…)` IS literal text — it resolves to itself and is not a merge token — so the one-path rule stands. What changes is that the STORED string and the PASTED string are no longer the same, which used to be true by accident. **Three forms only: link, `**bold**`, `*italic*`. Font family and size are excluded by decision.** |
+| **Q4/Q5** email `compose` | opens Gmail prefilled with To, Subject **and** body | **A body containing a link opens with To and Subject ONLY**, copies the rich body, toasts *"Body copied — paste into Gmail."* Not a new mechanism — **it is Q6's over-long-URL degrade path gaining a second trigger**, because `&body=` is plain text and cannot carry a link either way. A body with no link is untouched and still one click. |
+| **Q5** the clipboard helper | `navigator.clipboard.writeText`, then a hidden textarea + `execCommand`, then select-the-field | **`navigator.clipboard.write()` with a `ClipboardItem` carrying `text/html` AND `text/plain`.** The two existing fallbacks stand and gain a third below them: **plain text with the URL left visible and bare.** |
+| **Q6** | counters measure the value | **Email kinds count the STORED string** — inert, since neither `compose` nor `thread` has a per-field ceiling. **LinkedIn kinds count the FLATTENED output**, because that is what LinkedIn receives and counts; markup that never arrives must not push a legal 300-character note over. |
+| **Q7** | Channel, Kind, To, Subject, **Body** with its live counter | **The single Body box becomes TWO STACKED DISCLOSURES** — **"Edit Task"** (a formatting toolbar plus the textarea) and **"Preview task in HTML"** (read-only, rendered by the same converter that builds the clipboard, so preview and paste cannot disagree). **New task: Edit expanded, Preview contracted. Existing task: the reverse.** Both always reachable; these are defaults, not restrictions. **Look, labels and behaviour are identical on every task and every channel** — only the preview's *contents* differ, which is a preview doing its job. Everything else in Q7 is unchanged. |
+
+**Consequences a later session must not re-derive:**
+
+- ⛔ **`window.open` IS STILL CALLED SYNCHRONOUSLY FIRST.** The clipboard write is a promise. This amendment makes the handler busier and makes that rule *easier* to break, not looser. It is untouched.
+- ⛔ **LINKEDIN GETS FLATTENED TEXT — NEVER HTML, AND NEVER THE RAW STORED STRING.** The converter ALWAYS runs and has two outputs: `text/html` for the email kinds, **flattened plain text** for the three LinkedIn kinds (`**bold**` → `bold`, `[Tech RFP](https://…)` → `Tech RFP (https://…)`). A LinkedIn copy carries no `text/html` flavour and no markup. **A session that "unifies" the two copy paths for tidiness ships one defect or the other.** *(This line originally read "must never convert" and was corrected 2026-09-04 — copying the stored string unconverted puts raw `[…](…)` into a connection note.)*
+- ⛔ **THE COUNTER FOLLOWS THE OUTPUT ON LINKEDIN.** A `connect` note is measured on the **flattened** length, because that is what LinkedIn receives and counts — markup that never arrives must not push a legal note past 300. Email kinds keep counting the stored string; they have no per-field ceiling, so nothing changes there.
+- **A rich contenteditable body was REJECTED** — it fights the counters, the CSV column and Q1's one-path rule. Do not re-propose it as an improvement.
+- ⚠️ **UNLIKE A1, THIS COSTS NO REPAIR PASS.** Session 3.2 shipped the body field and **no clipboard code at all**, so the whole of this lands inside 3.3, which writes the helper anyway.
+- **What would reverse it:** Gmail refusing an HTML flavour written from this origin. **Live, not settled** — `BUILD_NOTES.md` records that clipboard behaviour differs between `localhost` and a hosted origin, which matters again at Phase 4. **If it fails, the third fallback is not a rework — the link still works, only the hiding is lost.**
+
 ---
 
 ## Sessions
@@ -342,17 +366,18 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 
 - **Compartment:** UI, with LOGIC · **Depends on:** 3.2
 - **Two compartments justified:** the builders exist only to serve these two buttons and the buttons cannot be verified without them. Splitting ships either dead functions or dead controls.
-- **Goal:** Q4's email builders and Q5's handler exist. **Launch Email** opens Gmail composed on the work account with Bcc; **Open Thread** opens Gmail searching that contact and copies the body. Every guard in Q5 and Q6 fires.
-- **Size: M** · My time: ~10 min · **Confidence: High**
+- **Goal:** Q4's email builders and Q5's handler exist. **Launch Email** opens Gmail composed on the work account (**no Bcc — A1**); **Open Thread** opens Gmail searching that contact and copies the body. **A body carrying a link pastes into Gmail as a real clickable link — A2.** Every guard in Q5 and Q6 fires.
+- ⚠️ **Size: M–L** · My time: ~15 min · **Confidence: Medium** — **re-sized 2026-09-04 when amendment A2 landed**, and deliberately not left at M. A2 adds a converter, a third clipboard fallback, a second trigger on the degrade path, and a verification that **cannot be done from the console** — it needs a real paste into a real Gmail window and a screenshot. A1 takes a little back (one Settings key, no `&bcc=`), but nothing like as much. **This was already the runner-up to overrun before A2; it is now the favourite.**
 - **Files:** modified `app.js`, `index.html`, `style.css`, `sw.js`
 - **Tasks:**
-  1. `gmailBase()`, `gmailComposeUrl()`, `gmailSearchUrl()` per Q4, with `tf=cm`.
-  2. The one clipboard helper and its two fallbacks, per Q5.
-  3. Both buttons, with `window.open` called **synchronously first** — Q5. Everything else after.
-  4. Guards: blank `workGmailAddress` (disabled + Settings message), blank `msgTo` (disabled), over-length URL (compose without body + copy + toast).
-  5. Settings UI for the two keys.
-  6. Bump `CACHE_NAME`.
-- **Inputs needed from me:** the work Gmail address, to enter in Settings. One real Gmail open to look at.
+  1. `gmailBase()`, `gmailComposeUrl()`, `gmailSearchUrl()` per Q4, with `tf=cm`. **No `&bcc=` term — A1.**
+  2. The one clipboard helper and its **three** fallbacks, per Q5 **as amended by A2**: `navigator.clipboard.write()` with a `ClipboardItem` carrying `text/html` and `text/plain`, then the hidden textarea + `execCommand`, then select-the-field, then **plain text with the URL left bare.**
+  3. **A2: the markdown→HTML converter, and the has-formatting test that drives it.** ⛔ **THREE FORMS, AND THE LIST IS CLOSED:** `[text](url)`, `**bold**`, `*italic*`. **Font family and size are excluded by decision, not by omission** — see `DECISIONS.md`. Headings, lists, blockquotes, code spans, tables and images are OUT. This is a converter, not a markdown renderer, and it must not grow into one.
+  4. Both buttons, with `window.open` called **synchronously first** — Q5. Everything else after, the clipboard write included.
+  5. Guards: blank `workGmailAddress` (disabled + Settings message), blank `msgTo` (disabled), over-length URL (compose without body + copy + toast) — **and A2's second trigger for that same degrade path: a body containing a link.**
+  6. Settings UI for `workGmailAddress`. **One key, not two — A1.**
+  7. Bump `CACHE_NAME`.
+- **Inputs needed from me:** the work Gmail address, to enter in Settings. One real Gmail open to look at. **A2: a real lead-magnet URL to link to** — the Tech RFP one — because a link verified against `https://example.com` proves the mechanism and not the thing I actually send.
 - **Done when:**
   - Console: paste `gmailComposeUrl(task)` in full for a task whose body holds two blank lines, an ampersand, a `+` and a `"`. Then paste each parameter run back through `decodeURIComponent`, showing To, Bcc, Subject and Body **character-identical to `state`**, and `%0A` present where the newlines were.
   - Console: paste the URL showing `tf=cm` present and `view=cm` / `fs=` **absent**.
@@ -362,9 +387,14 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
   - Console: set a body long enough to push the URL past 2000 → paste the URL showing **no `body=`**, paste the clipboard content equal to `msgBody`, and paste the toast text.
   - **One real open per kind, by screenshot:** Gmail compose showing To, Bcc, Subject and the body's paragraph breaks intact; Gmail search showing the contact's thread list.
   - **Popup-blocker check:** with the handler's `window.open` deliberately moved behind an `await` in the console, paste `window.open`'s return as `null` under a blocker; then confirm the shipped code path returns a window. This is the one guard a normal check cannot see.
+  - **A2 — the link, end to end, and A REAL PASTE IS THE ONLY EVIDENCE THAT COUNTS.** Console: paste the converter's output for `[Tech RFP](https://…)` showing one `<a href>` and the plain-text flavour beside it. Console: paste `ClipboardItem` types as `["text/html","text/plain"]`. Then **paste into a real Gmail compose window and screenshot the phrase rendered blue and underlined with the URL not visible** — a `navigator.clipboard.read()` round trip proves Vantage wrote it and proves nothing about whether Gmail honours it.
+  - **A2 — the fallback, exercised not assumed.** Force the rich write to reject, paste the result, and show the bare URL still present and still clickable. **A fallback nobody has run is not a fallback.**
+  - **A2 — LinkedIn must NOT convert.** Console: the same body on `inmail`, `message` and `connect`, showing the clipboard carries **plain text only** and the markdown intact. This is the check that stops a later tidy-up unifying the two paths.
   - Clean console; `check_ids.py` at baseline.
-- **Needs my eyes:** the composed email in Gmail — the body's line breaks are the thing to look at, and no console check can judge them.
+- **Needs my eyes:** the composed email in Gmail — the body's line breaks, **and the linked phrase: blue, underlined, URL hidden, and it goes where it should when clicked.** No console check can judge either.
 - **Risk and fallback:** `#search/` must survive Gmail's account redirect (`/mail/u/<address>/` → `/mail/u/N/`). Fragments normally survive, but this is unverified. If it does not, fall back to storing the resolved numeric index in Settings alongside the address — and record the finding in `BUILD_NOTES.md` either way, because the next person will assume it works.
+
+  **A2's risk is different in kind and is the one to watch: it fails LOOKING LIKE IT WORKED.** A rich clipboard write that silently falls back to plain text produces a copy button that flashes success, a paste that lands text, and a link that is merely visible rather than hidden — which reads as a styling quibble, not a failure. **The success state must distinguish the two** ("Body copied with link" vs "Body copied — plain text"), because that toast is the only place the difference is visible before the email is sent. `navigator.clipboard.write()` needs a secure context and live user activation; `localhost` qualifies today and **Phase 4's hosted origin is a separate question, already flagged in `BUILD_NOTES.md`.**
 
 ### Session 3.4 — LinkedIn launch: slug, three kinds, explicit copy controls
 
@@ -417,8 +447,9 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
                                             Michael's explicit instruction.  Its ZIP was taken
                                             in-session, wroteToFolder: true, 1,211,512 bytes.
 3.1b Remove the Bcc           (DATA, S)  — after 3.1, BEFORE 3.3.  Amendment A1.  Added 2026-09-03
-3.2  Outreach block           (UI,   M)  — after 3.1
-3.3  Email launch             (UI,   M)  — after 3.2
+3.2  Outreach block           (UI,   M)  — ✅ SHIPPED 2026-09-04.  CACHE_NAME v128.  One bump.
+3.3  Email launch             (UI, M–L)  — after 3.2 AND after 3.1b.  ⚠️ RE-SIZED 2026-09-04:
+                                            amendment A2 (clickable links) lands here.
 3.4  LinkedIn launch          (UI,   M)  — after 3.3          ← the review point
 ──── enrollment compartment ─────────────  NOT PLANNED. Needs a Prompt 1 intake. Takes 3.6+
 ──── outreach producer ──────────────────  NOT PLANNED. Depends on the enrollment entities. Takes 3.6+

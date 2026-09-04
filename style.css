@@ -859,6 +859,71 @@ thead.prospects-table-head th {
 }
 .light-theme .task-orphan-warning { color: #b91c1c; }
 
+/* --------------------------------------------------------------------------
+   ✅ TASK EDITOR — OUTREACH BLOCK (Phase 3 / Session 3.2, contract Q7)
+
+   Filed immediately after the block above because it is the same modal and the
+   same surface, and NOT at the end of this file: the `🧱 HUB SHELL` block is
+   the last thing in style.css and that placement is frozen contract S5.
+
+   The block is separated from the form above it by a rule and a heading rather
+   than by a card, so an ordinary non-outreach task — Channel "None", which is
+   every task that predates Phase 3 — grows by exactly one select and the editor
+   still reads as one form.
+   -------------------------------------------------------------------------- */
+.task-outreach-block {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+.task-outreach-heading {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: 12px;
+}
+
+/* The read side. Same left-rule idiom as .task-reachout-block above, so the two
+   derived/read-only regions of this modal look like one thing. */
+.task-outreach-readout {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--color-primary);
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.light-theme .task-outreach-readout { background: rgba(0, 0, 0, 0.04); }
+.task-outreach-readout:empty { display: none; }
+.task-outreach-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--color-text-main);
+}
+.task-outreach-meta { color: var(--color-text-muted); }
+/* The display-only "Re:" line — Q1 keeps the prefix OUT of the stored value, so
+   this is the only place it exists. */
+.task-outreach-subject {
+  margin-top: 6px;
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+/* Live counters, Q6. Over the ceiling is RED and nothing else: no truncation,
+   no disabled Save, no block. The colour is the entire enforcement, which is
+   why it must not be softened to a muted tone. */
+.task-msg-count {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--color-text-muted);
+}
+.task-msg-count.is-over { color: var(--color-danger); }
+
 /* ==========================================================================
    RESET & SYSTEM WRAPPERS
    ========================================================================== */
