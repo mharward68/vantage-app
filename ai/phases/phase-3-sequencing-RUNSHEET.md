@@ -256,13 +256,31 @@ Stop after the plan. Do not start a session.
 
 *One session, one conversation. Never two.*
 
-**The sessions** — *filled in by Step 1B.*
+**The sessions** — *filled in by Step 1B, 2026-09-04, from `ai/phases/phase-3-sequencing.md`.*
 
 | | Session | | Size | My time |
 | :---: | :---: | --- | :---: | :---: |
-| ☐ | **3.6** | — | | |
-| ☐ | **3.7** | — | | |
-| ☐ | … | | | |
+| ☐ | **3.6** | The two stores, their backup coverage, and the drill — DATA. ⚠️ **ZIP + proved snapshot first.** | **L** | ~12 min |
+| ☐ | **3.7** | Merge tokens: the resolver and the template validator — LOGIC | **S** | ~4 min |
+| ☐ | **3.8** | The two history types, and one writer — DATA | **S** | ~4 min |
+| ☐ | **3.9** | Campaign Hub: the Sequences sub-tab and the sequence list — UI | **M** | ~8 min |
+| ☐ | **3.10** | The step editor — UI | **M** | ~8 min |
+| ☐ | **3.11** | The enrollment commit path — LOGIC | **M** | ~6 min |
+| ☐ | **3.12** | The enrollment review modal — UI ← **most likely to overrun** | **M** | ~10 min |
+| ☐ | **3.13** | Advance — LOGIC | **M** | ~6 min |
+| ☐ | **3.14** | Stop, stall, and cascade — LOGIC | **M** | ~6 min |
+| ☐ | **3.15** | Prospect detail: the Sequences tab — UI | **M** | ~8 min |
+| ☐ | **3.16** | The sequence detail view — UI | **M** | ~8 min |
+| ☐ | **3.17** | End-to-end test pass and the 11-CSV drill — QA. ⚠️ **ZIP + proved snapshot first.** | **M** | ~15 min |
+
+**Twelve sessions, ~95 min by the estimating method.** ⚠️ **That method has come in roughly
+2.5× under across three phases, so expect ~40 min actual — the per-session numbers are
+deliberately not adjusted, because the method is what is being calibrated.**
+
+⛔ **THIS IS NOT THE PHASE'S SIZE.** Two contingency lines sit outside it and both are
+budgeted separately in the plan: **Step 2R's review response, 5–8 sessions at 3.18+, entirely
+unspent**, and **mid-phase amendments, 2–4 sessions lettered in place** (`3.12b`, as `3.1b`
+and `3.3c` were). Phase 3 whole forecasts **27–32 sessions** including the seven already built.
 
 Each one is **Prompt 4** from `ai/APP_BUILD_WORKFLOW.md`. Only the first line
 changes between sessions:
