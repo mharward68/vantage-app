@@ -1,152 +1,123 @@
-# Phase 3 Run Sheet — the REST of Sequencing
+# Phase 3 Run Sheet — what is LEFT
 
 *Vantage — a Prospecting Relationship Manager*
 
-> ## ▶ THE OUTREACH HALF IS BUILT. THE SEQUENCING HALF IS NOT SCOPED.
->
-> *Written 2026-09-04 at the Session 3.5 compartment close, to replace
-> `ai/phases/phase-3-RUNSHEET.md`, which is spent from Step 2A back.*
->
-> **Compartment A — outreach launch — is COMPLETE and in real use.** Sessions
-> 3.1, 3.1b, 3.2, 3.3, 3.3c and 3.4 all shipped. A task carries a channel, kind,
-> recipient, subject and body; one button opens Gmail composed on the work
-> account; LinkedIn opens on the right person with explicit numbered copies. It
-> was closed as a **compartment** close on 2026-09-04.
->
-> **Compartment B — enrollment and scheduling — does not exist.** No sequence
-> entity, no steps, no enrollments, no business-day advance. The `sequences` tab
-> in `PROSPECT_DETAIL_TABS` is `enabled: false` with `render: null`, and that is
-> the compartment that fills it.
->
-> **State, read from the tree on 2026-09-04:** `app.js` **18,793** ·
-> `index.html` **3,981** · `style.css` **5,192** · `CACHE_NAME` **v134** ·
-> **HEAD `f932fceb`, in sync with origin.** One-glance version tell:
-> `typeof linkedinSlug` is `"function"`, `typeof gmailSearchUrl` is
-> `"undefined"`.
->
-> ⛔ **NEXT IS NOT A SESSION. IT IS A DAY OF REAL OUTREACH, THEN STEP 2R.**
-
-> ### Source of truth
->
-> The authoritative copy is this file in the repo. **`ai/DIRECTIVES.md`,
-> `DECLARATIONS.md`, `DECISIONS.md` and `BUILD_NOTES.md` outrank it**; if any of
-> them disagrees with a line here, they win. The workflow itself lives in
-> `ai/APP_BUILD_WORKFLOW.md`.
->
-> Disposable. Delete at the phase close, along with
-> `ai/phases/phase-3-RUNSHEET.md`.
+> **Rewritten 2026-09-04 16:40 EDT.** Replaces the 12:16 version, which was
+> written six hours earlier and put a review gate in front of everything that
+> could not be passed. Everything already finished has been cut out of this
+> sheet rather than struck through — the completed record lives in
+> `ai/phases/phase-3-outreach-launch.md` and
+> `ai/archive/2026-09-04_1216_AIContext.md`.
 
 ---
 
-## What is already done — do not re-run any of it
+## ⛔ THE ONE CHANGE FROM THE LAST SHEET: THE REVIEW MOVED
 
-| | Output |
+The old Step 2R required **"a day of REAL outreach, not a walkthrough"** before
+anything else could run. **Vantage's data is not real and the business is still
+in development, so that gate could never be passed** — not by waiting a day, not
+by waiting a month. It would have blocked the phase indefinitely.
+
+**The review is not cancelled. It moved to the last thing before the close.**
+It now runs after sequencing works, which is the first point at which there is a
+whole feature to review and the first realistic moment for genuine use. **The
+contract half of a review is already done** — Session 3.5 audited amendments
+A1–A4 against the code and found all four true in the product — so what moved is
+the *usage* half, which is the half that needed real use in the first place.
+
+⚠️ **Say what this costs, once, so it is a decision and not an accident.**
+Phase 1 ran 11 sessions against 8 and Phase 2B ran 17 against 10, and **in both
+cases every extra session came from a review pass.** That contingency is still
+unspent. Moving the review later does not remove those sessions; it moves them,
+and they now land between Step 2B and the close rather than before Step 0B.
+**Budget for them there.**
+
+---
+
+## Where things stand
+
+**Compartment A — outreach launch — is BUILT and closed as a compartment.**
+Sessions 3.1, 3.1b, 3.2, 3.3, 3.3c and 3.4 all shipped. A task carries a
+channel, kind, recipient, subject and body; one button opens Gmail composed on
+the work account; LinkedIn opens on the right person with two explicit numbered
+copies. Session 3.5 ran the export → wipe → restore drill on the real database
+with all nine CSVs md5-identical either side, re-verified a snapshot restore,
+and audited A1–A4. **None of that is re-run.**
+
+**Compartment B — enrollment and scheduling — does not exist.** No sequence
+entity, no steps, no enrollments, no business-day advance. The `sequences` tab in
+`PROSPECT_DETAIL_TABS` is `enabled: false` with `render: null`, **and filling it
+is what this compartment is for.**
+
+**State, verified from the tree 2026-09-04 16:30 EDT:**
+
+| | |
 | --- | --- |
-| ~~Step 0A~~ — intake, outreach launch | `ai/spec/sequence-outreach-launch-scope.md` |
-| ~~Step 1A~~ — plan, outreach launch | `ai/phases/phase-3-outreach-launch.md` |
-| ~~Step 2A~~ — build, 3.1 → 3.4 | The outreach feature, usable by hand |
-| ~~Session 3.5~~ — **compartment** close, ran early 2026-09-04 | Drill, snapshot re-verify, A1–A4 audit, calibration, curation, proposals |
+| `app.js` | **18,793** lines |
+| `index.html` | **3,981** |
+| `style.css` | **5,192** |
+| `CACHE_NAME` | **v134** |
+| **HEAD** | **`f932fceb`** — local `main` and `origin/main` equal, **IN SYNC: true** |
+| One-glance version tell | `typeof linkedinSlug` → `"function"` · `typeof gmailSearchUrl` → `"undefined"` · `LINKEDIN_COMPOSE_ROUTE_LIVE` → `false` |
 
-⛔ **Session 3.5 already ran, out of order, on Michael's instruction, and it did
-NOT close the phase.** What it did is done and must not be redone: the
-export → wipe → restore drill on real data (all nine CSVs md5-identical either
-side), the snapshot restore re-verify, the audit of amendments A1–A4 against the
-code (**all four true in the product**), compartment A's estimate calibration,
-the `BUILD_NOTES.md` curation, and the `DECISIONS.md` / `DECLARATIONS.md`
-proposals. **The real phase close is `3.5b`, it is Step 3 below, and it still
-runs last.** Full output: `ai/archive/2026-09-04_1216_AIContext.md`.
+> ⚠️ **`DECLARATIONS.md`'s Stack line still reads 13,270 / 3,250 / 3,680 and is
+> ~5,500 lines light on `app.js`.** It is there so a session can size a change.
+> The correction is a standing proposal awaiting Michael; **3.5b applies it.**
 
-**Do not re-run Prompt 3 for compartment A.** It is planned and built. Step 1B
-plans B and merges the two into one document; it does not re-derive A's sessions
-and it does not touch frozen contracts Q1–Q8.
+### Source of truth
+
+The authoritative copy is **this file in the repo**. `ai/DIRECTIVES.md`,
+`DECLARATIONS.md`, `DECISIONS.md` and `BUILD_NOTES.md` **outrank it**; if any of
+them disagrees with a line here, they win. The workflow itself lives in
+`ai/APP_BUILD_WORKFLOW.md`.
+
+⚠️ **A Google Doc mirror of this sheet exists for pasting from.** It is a
+**mirror, not a second source.** If the two ever disagree, the repo wins and the
+doc gets regenerated — never edited to match. **Three planning documents pointing
+at a session that had already run is how Phase 2B lost a session's boot**; two
+copies of one sheet is the same failure waiting.
+
+Disposable. Deleted at the phase close along with `ai/phases/phase-3-RUNSHEET.md`.
 
 ---
 
-## The remaining steps
+## The remaining steps — in order
 
 | Step | What | Output | New conversation? |
 | :---: | --- | --- | :---: |
-| **2R** | **Review** compartment A after a day of real outreach, then plan the response | `phase-3-REVIEW-FINDINGS.md` → `phase-3-review-response-plan.md` | Yes — two |
-| **0B** | **Intake** the enrollment compartment (Prompt 1) | `ai/spec/sequence-enrollment-scope.md` | Yes |
-| **1B** | **Plan** enrollment and merge both halves (Prompt 3) | `ai/phases/phase-3-sequencing.md` | Yes |
-| **2B** | **Build** — the review-response, enrollment and producer sessions | Sequencing | Yes, one each |
+| **0B** | ▶ **NEXT.** Intake the enrollment compartment (Prompt 1) | `ai/spec/sequence-enrollment-scope.md` | Yes |
+| **1B** | Plan enrollment and merge both halves (Prompt 3) | `ai/phases/phase-3-sequencing.md` | Yes |
+| **2B** | Build — the enrollment and producer sessions | Sequencing, working | Yes, one each |
+| **2R** | **Review the whole feature**, then plan the response | `phase-3-REVIEW-FINDINGS.md` → `phase-3-review-response-plan.md` | Yes — two |
+| **2Rb** | Run the response sessions | Fixes | Yes, one each |
 | **3** | **Close** — Session `3.5b`. Always last | Phase 4 starting point | Yes |
 
-Each step is a **new conversation**. That is Rule 1 and it dominates cost.
+Each step is a **new conversation.** That is Rule 1 and it dominates cost.
 Connect `C:\01_AppDevelopment\02_Vantage-Master-Folder\vantage-app` first and
 attach nothing — every prompt reads the repo itself.
 
-### Session numbering — one rule, so two planning steps don't collide
+### Session numbering — one rule, and it REVERSED when the review moved
 
-**Everything from here takes 3.6 and up.** Step 2R's response plan claims
-numbers **first**, starting at 3.6. Step 1B then continues from the next free
-number rather than starting over. **`3.5b` keeps its letter and always runs
-last**, exactly as 1.8 and 2B.10 did. This is the mechanism that failed in Phase
-2B, where three planning documents pointed at a session that had already run —
-**a session that ships out of numeric order owes this sheet an edit in the same
-close, not just a handoff line.**
+**Everything from here takes 3.6 and up.** The old sheet had Step 2R claim
+numbers first because it ran first. **It no longer runs first, so the order of
+claiming flips:**
 
----
+- **Step 1B claims numbers first**, starting at **3.6**.
+- **Step 2R's response plan continues from the next free number** — it does not
+  start over at 3.6.
+- **`3.5b` keeps its letter and always runs last.** This is the 1.8 and 2B.10
+  precedent.
 
-# Step 2R — Review compartment A, then plan the response
-
-*Two conversations. Run this before Step 0B.*
-
-**Phase 1 overran by three sessions and Phase 2B by seven, and both came from a
-review pass over the one session that first showed the thing working.** This
-sheet names the review point in advance so it is planned work rather than a
-surprise.
-
-⚠️ **Use a day of REAL OUTREACH, not a walkthrough.** Real first-touch emails
-through the Gmail button, real follow-ups through the two copy controls, real
-LinkedIn opens against real prospects. A walkthrough finds cosmetic problems; a
-day of use finds the ones that cost clicks.
-
-```
-Review Phase 3, compartment A, after Session 3.4.
-
-READ FIRST: ai/phases/phase-3-outreach-launch.md — especially frozen contracts
-Q1-Q8, the four amendments A1-A4 that follow them, and the Open risks —
-ai/AIContext.md, and ai/spec/sequence-outreach-launch-scope.md.
-
-I have used the outreach launch for a full day of real work. Interview me about
-what I actually did, then write ai/phases/phase-3-REVIEW-FINDINGS.md.
-
-Ask specifically about:
-- How many clicks a real send took, start to finish, per channel.
-- Whether anything had to be retyped or re-copied.
-- Whether the two thread copy buttons behaved as a sequence in practice, or
-  whether I lost the address by clicking both.
-- Whether the Workspace journaling rule caught everything I expected it to.
-  Vantage emits no Bcc - amendment A1 - so this is a question about the rule,
-  not about the app.
-- Whether the character counters fired on anything real, and whether the
-  over-limit behaviour was right.
-- Whether the LinkedIn profile destination was the right call in practice, or
-  whether I wanted the composer for people I am already connected to.
-- Whether manual entry is a surface I would actually use, or only scaffolding.
-- What I reached for that was not there.
-
-Separate findings into: contract violations (stop and tell me), things that need
-a session, and things that are preferences I should just decide. Do not write a
-response plan yet.
-```
-
-Then, in a **second** conversation, plan the response sessions into
-`ai/phases/phase-3-review-response-plan.md`, following Prompt 3's sizing and
-estimate rules. **They take 3.6 and up.**
-
-⚠️ **One question in the block above changed since the old run sheet.** The Bcc
-question is gone: **amendment A1 retired the Bcc outright** — the Google
-Workspace outbound rule blind-copies the work account, and Vantage neither emits
-nor displays one. Asking "did the Bcc reach everything" invites a finding about
-a mechanism that is not in the product.
+⛔ **A session that ships out of numeric order owes this sheet an edit in the
+same close, not just a handoff line.** Phase 2B lost a boot to three planning
+documents that all pointed at a session which had already run.
 
 ---
 
 # Step 0B — Intake the enrollment compartment
 
-*One conversation, after Step 2R. Produces a scope. No code, no plan.*
+*One conversation. Produces a scope. No code, no plan. **This is the next thing
+to run.***
 
 ```
 Intake Phase 3, compartment B: sequence enrollment and scheduling.
@@ -204,6 +175,11 @@ ASK ME ABOUT AT LEAST THESE, because they are not determinable from the files:
 - Whether a reply or a completed task advances the sequence, stops it, or
   neither - and how Vantage would even know, given it never sends.
 
+CONTEXT YOU WILL NOT FIND IN THE FILES: the data in this app is NOT real and the
+business is still in development. Do not gate anything on real usage, real sends
+or real replies, and do not propose a scope decision that can only be settled by
+watching real outreach. Ask me instead.
+
 Follow PROMPT 1 in ai/APP_BUILD_WORKFLOW.md. Write the result to
 ai/spec/sequence-enrollment-scope.md.
 
@@ -234,8 +210,9 @@ Follow PROMPT 3 in ai/APP_BUILD_WORKFLOW.md exactly - compartments, session
 sizing, contract-first ordering, and the three estimates per session (SIZE, MY
 TIME, CONFIDENCE).
 
-NUMBERING: the review-response sessions from Step 2R have already claimed
-numbers from 3.6 upward. Continue from the next free number; do not start over.
+NUMBERING: you claim numbers FIRST, starting at 3.6. The review moved to after
+the build, so its response sessions continue from whatever number you stop at -
+this is the reverse of what the previous run sheet said and it is deliberate.
 3.5b is the phase close, keeps its letter, and ALWAYS RUNS LAST. This is the 1.8
 and 2B.10 precedent.
 
@@ -247,8 +224,10 @@ CALIBRATION - measured, not guessed. Absorb it; do not re-derive it.
 - Phase 3 compartment A: 5 planned, 7 run. EVERY session came in at its
   estimated size - zero re-sizes, the first compartment with none - and BOTH
   extra sessions came from amendments authorised mid-phase, not from
-  underestimation. The review had not run when it closed, so its contingency is
-  still unspent.
+  underestimation.
+- THE REVIEW HAS STILL NOT RUN. Its contingency is unspent and it now lands
+  AFTER your sessions rather than before them. Carry it as a separate line in
+  the estimate; do not fold it into per-session sizes.
 - THE CONCLUSION THAT MATTERS: session growth has TWO independent sources -
   review response, and mid-phase amendments - and only the first has ever been
   budgeted. Budget them separately.
@@ -258,7 +237,6 @@ CALIBRATION - measured, not guessed. Absorb it; do not re-derive it.
 - My attention estimates have come in roughly 2.5x UNDER across three phases.
   Say so plainly rather than quietly correcting them.
 - Budget two CACHE_NAME bumps per session.
-- Use the Step 2R review's ACTUAL output rather than a contingency percentage.
 
 Write the merged plan to ai/phases/phase-3-sequencing.md - a NEW file carrying
 both compartments. Leave ai/phases/phase-3-outreach-launch.md in place as the
@@ -266,7 +244,8 @@ historical record of compartment A; do not delete or edit it.
 
 THEN - also update this run sheet, ai/phases/phase-3-sequencing-RUNSHEET.md:
 fill in Step 2B's session list with the real numbers, titles, sizes and my-time
-estimates. Change only that list.
+estimates. Change only that list, and tell me to regenerate the Google Doc
+mirror.
 
 Stop after the plan. Do not start a session.
 ```
@@ -277,7 +256,7 @@ Stop after the plan. Do not start a session.
 
 *One session, one conversation. Never two.*
 
-**The sessions** — *filled in by Step 2R's response plan and Step 1B.*
+**The sessions** — *filled in by Step 1B.*
 
 | | Session | | Size | My time |
 | :---: | :---: | --- | :---: | :---: |
@@ -306,6 +285,66 @@ fail** — that has already happened twice here, with `state.tasks` in 1.3 and
 
 ---
 
+# Step 2R — Review the whole feature, then plan the response
+
+*Two conversations, after Step 2B. **Moved here 2026-09-04** from before Step 0B.*
+
+**Phase 1 overran by three sessions and Phase 2B by seven, and both came from a
+review pass over the one session that first showed the thing working.** This
+sheet names the review point in advance so it is planned work rather than a
+surprise. **It is now the point at which sequencing works end to end** — a
+sequence enrolls a prospect, produces tasks, and those tasks launch — because
+that is the first moment there is a whole feature to review.
+
+⚠️ **This review does NOT wait on real outreach.** The old sheet demanded a day
+of real sends; the data is not real and the business is in development, so that
+gate was unpassable and it is gone. Review what the feature does, by using it
+against the test data, end to end.
+
+```
+Review Phase 3 end to end, after the last session in ai/phases/phase-3-sequencing.md.
+
+READ FIRST: ai/phases/phase-3-sequencing.md - especially every frozen contract
+and every amendment - ai/AIContext.md, ai/spec/sequence-outreach-launch-scope.md
+and ai/spec/sequence-enrollment-scope.md.
+
+Sequencing is built. Interview me about what it actually does when I drive it,
+then write ai/phases/phase-3-REVIEW-FINDINGS.md.
+
+MY DATA IS NOT REAL AND THE BUSINESS IS STILL IN DEVELOPMENT. Do not ask what
+happened on a real send, a real reply or a real acceptance, and do not gate a
+finding on evidence that cannot exist yet. Ask what the SURFACE does.
+
+Ask specifically about:
+- How many clicks it takes to enroll a prospect and get the first task, and how
+  many to get from a task to an open compose window, per channel.
+- Whether anything has to be retyped or re-copied that the app already knows.
+- Whether the two thread copy buttons behave as a sequence in practice, or
+  whether I lose the address by clicking both.
+- Whether the character counters fire where they should, and whether the
+  over-limit behaviour is right - on the TEMPLATE and on the resolved VALUE,
+  which are two different moments.
+- Whether merge tokens resolve to what I expected on a real record, and what
+  happens when a field is empty.
+- Whether editing a sequence after enrollment did what I expected to the
+  pending tasks.
+- Whether the LinkedIn profile destination was the right call, or whether I
+  wanted the composer for people I am already connected to.
+- Whether manual entry is still a surface I would use now that sequences exist,
+  or whether it became scaffolding after all.
+- What I reached for that was not there.
+
+Separate findings into: contract violations (stop and tell me), things that need
+a session, and things that are preferences I should just decide. Do not write a
+response plan yet.
+```
+
+Then, in a **second** conversation, plan the response sessions into
+`ai/phases/phase-3-review-response-plan.md`, following Prompt 3's sizing and
+estimate rules. **They continue from the next free number after Step 1B's.**
+
+---
+
 # Step 3 — Close the phase
 
 *One final conversation. This is Session `3.5b` and it always runs last.*
@@ -324,23 +363,22 @@ NOT need repeating unless something below changed them:
 
 WHAT THIS SESSION ACTUALLY OWES:
 
-1. RE-PROVE THE EXPORT PATH - but ONLY IF the enrollment compartment changed the
-   task record shape or added a store. It writes contract Q1's five fields and
-   introduces no new ones, so it may not have. Say which, and why, before
-   deciding. If any new store landed, the drill is mandatory: full export, wipe,
-   restore on real data, counts pasted, and every new column shown surviving
-   character-identical. Prove the wipe actually cleared before believing the
-   restore.
+1. RE-PROVE THE EXPORT PATH. The enrollment compartment almost certainly added
+   stores - sequences, steps, enrollments - so assume the drill is MANDATORY and
+   say why if you conclude otherwise. Full export, wipe, restore, counts pasted,
+   every new column shown surviving character-identical. Prove the wipe actually
+   cleared before believing the restore. Check every new store is in
+   wipeAllData()'s explicit list.
 
 2. RE-VERIFY A SNAPSHOT RESTORE. Tier 1 is still the sole protection.
 
 3. ESTIMATE CALIBRATION ACROSS BOTH COMPARTMENTS. Compartment A ran 7 against a
    planned 5 with zero re-sizes, both extras from mid-phase amendments. Report
    what compartment B did, whether splitting the phase in two with an intake in
-   the middle changed the pattern Phase 1 and Phase 2B set, and what it means for
-   Phase 4.
+   the middle changed the pattern Phase 1 and Phase 2B set, and - separately -
+   what the review produced once it finally ran. Say what it means for Phase 4.
 
-4. AUDIT ANY NEW FROZEN CONTRACTS AND AMENDMENTS AGAINST THE CODE, the same way
+4. AUDIT EVERY NEW FROZEN CONTRACT AND AMENDMENT AGAINST THE CODE, the same way
    3.5 audited A1-A4, and say plainly whether each is true in the product.
 
 5. CURATE ai/BUILD_NOTES.md and audit ai/DECLARATIONS.md for drift. Propose; do
@@ -353,8 +391,8 @@ WHAT THIS SESSION ACTUALLY OWES:
 7. TELL ME EXACTLY WHAT TO BACK UP, and the filename to use.
 
 8. DELETE ai/phases/phase-3-RUNSHEET.md and
-   ai/phases/phase-3-sequencing-RUNSHEET.md. Both are spent at this point. Tell
-   me; I delete them.
+   ai/phases/phase-3-sequencing-RUNSHEET.md, and tell me to delete the Google
+   Doc mirror. All three are spent at this point. Tell me; I delete them.
 
 9. NEXT PHASE - Phase 4 is Hosting and, unlike Phase 3, it does NOT need an
    intake. Its pre-flight already exists at
@@ -362,7 +400,7 @@ WHAT THIS SESSION ACTUALLY OWES:
    current, and tell me to run Prompt 3.
 ```
 
-⚠️ **The pre-flight's counts are already stale and the next close should say so
+⚠️ **The pre-flight's counts are already stale and the close should say so
 rather than re-measure by surprise:** it records 651 prospects and 1,090
 companies against today's **652** and **1,091**, and the whole state at ~1,466 KB
 against today's **~1,526 KB**. **Its substance is unchanged** — still over
@@ -386,7 +424,9 @@ Firestore's 1 MiB document limit, so per-entity decomposition stays load-bearing
   commands with repeated `-m` flags; do not go looking for a fourth door.
 - **Verify git state; do not repeat it from a handoff.** Session 3.4's handoff
   said two files were uncommitted and by the next session they were committed and
-  pushed. **Stage `.git/refs/heads/main`, `.git/refs/remotes/origin/main` and
+  pushed — and 3.5's handoff made the same mistake in the other direction, saying
+  five documents were uncommitted when they had been pushed six minutes later.
+  **Stage `.git/refs/heads/main`, `.git/refs/remotes/origin/main` and
   `.git/COMMIT_EDITMSG`** — equal SHAs mean the push landed, and
   `COMMIT_EDITMSG`'s mtime against the source files' proves the commit came after
   the edits.
@@ -399,8 +439,13 @@ Firestore's 1 MiB document limit, so per-entity decomposition stays load-bearing
   silently does nothing and the restore that follows passes against data that
   was never cleared.
 
-## Still true for this compartment
+## Still true for this phase
 
+- **⛔ THE DATA IS NOT REAL AND THE BUSINESS IS STILL IN DEVELOPMENT.** No step,
+  scope decision, contract or Done-when may be gated on real usage, real sends,
+  real replies or real acceptances. **A gate nobody can pass is not a safeguard,
+  it is a stall** — the 12:16 run sheet had one and it blocked the phase.
+  Ask Michael instead.
 - **Vantage never sends, on any channel, permanently.** No email is sent, no
   draft is created via any API, no LinkedIn action is automated. A sequence
   produces a task; Michael clicks the button.
@@ -413,10 +458,12 @@ Firestore's 1 MiB document limit, so per-entity decomposition stays load-bearing
   `wipeAllData()` clears it whole, which is the entire reason.
 - **Both query surfaces stay DEFERRED** — `renderAqInspectorDrawer()`, the
   `aq-insp-*` ids and the Audience Query Engine are not touched.
+- **Amendments A1–A4 are true in the product**, audited against the code at 3.5.
+  No Bcc anywhere; the clipboard carries HTML for email and flattened text for
+  LinkedIn; the email `thread` kind opens nothing and offers two numbered
+  copies; the Gmail account is targeted by `?authuser=`, never by a path segment.
 
 ## Traps that make a half-fix look finished
-
-*The compartment-A-specific ones are retired with it. These still bite.*
 
 - **⚠️⚠️ THE APP RUNS PERFECTLY WITH THE SERVER DOWN.** `sw.js` is cache-first,
   so with `npx serve` stopped the app still boots, renders all six views and
@@ -426,11 +473,13 @@ Firestore's 1 MiB document limit, so per-entity decomposition stays load-bearing
   unreal path, and `/sw.js`. Server up gives `200 / 404 / 200`.
 - **⛔ A `CACHE_NAME` BUMP DOES NOT LAND ON `reg.update()` ALONE.**
   `unregister()`, delete every `vantage*` cache, then reload **twice**.
-- **⛔ `device_commit_files` CAN REPORT SUCCESS AND WRITE THE PREVIOUS BYTES**
-  when a staged path is reused, and **the file-size tell fails when the two
-  versions are the same length** — a one-character version bump is exactly the
-  change a byte count cannot see. **Write each revision to a NEW staged path and
-  re-stage and md5-compare.**
+- **⛔ `device_commit_files` CAN REPORT SUCCESS AND WRITE THE PREVIOUS BYTES.**
+  **It is the staged PATH that goes stale, not the act of re-copying to it** —
+  it fired on a *first* commit from a brand-new path whose file had been edited
+  in place afterwards, and the second edit was silently dropped. **Finish every
+  edit, then copy the finished file to a path nothing has ever been committed
+  from, then commit, then re-stage and `md5sum`.** The file-size tell fails when
+  the two versions are the same length.
 - **⛔ A RESTORE LEG THAT COULD NOT HAVE FAILED PROVES NOTHING.** Clear the value
   first, prove it genuinely cleared, then restore. A MATCH against a value that
   was never wiped is decoration. This has already cost two sessions here.
@@ -450,10 +499,10 @@ Firestore's 1 MiB document limit, so per-entity decomposition stays load-bearing
 - **⛔ `#view-data-management` HAS NO CONSTANT NODE COUNT.** The invariant is
   `total − select.options.length`, which reads **53**. A bare total reports a
   regression every time the snapshotter writes a file.
-- **⛔ TEST AGAINST REAL RECORDS, WRITE UP PLACEHOLDERS. THE REPO IS PUBLIC.**
-  A verification proves a string round-tripped, not who it named. This bites
-  hardest here, because the outreach fields hold real addresses and profile URLs
-  by design.
+- **⛔ THE REPO IS PUBLIC. WRITE UP PLACEHOLDERS.** The data is not real, but the
+  outreach fields hold addresses and profile URLs by design and at least one
+  record is a family member. A verification proves a string round-tripped, not
+  who it named.
 - **⛔ THE `computer` CLICK COORDINATE IS `css × (screenshotWidth ÷ innerWidth)`
   AND IS NOT THE POSITION IN THE PICTURE.** Re-derive the scale from a live
   `getBoundingClientRect()` in the same call as the click, every time — the
@@ -470,7 +519,7 @@ Firestore's 1 MiB document limit, so per-entity decomposition stays load-bearing
 | When | What |
 | --- | --- |
 | Before **any session touching the task record shape or adding a store** | Manual ZIP |
-| Before **3.5b** | Manual ZIP **and** a proved snapshot write. Non-negotiable if the drill runs. ⚠️ **NOT "a confirmed green chip" — the chip is a known display defect.** The real gate is `saveBackupFile`'s **`wroteToFolder: true`**, and confirm the file on disk afterwards. |
+| Before **3.5b** | Manual ZIP **and** a proved snapshot write. ⚠️ **NOT "a confirmed green chip" — the chip is a known display defect.** The real gate is `saveBackupFile`'s **`wroteToFolder: true`**, and confirm the file on disk afterwards. |
 | At **phase close** | Full ZIP, stored outside the project folder |
 
 Backups live in
@@ -486,3 +535,4 @@ snapshots in its `snapshots\` subfolder. The stale sibling `..\backups\` is
 | A session **grinds on the same error three times** | It is told to stop and report. Let it. |
 | A session wants work **outside its compartment** | It is told to put it in the backlog. Let it. |
 | A session says a new store is **not covered by backup** | DIRECTIVES §4. It is right to stop. Answer it. |
+| A session **stops on a gate that needs real usage** | It is wrong and this sheet says so. The data is not real. Tell it to ask you instead, and fix the document that carried the gate. |

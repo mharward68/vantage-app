@@ -79,7 +79,7 @@ Every one is reversible.
 
 8. **Verification of a launch button is verification of the URL string, not of Gmail.** A Done-when cannot paste Gmail's DOM. Each session builds the URL, pastes it, and decodes it back to prove every part survived; **one** real open per channel is confirmed by screenshot. Stated as an assumption because it is a genuine weakening of the usual standard and it should be visible, not silent.
 
-9. **Review point is after 3.4.** That is the session at which the feature is complete and usable for real outreach, which makes it this phase's 1.5 and 2B.6. Expect it to produce sessions; they take 3.6+.
+9. ~~**Review point is after 3.4.**~~ ⛔ **AMENDED 2026-09-04 16:40 — THE REVIEW POINT MOVED TO AFTER SEQUENCING WORKS, IMMEDIATELY BEFORE THE PHASE CLOSE.** The original wording is left above because that is this project's convention. It rested on an assumption nobody wrote down: that 3.4 would be followed by **real outreach to real prospects**, which is what the run sheet's review block demanded a full day of. **Michael's data is not real and the business is still in development**, so that gate could not be passed — not by waiting a day, not by waiting a month — and it blocked the whole phase for six hours before it was questioned. **The review is not cancelled and its sessions are not cancelled.** The contract half is already done (3.5 audited A1–A4 against the code; all four true), and the usage half now runs when there is a whole feature to drive. ⚠️ **This does not remove the review's sessions, it moves them** — Phase 1's three extras and Phase 2B's seven all came from a review pass, that contingency is still unspent, and it now lands between the last build session and `3.5b`. **Budget it there, as its own line.** See `ai/phases/phase-3-sequencing-RUNSHEET.md` Step 2R.
 
 ---
 
@@ -537,7 +537,8 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
                                             Produced amendment A4 (Q4's gmailBase was a 404).
 3.3c Authoring surface        (UI,   M)  — after 3.3.  Added 2026-09-04 by splitting 3.3.
                                             Toolbar, two disclosures, live preview.  Pure UI.
-3.4  LinkedIn launch          (UI,   M)  — after 3.3c         ← the review point
+3.4  LinkedIn launch          (UI,   M)  — after 3.3c         ← WAS the review point;
+                                            moved 2026-09-04 to after sequencing works.  See Assumption 9.
 ──── enrollment compartment ─────────────  NOT PLANNED. Needs a Prompt 1 intake. Takes 3.6+
 ──── outreach producer ──────────────────  NOT PLANNED. Depends on the enrollment entities. Takes 3.6+
 3.5  Close                    (QA,   M)  — ⚠️ RAN EARLY 2026-09-04 as a COMPARTMENT close, on
@@ -547,7 +548,7 @@ The task editor gains, below its existing fields: **Channel** (None / Email / Li
 
 **3.1 → 3.4 is strictly sequential and each session leaves the app usable.** Nothing is removed at any point; every session is purely additive, which is what makes this compartment safe to run before the half of Phase 3 that isn't scoped.
 
-**3.4 is the review point, and this plan says so in advance.** It is the session at which the feature is complete and used for real outreach — this phase's 1.5 and 2B.6. Phase 1's entire overrun and Phase 2B's seven extra sessions both came from a review pass over the session that first showed the thing working, on the day it shipped. **Review it before starting the enrollment intake**, and expect it to produce sessions.
+~~**3.4 is the review point, and this plan says so in advance.**~~ ⛔ **NO LONGER — AMENDED 2026-09-04 16:40; see Assumption 9.** Naming the review point in advance was right and is kept; **naming it at 3.4 was wrong, because it required real outreach that this project's data cannot supply.** The review now runs after sequencing works end to end, immediately before `3.5b`, and it reviews the surface rather than a day of real sends. Phase 1's entire overrun and Phase 2B's seven extra sessions both came from a review pass, so **expect it to produce sessions either way** — they simply land later in the phase now. **Do not start the enrollment intake waiting for a review that cannot run.**
 
 **The enrollment compartment must be scoped before it can be ordered.** It is not merely unplanned — its entities do not exist, so the producer sessions that depend on them cannot be written either. What is knowable today: the producer only ever *writes* Q1's fields, so no contract above changes when it lands.
 
