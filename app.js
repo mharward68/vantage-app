@@ -5624,6 +5624,117 @@ function gmailComposePlan(task) {
   return { url: full, degraded: false, reason: "" };
 }
 
+/* --- Q4's LinkedIn half  (Phase 3 / Session 3.4) --------------------------
+
+   Filed here, inside the 3.3 launch block rather than in a seventh sub-block,
+   because renderTaskOutreachActions() is the one consumer of both halves and
+   splitting them puts the LinkedIn builders on the far side of the function
+   that calls them. The Gmail builders are directly above; these are the same
+   contract (Q4) for the other channel.
+
+   THE FOUR THINGS A LATER SESSION MUST NOT UNDO:
+
+   (1) ⛔ THE RECORD KEY IS `linkedin`, NOT `linkedinUrl`. The wrong key reads
+       undefined, yields no slug, and silently disables every LinkedIn button
+       with no error anywhere — a half-fix that passes every spot-check.
+       Verified against P5 of phase-2b-prospect-detail-view.md and the
+       #pros-linkedin input.
+
+   (2) ⛔ THE CONTROLS RESOLVE THE SLUG FROM THE `To` FIELD, NOT FROM THE
+       PROSPECT RECORD. Q7's auto-fill already puts prospect.linkedin there on
+       channel change, the field is editable by contract, and an ORPHAN TASK
+       HAS NO PROSPECT AT ALL — reading the record would leave a typed profile
+       URL sitting on screen above a dead button. It is also what makes the
+       LinkedIn branch behave exactly like the email one, which tests `to`.
+       linkedinSlug() therefore accepts EITHER shape: a prospect object (Q4's
+       literal call form) or a bare URL string.
+
+   (3) ⛔ THESE BUTTONS OPEN AND DO NOTHING ELSE (Q5). No implicit clipboard
+       write. With a subject and a body to paste and ONE clipboard, an implicit
+       copy means never knowing what is on it. Every LinkedIn copy is a
+       separate, labelled, numbered click.
+
+   (4) ⛔ NO LINKEDIN API, NO AUTOMATED LINKEDIN ACTION, EVER. Vantage opens a
+       page; Michael does the rest. Automation there breaches their user
+       agreement and risks the account. This is scope, not preference.
+
+   ⚠️ Sales Navigator URLs are NOT supported and that is a decision (run sheet,
+   2026-09-03): Navigator is how he FINDS people, not what he SAVES. A stored
+   `sales/lead/` value is a data error to fix in the record, not a format to
+   teach this regex. */
+
+// Q4/§7.4 verbatim, tolerant of trailing slashes, query strings and fragments
+// by construction: [^/?#]+ stops at all three.
+const LINKEDIN_SLUG_RE = /linkedin\.com\/in\/([^/?#]+)/i;
+
+/* Accepts a prospect object OR a URL string. The object form is Q4's own
+   expression, unchanged; the string form is what the controls use, per (2)
+   above. A /company/ page, a Sales Navigator link, a malformed paste and ""
+   all yield "" — and "" disables the button with the reason shown rather than
+   opening something wrong. */
+function linkedinSlug(source) {
+  const raw = (source && typeof source === "object")
+    ? (source.linkedin || "")
+    : (source == null ? "" : String(source));
+  const m = raw.match(LINKEDIN_SLUG_RE);
+  return m ? m[1] : "";
+}
+
+/* §7.5's two destinations. ⚠️ THE COMPOSER ROUTE IS UNDOCUMENTED AND
+   UNVERSIONED — it is not a LinkedIn API and it can disappear without notice,
+   including after this session verified it. That is Open Risk 3, accepted and
+   not eliminated; the flag below is the containment. */
+function linkedinComposeUrl(slug) {
+  return `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(slug)}`;
+}
+function linkedinProfileUrl(slug) {
+  return `https://www.linkedin.com/in/${encodeURIComponent(slug)}/`;
+}
+
+/* ⛔⛔ FALSE, AND THE REASON IS NOT "THE ROUTE IS DEAD" — READ THIS BEFORE
+   FLIPPING IT BACK, BECAUSE ONE TEST WILL TELL YOU IT WORKS.
+
+   Verified live in Session 3.4, signed in on the work account, two opens:
+
+     ?recipient=cherieneal              (1st-degree CONNECTION)
+       → ✅ "New message", recipient CHIP populated, compose box focused.
+     ?recipient=brooke-naylor-609680151 (3rd degree, NOT a connection)
+       → ⛔ the bare messaging INBOX with an EMPTY compose pane. No chip, no
+         error, no clue. Silent.
+
+   ⛔ SO THE ROUTE IS CONDITIONAL ON CONNECTION DEGREE, AND VANTAGE CANNOT KNOW
+   THE DEGREE. There is no field for it, no API to ask, and no way to read the
+   result cross-origin. A destination that lands correctly for some contacts
+   and drops the others onto an unrelated inbox — with the message already on
+   the clipboard and nowhere to put it — is worse than one that always lands
+   somewhere right. DIRECTIVES §2 rung 1, Stability, over rung 2: determinism
+   beats the saved click.
+
+   AND THE FAILING HALF IS THE COMMON ONE. Outreach targets people he is not
+   connected to yet; `inmail` is BY DEFINITION to a non-connection. Testing
+   this against a connection only is the half-fix that passes and ships broken.
+
+   THE PROFILE ALWAYS WORKS, for every degree: right person, Message button and
+   Connect one click away. That is what ships for all three kinds.
+
+   WHAT WOULD REVERSE IT: a way to know the degree before building the URL, or
+   LinkedIn making `?recipient=` resolve for non-connections. Not a try/catch,
+   not a timer, not a probe fetch — a page cannot see across origins what
+   linkedin.com served, so nothing here can detect the difference at runtime
+   and re-route itself. The composer builder above stays shipped and exercised
+   so flipping this back is one line the day either of those is true. */
+const LINKEDIN_COMPOSE_ROUTE_LIVE = false;
+
+/* `connect` is a DIFFERENT DESTINATION, not a message variant (Q2): the
+   profile page, where the invitation with a note is written. It never uses the
+   composer, whatever the flag says. */
+function linkedinDestination(kind, slug) {
+  if (kind === "connect" || !LINKEDIN_COMPOSE_ROUTE_LIVE) {
+    return { url: linkedinProfileUrl(slug), composer: false };
+  }
+  return { url: linkedinComposeUrl(slug), composer: true };
+}
+
 /* --- Q5's clipboard helper ------------------------------------------------
 
    ONE helper, four rungs, and the FIRST THING IT RETURNS IS WHICH RUNG WON —
@@ -5797,6 +5908,48 @@ function handleTaskCopyMessage(channel) {
     .then(res => outreachCopyToast("Message", res));
 }
 
+/* Session 3.4. A subject line carries no formatting — A2's three forms are a
+   BODY concern — so this is a plain-text copy with no html flavour, exactly
+   like the address. It reads the DETACHED-safe accessor, because the Subject
+   node is removed from the document for every kind that has no subject and
+   getElementById would return null. */
+function handleTaskCopySubject() {
+  const draft = taskOutreachDraft();
+  outreachCopy({ text: draft.msgSubject, html: null }, taskSubjectInput())
+    .then(res => outreachCopyToast("Subject", res));
+}
+
+/* ⛔ SYNCHRONOUSLY, FIRST — the same rule as Gmail, and the same reason: an
+   await above window.open passes every console check and fails only under a
+   popup blocker, later, on Michael's machine.
+
+   ⛔ AND IT TOUCHES THE CLIPBOARD ON NO PATH (Q5). Compare handleTaskLaunch-
+   Gmail(), which copies on its DEGRADE path only — LinkedIn has no equivalent,
+   because nothing here ever tries to carry the body in the URL. */
+function handleTaskLaunchLinkedIn(kind) {
+  const draft = taskOutreachDraft();
+  const slug = linkedinSlug(draft.msgTo);
+  if (!slug) {
+    showOutreachToast("No LinkedIn profile in To — Vantage needs a linkedin.com/in/… address.", "warn");
+    return;
+  }
+
+  const dest = linkedinDestination(kind, slug);
+  const win = window.open(dest.url, "vantage-linkedin");   // ⛔ NO await ABOVE THIS LINE
+
+  if (!win) {
+    showOutreachToast("LinkedIn did not open — your browser blocked the popup for this site.", "warn");
+    return;
+  }
+  // Only the profile destinations need saying: the composer arrives addressed
+  // and needs no instruction, so a toast there would be noise on every click.
+  if (!dest.composer) {
+    showOutreachToast(kind === "connect"
+      ? "Profile open — click Connect, then Add a note, then paste."
+      : "Profile open — click Message, then paste.");
+  }
+}
+
 function renderTaskOutreachActions(channel, kind) {
   const box = document.getElementById("task-outreach-actions");
   if (!box) return;
@@ -5857,10 +6010,86 @@ function renderTaskOutreachActions(channel, kind) {
     return;
   }
 
-  // The three LinkedIn kinds are Session 3.4 — slug, destinations, and their
-  // own explicit copy controls. Nothing is rendered here rather than a dead
-  // button that looks like it should work.
-  box.appendChild(outreachHint("LinkedIn launch controls arrive in the next session."));
+  /* --- The three LinkedIn kinds  (Session 3.4) ----------------------------
+
+     ⛔ THE COPIES ARE A NUMBERED SEQUENCE, NOT A ROW OF EQUIVALENT OPTIONS —
+     the same rule the `thread` pair is built on and for the same reason: there
+     is ONE clipboard, so `2 · Copy message` overwrites `1 · Copy subject`, and
+     losing the subject is silent and reads as the first button being broken.
+     A later session tidying these into a row has reintroduced that bug.
+
+     ⛔ AND THE OPEN BUTTON IS FIRST BECAUSE THAT IS THE GESTURE ORDER: open
+     the composer, then paste into it. A copy made before the window opens is
+     a copy that survives the open — but only because nothing here touches the
+     clipboard, which is exactly what Q5 requires and what the Done-when
+     proves by reading the clipboard spy either side of the open click. */
+  if (channel !== "linkedin") return;
+
+  const slug = linkedinSlug(to);
+  const wantsSubject = taskKindHasSubject(kind);   // inmail only, per Q2
+
+  /* ⛔ THE LABEL IS DERIVED FROM THE DESTINATION, NEVER FROM THE KIND. With
+     LINKEDIN_COMPOSE_ROUTE_LIVE false the composer is not where an `inmail`
+     goes, and a button reading "Open LinkedIn message" that lands on a profile
+     is a button that lies about itself once a session. Deriving it means
+     flipping the flag back re-labels every button with no second edit. */
+  const routes = linkedinDestination(kind, "");
+  const open = outreachActionButton(
+    routes.composer ? "Open LinkedIn message" : "Open profile on LinkedIn", "primary-btn");
+  if (!to) {
+    open.disabled = true;
+    open.title = "Add a LinkedIn profile URL in To before this can open the right person.";
+  } else if (!slug) {
+    open.disabled = true;
+    open.title = "Not a profile URL. Vantage needs a linkedin.com/in/… address — a company page or a Sales Navigator link cannot open the right person.";
+  } else {
+    const dest = linkedinDestination(kind, slug);
+    open.title = dest.composer
+      ? `Opens the LinkedIn message composer addressed to ${slug}.`
+      : `Opens ${slug}'s LinkedIn profile.`;
+    open.addEventListener("click", () => handleTaskLaunchLinkedIn(kind));
+  }
+  box.appendChild(open);
+
+  /* The reason is on the button as a title AND on screen as a hint. A disabled
+     button whose only explanation is a hover is a dead control to anyone who
+     does not hover, and "the LinkedIn buttons stopped working" is precisely
+     the report this feature would otherwise generate. */
+  if (to && !slug) {
+    box.appendChild(outreachHint(
+      "To does not hold a LinkedIn profile URL. Vantage reads linkedin.com/in/… — fix the contact's LinkedIn field, or paste the profile URL here.",
+      "task-outreach-hint is-degrade"));
+  } else if (!to) {
+    box.appendChild(outreachHint(
+      "Add the contact's LinkedIn profile URL in To — choosing LinkedIn fills it from the linked contact when the field is empty."));
+  }
+
+  /* A2: LinkedIn receives the FLATTENED text and never markup. Said here, on
+     the surface where the paste is about to happen, and not only in the
+     preview box — which is collapsed by default on an existing task, which is
+     every task he actually sends from. */
+  box.appendChild(outreachHint(
+    "LinkedIn takes plain text: bold and italic drop, and a link pastes as its words plus the bare URL."));
+
+  box.appendChild(outreachHint(
+    wantsSubject
+      ? "One clipboard, two steps — copy the subject, paste it, then come back for the message."
+      : "Open, then copy the message and paste it.",
+    "task-outreach-hint is-sequence"));
+
+  if (wantsSubject) {
+    const subjEl = taskSubjectInput();
+    const subject = subjEl ? (subjEl.value || "").trim() : "";
+    const one = outreachActionButton("1 · Copy subject", "secondary-btn");
+    if (!subject) { one.disabled = true; one.title = "Nothing to copy — the subject is empty."; }
+    else { one.addEventListener("click", handleTaskCopySubject); }
+    box.appendChild(one);
+  }
+
+  const msg = outreachActionButton(wantsSubject ? "2 · Copy message" : "Copy message", "secondary-btn");
+  if (!body) { msg.disabled = true; msg.title = "Nothing to copy — the message is empty."; }
+  else { msg.addEventListener("click", () => handleTaskCopyMessage("linkedin")); }
+  box.appendChild(msg);
 }
 
 /* ==========================================================================
